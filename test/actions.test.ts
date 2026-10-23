@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ACTIONS, matchAction, parseAction } from '../src/game/actions.js';
+import { ACTIONS, actionHints, actionLabel, actionLabels, matchAction, parseAction } from '../src/game/actions.js';
 
 describe('招式识别', () => {
   it('精确匹配中文与英文', () => {
@@ -55,6 +55,13 @@ describe('招式识别', () => {
     // 单字别名「打」只在精确匹配生效，避免「打开菜单」被当成攻击
     assert.equal(parseAction('打开菜单'), null);
     assert.equal(parseAction('讲个笑话'), null);
+  });
+
+  it('提示文案给出招式中文名，未知招式回退原始标识', () => {
+    assert.deepEqual(actionLabels(), ['攻击', '闪避', '回气']);
+    assert.match(actionHints(), /attack（攻击）/);
+    assert.equal(actionLabel('attack'), '攻击');
+    assert.equal(actionLabel('unknown' as Parameters<typeof actionLabel>[0]), 'unknown');
   });
 
   it('招式表覆盖三种招式且有中文名', () => {

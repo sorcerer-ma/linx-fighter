@@ -55,7 +55,7 @@ export function actionLabels(): string[] {
 
 /** 参与匹配的全部说法：口语别名 + ASR 常见误识别 */
 function matchTerms(meta: ActionMeta): string[] {
-  return meta.asrErrors ? [...meta.aliases, ...meta.asrErrors] : meta.aliases;
+  return [...meta.aliases, ...(meta.asrErrors ?? [])];
 }
 
 export interface ActionMatch {

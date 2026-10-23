@@ -105,6 +105,32 @@ describe('游戏服务', () => {
     assert.match(result.text, /你赢了/);
   });
 
+  it('念唤出指令时先回念一句再播报回合', () => {
+    const { service } = setup();
+    service.start(KEY);
+
+    const result = service.act(KEY, '共鸣斩破军');
+    assert.equal(result.battle?.turn, 1);
+    assert.match(result.text, /你朗声喝道：「共鸣斩破军」/);
+    assert.match(result.text, /第 1 回合/);
+  });
+
+  it('战败与异常状态都有对应播报', () => {
+    const { service, store } = setup();
+    const started = service.start(KEY);
+    const battle = started.battle!;
+
+    store.set(KEY, { ...battle, phase: 'defeat' });
+    assert.match(service.act(KEY, '攻击').text, /你输了/);
+
+    store.set(KEY, { ...battle, phase: 'victory' });
+    assert.match(service.act(KEY, '攻击').text, /你赢了/);
+
+    // 防御性兜底：phae 出现未知值时也不抛异常
+    store.set(KEY, { ...battle, phase: 'unknown' as typeof battle.phase });
+    assert.match(service.act(KEY, '攻击').text, /这一局已经结束/);
+  });
+
   it('玩法说明不需要对局', () => {
     const { service } = setup();
     const result = service.help();
