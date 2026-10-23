@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { AppConfig } from '../config.js';
 import type { GameService } from '../game/service.js';
 import type { Logger } from '../log.js';
@@ -37,6 +38,7 @@ export function createApp(deps: AppDependencies): express.Express {
         path: req.path,
         status: res.statusCode,
         ms: Date.now() - startedAt,
+        host: req.headers.host ?? '',
         contentType: req.headers['content-type'] ?? '',
       });
     });
@@ -100,7 +102,40 @@ export function createApp(deps: AppDependencies): express.Express {
     }
   });
 
-  // 平台通过 POST 下发 JSON-RPC 请求，实际响应走 SSE 通道
+  // 新版 MCP 客户端（Streamable HTTP）会直接 POST JSON-RPC 到 /mcp，不需要先建 SSE 连接。
+  // 平台校验/调用走的就是这种方式，因此这里按无状态模式处理：一个请求一个临时传输，请求结束即释放。
+  app.post('/mcp', async (req, res) => {
+    const ctx = createDeviceContext(randomUUID());
+    applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
+
+    const server = createMcpServer();
+    registerGameTools(server, { service, logger, ctx });
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+
+    res.on('close', () => {
+      void transport.close();
+      void server.close();
+    });
+
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      logger.error('Streamable HTTP 请求处理失败', {
+        deviceId: ctx.deviceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (!res.headersSent) {
+        res.status(500).json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: '内部错误' } });
+      }
+    }
+  });
+
+  // 老版 MCP 客户端（SSE）先 GET 建长连接，再用 POST /mcp/message 下发 JSON-RPC，响应走 SSE 通道
   app.post('/mcp/message', async (req, res) => {
     const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
     const session = sessionId ? sessions.get(sessionId) : undefined;

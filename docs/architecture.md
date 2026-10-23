@@ -6,7 +6,7 @@
 玩家语音
   → 灵犀设备
   → 灵犀平台（意图识别 + 带 Function Call 的模型）
-  → MCP 客户端：GET /mcp 建 SSE，POST /mcp/message 发 JSON-RPC
+  → MCP 客户端：POST /mcp 直接发 JSON-RPC（Streamable HTTP）
   → 本服务 tools.ts / http/app.ts
   → GameService → engine.ts（结算）+ narrator.ts（播报）
   → 工具返回 text
@@ -19,7 +19,7 @@
 
 | 层 | 文件 | 职责 |
 | --- | --- | --- |
-| 接入层 | `src/http/app.ts` | SSE 连接管理、JSON-RPC 转发、设备上下文提取、调试接口 |
+| 接入层 | `src/http/app.ts` | 两种 MCP 传输（Streamable HTTP / SSE）、设备上下文提取、调试接口 |
 | 协议层 | `src/mcp/server.ts`、`src/mcp/tools.ts` | MCP Server 创建、工具注册与参数校验、异常兜底 |
 | 编排层 | `src/game/service.ts` | 开局 / 出招 / 战况 / 说明的业务流程，读改写存储 |
 | 规则层 | `src/game/engine.ts`、`src/game/actions.ts` | 招式定义、回合结算（待补玩法） |
@@ -30,11 +30,19 @@
 
 ## 设计决策
 
-### 1. 只做 SSE，不做 Streamable HTTP
+### 1. 同时支持 Streamable HTTP 与 SSE
 
-灵犀平台的「自定义 MCP」配置项要求填写 SSE 连接地址，文档示例也是 `.../sse` 形式。Streamable HTTP 虽然更新，但平台侧未必支持，框架阶段不做两套传输。
+平台文档描述的是 SSE（`GET /mcp` 建长连接 + `POST /mcp/message` 发 JSON-RPC），最初的实现只做了这一套。但联调时日志显示平台实际打过来的是 `POST /mcp` + `application/json`，直接发 JSON-RPC、没有 GET 建连，属于新版的 Streamable HTTP 传输，服务端返回 404，设备侧就报「服务器出错」。
 
-实际 POST 地址由服务端 `endpoint` 事件下发（`/mcp/message?sessionId=...`），因此平台里填 `https://<域名>/mcp` 即可，不依赖 URL 后缀是不是 `/sse`。
+所以两套传输都保留，按方法分流，互不影响：
+
+| 请求 | 传输 | 处理方式 |
+| --- | --- | --- |
+| `POST /mcp` | Streamable HTTP | 无状态：每个请求建一个临时 `McpServer` + `StreamableHTTPServerTransport`，请求结束即释放，响应为普通 JSON |
+| `GET /mcp`（或 `/sse`） | SSE | 有状态：一个连接一个会话，先推 `endpoint` 事件给出 POST 地址 |
+| `POST /mcp/message` | SSE | 把 JSON-RPC 交给对应 SSE 会话，响应从 SSE 通道返回 |
+
+两种传输共用同一份对局存储，因此「先 POST 建对局、再用另一种传输继续出招」也能接上。平台控制台里填 `https://<域名>/mcp` 即可，不依赖地址后缀是不是 `/sse`。
 
 ### 2. 对局归属键 = 设备 ID + 智能体 ID
 

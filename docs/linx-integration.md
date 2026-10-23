@@ -92,7 +92,7 @@ pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
 | 描述 | 语音回合制对战游戏 |
 
 - 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
-- 地址填到 `/mcp` 即可，POST 地址由服务端 `endpoint` 事件下发，不要求 URL 以 `/sse` 结尾。
+- 地址填到 `/mcp` 即可。服务端同时支持两种传输：平台若走 Streamable HTTP 会直接 `POST /mcp`（实测就是这样），若走老式 SSE 会先 `GET /mcp` 再由 `endpoint` 事件下发 POST 地址，控制台不用区分。
 - 配好后控制台通常有「测试/校验」按钮，能看到 4 个工具（`game_start`、`game_action`、`game_status`、`game_help`）即说明连通。
 
 ## 4. 控制台：配置智能体
@@ -132,7 +132,8 @@ pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
 先分两种情况判断，看 `journalctl -u linx-fighter -f`：
 
 - **完全没有「SSE 连接建立」日志**：平台的请求没到服务端，是网络或地址问题。检查隧道是否在跑（`systemctl status linx-tunnel`、`journalctl -u linx-tunnel | grep listening`），确认控制台填的端口与日志一致，再在外部机器上 `curl http://bore.pub:<端口>/health` 验证。
-- **有连接日志但拿不到工具调用**：多半是中间代理缓冲了 SSE。按第 1 节配置 `proxy_buffering off` 与长 `proxy_read_timeout`，再确认 `/mcp` 的响应头是 `text/event-stream`。
+- **日志里是 `收到未知路径请求` 且状态 404**：请求到了但方法/路径对不上。看日志里的 `method`、`path`、`host` 三个字段：`POST /mcp` 是新版 Streamable HTTP，服务端已支持；其它路径说明控制台地址填错了。
+- **有 SSE 连接日志但拿不到工具调用**：多半是中间代理缓冲了 SSE。按第 1 节配置 `proxy_buffering off` 与长 `proxy_read_timeout`，再确认 `/mcp` 的响应头是 `text/event-stream`。
 
 **能连上但模型从不调用工具**
 意图识别模型不支持 Function Call，或智能体没勾选 MCP；也可能是提示词里没写工具用途。换模型 + 重新保存配置 + 重启设备。

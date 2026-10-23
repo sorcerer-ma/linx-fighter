@@ -2,7 +2,7 @@
 
 灵犀（七牛 Xrobot 语音硬件）上的回合制语音对战游戏服务端：玩家用语音下令，角色按招式出招，通过策略与游戏机制对手对决。
 
-服务通过 **MCP 协议（JSON-RPC 2.0 over SSE）** 接入灵犀平台，由平台侧智能体调用工具推进对局。
+服务通过 **MCP 协议**接入灵犀平台，由平台侧智能体调用工具推进对局。同时支持 Streamable HTTP（`POST /mcp`，平台实测走的是这条）与 SSE（`GET /mcp` + `POST /mcp/message`）两种传输。
 
 > 当前阶段：**框架**。MCP 链路、对局状态管理、播报文案都已打通；命中判定、伤害公式、胜负判定等玩法机制尚未接入，见 [docs/game-design.md](docs/game-design.md)。
 
@@ -43,8 +43,9 @@ pnpm exec tsx scripts/smoke.ts http://127.0.0.1:8000
 
 | 端点 | 方法 | 用途 |
 | --- | --- | --- |
-| `/mcp` | GET | 建立 SSE 长连接，服务端先推 `endpoint` 事件，给出 POST 地址 |
-| `/mcp/message?sessionId=<id>` | POST | 接收 JSON-RPC 请求，响应从 SSE 通道返回 |
+| `/mcp` | POST | Streamable HTTP：直接收发 JSON-RPC，响应为 JSON |
+| `/mcp`、`/sse` | GET | 建立 SSE 长连接，服务端先推 `endpoint` 事件，给出 POST 地址 |
+| `/mcp/message?sessionId=<id>` | POST | 老式 SSE 通道：接收 JSON-RPC，响应从 SSE 流返回 |
 | `/health` | GET | 健康检查 |
 
 平台在每次调用时通过 HTTP 头带设备信息（不放进工具入参）：
@@ -95,7 +96,7 @@ src/
     context.ts        设备上下文与对局归属键
     server.ts         McpServer 创建与 instructions
     tools.ts          工具注册
-  http/app.ts         路由：SSE、JSON-RPC、健康检查、调试接口
+  http/app.ts         路由：Streamable HTTP / SSE、健康检查、调试接口
   store/battles.ts    对局存储（当前为内存 + TTL）
 docs/
   architecture.md     架构与设计决策
