@@ -34,6 +34,11 @@ export function narrateTurn(battle: Battle, action: ActionId): string {
   return [`第 ${battle.turn} 回合，你出了「${actionLabel(action)}」。`, fighterLine(battle)].join('\n');
 }
 
+/** 玩家念出唤出指令：先回念一句，紧接着是这一回合的播报 */
+export function narrateChant(chant: string): string {
+  return `你朗声喝道：「${chant}」。\n`;
+}
+
 /** 战况播报 */
 export function narrateStatus(battle: Battle): string {
   const last = battle.history[battle.history.length - 1];
@@ -63,6 +68,6 @@ export function narrateNoBattle(): string {
 export function narrateHelp(): string {
   return [
     '灵犀对决是回合制对决：你说指令，角色出招，招式有攻击、闪避、回气。',
-    '直接说招式名就能出招，说「战况如何」看双方状态，说「开始游戏」开新的一局。',
+    '直接说招式名就能出招，也可以念唤出指令，比如「共鸣斩破军」；说「战况如何」看双方状态，说「开始游戏」开新的一局。',
   ].join('\n');
 }

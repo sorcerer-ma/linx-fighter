@@ -1,10 +1,11 @@
 import type { Logger } from '../log.js';
 import type { BattleStore } from '../store/battles.js';
-import { parseAction } from './actions.js';
+import { matchAction } from './actions.js';
 import { createBattle, resolveTurn } from './engine.js';
 import {
   narrateAutoStart,
   narrateBattleStart,
+  narrateChant,
   narrateEnded,
   narrateHelp,
   narrateNoBattle,
@@ -59,10 +60,11 @@ export class GameService {
 
   /** 执行一次玩家出招 */
   act(sessionKey: string, rawAction: string): ServiceResult {
-    const action = parseAction(rawAction);
+    const match = matchAction(rawAction);
+    const action = match?.id;
 
     // 招式认不出来：不推进回合，只提示可选招式
-    if (!action) {
+    if (!match || !action) {
       const battle = this.store.get(sessionKey) ?? null;
       this.logger.debug('招式无法识别', { sessionKey, rawAction });
       return { text: narrateUnknownAction(battle), battle };
@@ -84,9 +86,10 @@ export class GameService {
 
     const next = resolveTurn(battle, action, this.now());
     this.store.set(sessionKey, next);
-    this.logger.info('玩家出招', { sessionKey, battleId: next.id, turn: next.turn, action });
+    this.logger.info('玩家出招', { sessionKey, battleId: next.id, turn: next.turn, action, chant: match.chant });
 
-    return { text: `${prefix}${narrateTurn(next, action)}`, battle: next };
+    const chantLine = match.chant ? narrateChant(match.chant) : '';
+    return { text: `${prefix}${chantLine}${narrateTurn(next, action)}`, battle: next };
   }
 
   /** 查看当前战况 */

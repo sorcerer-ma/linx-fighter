@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ACTIONS, parseAction } from '../src/game/actions.js';
+import { ACTIONS, matchAction, parseAction } from '../src/game/actions.js';
 
 describe('招式识别', () => {
   it('精确匹配中文与英文', () => {
@@ -29,6 +29,24 @@ describe('招式识别', () => {
     assert.equal(parseAction('躲闪'), 'dodge');
     assert.equal(parseAction('回七'), 'recover');
     assert.equal(parseAction('调西片刻'), 'recover');
+  });
+
+  it('念出唤出指令也能出招，并带回原文', () => {
+    assert.deepEqual(matchAction('共鸣斩破军'), { id: 'attack', chant: '共鸣斩破军' });
+    assert.equal(parseAction('我要用共鸣壁卸力'), 'dodge');
+    assert.equal(parseAction('一息气自回'), 'recover');
+    // 普通说法出招时不带唤出指令，播报里也就不会回念
+    assert.deepEqual(matchAction('攻击'), { id: 'attack' });
+  });
+
+  it('唤出指令唯一，且不会互相包含', () => {
+    const chants = Object.values(ACTIONS).flatMap((meta) => meta.chants ?? []);
+    assert.equal(new Set(chants).size, chants.length);
+    for (const a of chants) {
+      for (const b of chants) {
+        if (a !== b) assert.ok(!a.includes(b), `${a} 不应包含 ${b}`);
+      }
+    }
   });
 
   it('无关的话不会被误判', () => {
