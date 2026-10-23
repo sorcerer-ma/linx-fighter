@@ -26,6 +26,23 @@ export function createApp(deps: AppDependencies): express.Express {
   const { config, logger, store, service } = deps;
   const app = express();
   app.disable('x-powered-by');
+
+  // 记下每一个入站请求：接入阶段用来看"平台到底有没有打过来、打的是哪个路径"
+  app.use((req, res, next) => {
+    const startedAt = Date.now();
+    res.on('finish', () => {
+      if (req.path === '/health') return;
+      logger.info(res.statusCode === 404 ? '收到未知路径请求' : '收到 HTTP 请求', {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        ms: Date.now() - startedAt,
+        contentType: req.headers['content-type'] ?? '',
+      });
+    });
+    next();
+  });
+
   app.use(express.json({ limit: '256kb' }));
 
   const sessions = new Map<string, McpSession>();
@@ -48,7 +65,8 @@ export function createApp(deps: AppDependencies): express.Express {
   });
 
   // 平台用 GET 建立 SSE 长连接，并在后续 POST 请求里带上设备与会话头
-  app.get('/mcp', async (req, res) => {
+  // /sse 是平台文档示例里的路径，一并接受，减少控制台地址写法带来的困扰
+  app.get(['/mcp', '/sse'], async (req, res) => {
     const ctx = createDeviceContext(randomUUID());
     applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
 
