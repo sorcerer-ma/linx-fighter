@@ -1,5 +1,6 @@
 import { loadConfig } from './config.js';
 import { GameService } from './game/service.js';
+import { createIntentResolver } from './game/intent.js';
 import { createApp } from './http/app.js';
 import { createLogger } from './log.js';
 import { BattleStore } from './store/battles.js';
@@ -11,7 +12,16 @@ const logger = createLogger(config.logLevel);
 
 const store = new BattleStore({ ttlMs: config.battleTtlMs });
 const rooms = new RoomStore({ ttlMs: config.battleTtlMs });
-const service = new GameService({ store, rooms, logger });
+// 配了 OpenRouter Key 才启用意图模型；没配时只走规则匹配，不影响可玩性
+const intent = config.openrouterApiKey
+  ? createIntentResolver({
+      apiKey: config.openrouterApiKey,
+      model: config.openrouterModel,
+      timeoutMs: config.intentTimeoutMs,
+      logger,
+    })
+  : undefined;
+const service = new GameService({ store, rooms, logger, intent });
 const app = createApp({ config, logger, store, rooms, service });
 
 const server = app.listen(config.port, config.host, () => {
@@ -21,6 +31,7 @@ const server = app.listen(config.port, config.host, () => {
     address: `http://${config.host}:${config.port}`,
     sse: '/mcp',
     debugEndpoints: config.enableDebugEndpoints,
+    intentModel: intent ? config.openrouterModel : 'disabled',
   });
 });
 

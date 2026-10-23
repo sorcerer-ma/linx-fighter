@@ -198,6 +198,14 @@ describe('提示与房间播报', () => {
     assertSpeakable(text);
   });
 
+  it('双人房里已出手的一方再开口，只提示等对手应对', () => {
+    const state = battle('player', 'pvp');
+    state.pending = { actor: 'player', move: 'light', damage: 3 };
+    const text = narrateUnknownAction(state);
+    assert.match(text, /已经出手/);
+    assertSpeakable(text);
+  });
+
   it('五种不合法原因都有玩家能听懂的解释', () => {
     const state = battle();
     assert.match(narrateRejection(state, { reason: 'wrong-stage', action: 'light' }), /只能应对|还没轮到你/);

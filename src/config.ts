@@ -15,6 +15,12 @@ export interface AppConfig {
   battleTtlMs: number;
   /** 是否暴露 /debug/* 调试端点，生产环境建议关闭 */
   enableDebugEndpoints: boolean;
+  /** OpenRouter API Key；为空时不启用意图模型，只用规则匹配 */
+  openrouterApiKey?: string;
+  /** 意图模型名，默认 google/gemma-4-26b-a4b-it */
+  openrouterModel: string;
+  /** 意图模型超时（毫秒），超时按没认出来处理 */
+  intentTimeoutMs: number;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -40,5 +46,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel,
     battleTtlMs: Math.max(60, parseInteger(env.BATTLE_TTL_SECONDS, 1800)) * 1000,
     enableDebugEndpoints: parseBoolean(env.ENABLE_DEBUG_ENDPOINTS, env.NODE_ENV !== 'production'),
+    openrouterApiKey: env.OPENROUTER_API_KEY?.trim() || undefined,
+    openrouterModel: env.OPENROUTER_MODEL?.trim() || 'google/gemma-4-26b-a4b-it',
+    intentTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.INTENT_TIMEOUT_MS, 1500))),
   };
 }

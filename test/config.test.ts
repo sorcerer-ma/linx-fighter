@@ -10,6 +10,9 @@ describe('配置解析', () => {
       logLevel: 'info',
       battleTtlMs: 1_800_000,
       enableDebugEndpoints: true,
+      openrouterApiKey: undefined,
+      openrouterModel: 'google/gemma-4-26b-a4b-it',
+      intentTimeoutMs: 1500,
     });
   });
 
@@ -39,6 +42,16 @@ describe('配置解析', () => {
     assert.equal(loadConfig({ NODE_ENV: 'production', ENABLE_DEBUG_ENDPOINTS: 'YES' }).enableDebugEndpoints, true);
     assert.equal(loadConfig({ ENABLE_DEBUG_ENDPOINTS: 'off' }).enableDebugEndpoints, false);
     assert.equal(loadConfig({ ENABLE_DEBUG_ENDPOINTS: ' ' }).enableDebugEndpoints, true);
+  });
+
+  it('意图模型配置：Key 去空白、模型可覆盖、超时钳制', () => {
+    assert.equal(loadConfig({ OPENROUTER_API_KEY: '  sk-test  ' }).openrouterApiKey, 'sk-test');
+    assert.equal(loadConfig({ OPENROUTER_API_KEY: '   ' }).openrouterApiKey, undefined);
+    assert.equal(loadConfig({}).openrouterApiKey, undefined);
+    assert.equal(loadConfig({ OPENROUTER_MODEL: ' google/gemma-4-26b-a4b-it ' }).openrouterModel, 'google/gemma-4-26b-a4b-it');
+    assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '50' }).intentTimeoutMs, 200);
+    assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '9000' }).intentTimeoutMs, 5000);
+    assert.equal(loadConfig({ INTENT_TIMEOUT_MS: 'oops' }).intentTimeoutMs, 1500);
   });
 
   it('监听地址可覆盖且去空白', () => {

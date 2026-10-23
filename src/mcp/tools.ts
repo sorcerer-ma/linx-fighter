@@ -44,9 +44,9 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
   const { service, logger, ctx } = deps;
 
   // 统一包装：异常不外抛，转成玩家能听懂的一句失败播报，同时记日志
-  const invoke = (tool: string, run: () => ServiceResult) => {
+  const invoke = async (tool: string, run: () => ServiceResult | Promise<ServiceResult>) => {
     try {
-      const result = run();
+      const result = await run();
       logger.debug('工具调用完成', {
         tool,
         sessionKey: battleKey(ctx),

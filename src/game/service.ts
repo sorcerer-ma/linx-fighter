@@ -1,8 +1,9 @@
 import type { Logger } from '../log.js';
 import type { BattleStore } from '../store/battles.js';
 import type { Room, RoomStore } from '../store/rooms.js';
-import { matchAction } from './actions.js';
+import { matchAction, type ActionMatch } from './actions.js';
 import { advanceBattle, createBattle, resolveTurn } from './engine.js';
+import type { IntentResolver, IntentStage } from './intent.js';
 import {
   narrateAutoStart,
   narrateBattleStart,
@@ -46,6 +47,8 @@ export interface GameServiceDeps {
   /** 便于单测注入固定时间与随机数，生产用默认值 */
   now?: () => number;
   random?: () => number;
+  /** JEV 意图模型；不传则只走规则匹配 */
+  intent?: IntentResolver;
 }
 
 /**
@@ -61,6 +64,7 @@ export class GameService {
   private readonly logger: Logger;
   private readonly now: () => number;
   private readonly random: () => number;
+  private readonly intent?: IntentResolver;
 
   constructor(deps: GameServiceDeps) {
     this.store = deps.store;
@@ -68,6 +72,7 @@ export class GameService {
     this.logger = deps.logger;
     this.now = deps.now ?? Date.now;
     this.random = deps.random ?? Math.random;
+    this.intent = deps.intent;
   }
 
   /** 开一局：单人、开双人房，或凭房间号加入 */
@@ -96,15 +101,15 @@ export class GameService {
   }
 
   /** 执行一次玩家出招或应对 */
-  act(sessionKey: string, rawAction: string): ServiceResult {
+  async act(sessionKey: string, rawAction: string): Promise<ServiceResult> {
     const room = this.rooms.byPlayer(sessionKey);
     if (room) return this.actPvp(sessionKey, room, rawAction);
 
-    const match = matchAction(rawAction);
-    if (!match) {
-      const battle = this.store.get(sessionKey) ?? null;
+    const direct = matchAction(rawAction);
+    // 没有对局又认不出招式：不自动开局，避免随便一句话就开一局
+    if (!direct && !this.store.get(sessionKey)) {
       this.logger.debug('招式无法识别', { sessionKey, rawAction });
-      return { text: narrateUnknownAction(battle), battle };
+      return { text: narrateUnknownAction(null), battle: null };
     }
 
     let battle = this.store.get(sessionKey);
@@ -125,6 +130,12 @@ export class GameService {
 
     if (battle.phase !== 'battle') {
       return { text: narrateEnded(battle), battle };
+    }
+
+    const match = direct ?? (await this.resolveWithIntent(rawAction, battle, 'player'));
+    if (!match) {
+      this.logger.debug('招式无法识别', { sessionKey, rawAction });
+      return { text: `${prefix}${narrateUnknownAction(battle)}`, battle };
     }
 
     const result = resolveTurn(battle, match.id, this.now());
@@ -243,7 +254,7 @@ export class GameService {
   }
 
   /** 双人出招：按对局键判断视角，结算后写回基准对局 */
-  private actPvp(sessionKey: string, room: Room, rawAction: string): ServiceResult {
+  private async actPvp(sessionKey: string, room: Room, rawAction: string): Promise<ServiceResult> {
     const canonical = this.store.get(pvpBattleKey(room.code));
     if (!canonical) {
       this.rooms.remove(room.code);
@@ -259,7 +270,7 @@ export class GameService {
     }
 
     const view = viewAs(canonical, side);
-    const match = matchAction(rawAction);
+    const match = matchAction(rawAction) ?? (await this.resolveWithIntent(rawAction, view, 'player'));
     if (!match) {
       this.logger.debug('双人招式无法识别', { sessionKey, room: live.code, rawAction });
       return { text: narrateUnknownAction(view), battle: view };
@@ -323,6 +334,25 @@ export class GameService {
     return { text: `${narrateStatus(view)}`, battle: view };
   }
 
+  /** 规则没认出来时，交给 JEV 模型归一化；不在自己的回合就不打扰模型 */
+  private async resolveWithIntent(rawAction: string, battle: Battle, side: Side): Promise<ActionMatch | null> {
+    if (!this.intent) return null;
+    const stage = stageFor(battle, side);
+    if (!stage) return null;
+    let id: Awaited<ReturnType<IntentResolver['resolve']>>;
+    try {
+      id = await this.intent.resolve(rawAction, stage);
+    } catch (error) {
+      this.logger.warn('意图模型调用异常，按没认出来处理', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+    if (!id) return null;
+    this.logger.info('意图模型归一化', { text: rawAction, action: id, stage });
+    return { id };
+  }
+
   /** 双人回合播报：轮次信息并进最后一句，保证最多两句 */
   private pvpTurnText(battle: Battle, events: BattleEvent[]): string {
     const narration = narrateTurn(battle, events);
@@ -354,4 +384,11 @@ export class GameService {
     if (battle.firstMover !== 'enemy') return battle;
     return advanceBattle(battle, this.now()).battle;
   }
+}
+
+/** 当前视角所处的阶段：等自己出招 → active，等自己应对 → response，其余 null */
+function stageFor(battle: Battle, side: Side): IntentStage | null {
+  if (battle.phase !== 'battle') return null;
+  if (battle.pending) return battle.pending.actor === side ? null : 'response';
+  return battle.active === side ? 'active' : null;
 }

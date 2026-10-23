@@ -69,13 +69,13 @@ function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>): string
   const hpLeft = Math.max(0, event.targetHp);
   const crit = event.crit ? '暴击，' : '';
   if (event.response === 'guard') {
-    return `${attacker}${verb}，${target}格挡，${crit}掉${event.damage}点气血，剩${hpLeft}`;
+    return `${attacker}${verb}，${crit}${target}格挡，掉${event.damage}点气血，剩${hpLeft}`;
   }
   if (event.response === 'dodge') {
-    return `${attacker}${verb}，${target}没躲干净，${crit}擦中${event.damage}点，剩${hpLeft}`;
+    return `${attacker}${verb}，${crit}${target}没躲干净，擦中${event.damage}点，剩${hpLeft}`;
   }
   const take = event.forced ? '真气耗尽只能硬扛' : '硬扛';
-  return `${attacker}${verb}，${target}${take}，${crit}掉${event.damage}点，剩${hpLeft}`;
+  return `${attacker}${verb}，${crit}${target}${take}，掉${event.damage}点，剩${hpLeft}`;
 }
 
 /** 终局一句 */
@@ -170,6 +170,9 @@ export function narrateTurnHint(battle: Battle): string {
 
 /** 认不出招式：不消耗回合，只提示可选说法 */
 export function narrateUnknownAction(battle: Battle | null): string {
+  if (battle?.pending && battle.mode === 'pvp' && battle.pending.actor === 'player') {
+    return '你已经出手了，等对手应对。';
+  }
   const hint = battle?.pending
     ? `可以说${responseActionLabels().join('、')}`
     : `可以说${activeActionLabels().join('、')}`;
