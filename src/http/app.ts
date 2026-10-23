@@ -179,14 +179,14 @@ export function createApp(deps: AppDependencies): express.Express {
       res.json({ ok: true, text: result.text, battle: result.battle });
     });
 
-    app.post('/debug/action', (req, res) => {
+    app.post('/debug/action', async (req, res) => {
       const body = asRecord(req.body);
       const action = asText(body.action);
       if (!action) {
         res.status(400).json({ ok: false, error: '缺少 action 参数，例如 {"action":"攻击"}' });
         return;
       }
-      const result = service.act(debugBattleKey(req), action);
+      const result = await service.act(debugBattleKey(req), action);
       res.json({ ok: true, text: result.text, battle: result.battle });
     });
 

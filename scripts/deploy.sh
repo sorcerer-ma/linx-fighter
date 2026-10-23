@@ -14,7 +14,7 @@ echo "==> 编译"
 pnpm build
 
 echo "==> 同步到 ${HOST}:${DIR}"
-rsync -az --delete --exclude node_modules \
+rsync -az --delete --exclude node_modules --exclude .env \
   dist package.json pnpm-lock.yaml pnpm-workspace.yaml \
   "${HOST}:${DIR}/"
 
