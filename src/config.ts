@@ -48,6 +48,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableDebugEndpoints: parseBoolean(env.ENABLE_DEBUG_ENDPOINTS, env.NODE_ENV !== 'production'),
     openrouterApiKey: env.OPENROUTER_API_KEY?.trim() || undefined,
     openrouterModel: env.OPENROUTER_MODEL?.trim() || 'google/gemma-4-26b-a4b-it',
-    intentTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.INTENT_TIMEOUT_MS, 1500))),
+    intentTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.INTENT_TIMEOUT_MS, 2000))),
   };
 }

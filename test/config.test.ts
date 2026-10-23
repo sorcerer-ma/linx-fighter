@@ -12,7 +12,7 @@ describe('配置解析', () => {
       enableDebugEndpoints: true,
       openrouterApiKey: undefined,
       openrouterModel: 'google/gemma-4-26b-a4b-it',
-      intentTimeoutMs: 1500,
+      intentTimeoutMs: 2000,
     });
   });
 
@@ -51,7 +51,7 @@ describe('配置解析', () => {
     assert.equal(loadConfig({ OPENROUTER_MODEL: ' google/gemma-4-26b-a4b-it ' }).openrouterModel, 'google/gemma-4-26b-a4b-it');
     assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '50' }).intentTimeoutMs, 200);
     assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '9000' }).intentTimeoutMs, 5000);
-    assert.equal(loadConfig({ INTENT_TIMEOUT_MS: 'oops' }).intentTimeoutMs, 1500);
+    assert.equal(loadConfig({ INTENT_TIMEOUT_MS: 'oops' }).intentTimeoutMs, 2000);
   });
 
   it('监听地址可覆盖且去空白', () => {

@@ -150,7 +150,7 @@ flowchart LR
 | `ENABLE_DEBUG_ENDPOINTS` | 非生产环境开启 | 是否暴露 `/debug/*` |
 | `OPENROUTER_API_KEY` | 空 | 配置后启用 JEV 意图模型；为空只用规则匹配 |
 | `OPENROUTER_MODEL` | `google/gemma-4-26b-a4b-it` | 意图模型名 |
-| `INTENT_TIMEOUT_MS` | `1500` | 意图模型超时，超时按没认出来处理 |
+| `INTENT_TIMEOUT_MS` | `2000` | 意图模型超时，超时按没认出来处理 |
 
 ## 测试与质量
 

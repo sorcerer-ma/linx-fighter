@@ -19,6 +19,11 @@ describe('意图模型', () => {
     assert.equal(parseIntentContent('{"action":"take","confidence":0.7}', 'response'), 'take');
   });
 
+  it('容忍代码块与前后解释', () => {
+    assert.equal(parseIntentContent('```json\n{"action":"ult","confidence":0.9}\n```', 'active'), 'ult');
+    assert.equal(parseIntentContent('判断结果：{"action":"heavy","confidence":0.8}。', 'active'), 'heavy');
+  });
+
   it('置信度不足、unknown、跨阶段、非法内容都按没认出来处理', () => {
     assert.equal(parseIntentContent('{"action":"heavy","confidence":0.69}', 'active'), null);
     assert.equal(parseIntentContent('{"action":"unknown","confidence":0.99}', 'active'), null);
@@ -37,7 +42,7 @@ describe('意图模型', () => {
     assert.equal(actionOfStage('response', 'charge'), false);
   });
 
-  it('调用 OpenRouter：模型、JSON Schema、Authorization 都正确', async () => {
+  it('调用 OpenRouter：模型、低延迟路由、Authorization 都正确', async () => {
     let captured: { url: string; init: RequestInit } | undefined;
     const resolver = createIntentResolver({
       apiKey: 'sk-test',
@@ -55,14 +60,8 @@ describe('意图模型', () => {
     assert.equal(headers.Authorization, 'Bearer sk-test');
     const body = JSON.parse(String(seen.init.body));
     assert.equal(body.model, 'google/gemma-4-26b-a4b-it');
-    assert.equal(body.response_format.json_schema.strict, true);
-    assert.deepEqual(body.response_format.json_schema.schema.properties.action.enum, [
-      'light',
-      'heavy',
-      'ult',
-      'charge',
-      'unknown',
-    ]);
+    assert.equal(body.provider.sort, 'latency');
+    assert.equal(body.max_tokens, 32);
   });
 
   it('非 200、网络异常、缺少 content、低置信度都回退为 null', async () => {

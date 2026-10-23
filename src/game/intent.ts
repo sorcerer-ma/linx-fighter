@@ -44,19 +44,6 @@ const STAGE_HINT: Record<IntentStage, string> = {
   response: '应对阶段：guard 格挡（挡、防御）、dodge 闪避（躲开）、take 承受（硬扛、不躲）',
 };
 
-/** 模型只允许返回当前阶段的招式或 unknown */
-function schemaFor(stage: IntentStage): object {
-  return {
-    type: 'object',
-    properties: {
-      action: { type: 'string', enum: [...STAGE_MENU[stage], 'unknown'] },
-      confidence: { type: 'number' },
-    },
-    required: ['action', 'confidence'],
-    additionalProperties: false,
-  };
-}
-
 /** 解析模型返回的 JSON 内容；export 出来给单测用 */
 export function parseIntentContent(
   content: string,
@@ -67,7 +54,15 @@ export function parseIntentContent(
   try {
     parsed = JSON.parse(content);
   } catch {
-    return null;
+    // 模型偶尔会包一层代码块或加一句解释，退一步取第一个完整对象
+    const start = content.indexOf('{');
+    const end = content.lastIndexOf('}');
+    if (start === -1 || end <= start) return null;
+    try {
+      parsed = JSON.parse(content.slice(start, end + 1));
+    } catch {
+      return null;
+    }
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
   const record = parsed as { action?: unknown; confidence?: unknown };
@@ -88,7 +83,7 @@ export function actionOfStage(stage: IntentStage, action: ActionId): action is A
 
 export function createIntentResolver(options: IntentResolverOptions): IntentResolver {
   const model = options.model ?? DEFAULT_INTENT_MODEL;
-  const timeoutMs = options.timeoutMs ?? 1500;
+  const timeoutMs = options.timeoutMs ?? 2000;
   const fetchImpl = options.fetchImpl ?? fetch;
 
   return {
@@ -103,6 +98,7 @@ export function createIntentResolver(options: IntentResolverOptions): IntentReso
           body: JSON.stringify({
             model,
             temperature: 0,
+            max_tokens: 32,
             // 同一模型有多个 provider，语音场景优先挑延迟最低的
             provider: { sort: 'latency' },
             messages: [
@@ -110,14 +106,11 @@ export function createIntentResolver(options: IntentResolverOptions): IntentReso
                 role: 'system',
                 content:
                   '你是语音对战游戏的意图识别器。只把玩家的话归一化成招式，不要解释、不要编数值。' +
-                  `当前${STAGE_HINT[stage]}。与出招无关的话返回 unknown。`,
+                  `当前${STAGE_HINT[stage]}。与出招无关的话返回 unknown。` +
+                  '只输出一个 JSON 对象，格式 {"action":"招式或unknown","confidence":0到1}，不要代码块、不要多余文字。',
               },
               { role: 'user', content: text },
             ],
-            response_format: {
-              type: 'json_schema',
-              json_schema: { name: 'intent', strict: true, schema: schemaFor(stage) },
-            },
           }),
           signal: AbortSignal.timeout(timeoutMs),
         });

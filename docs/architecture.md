@@ -90,7 +90,7 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 ### 12. 意图模型只做归一化，规则匹配永远优先
 
-JEV（`src/game/intent.ts`）接在 `matchAction` 之后：规则认不出、且轮到该玩家时，才把原话和当前阶段发给 OpenRouter（`response_format` 用 JSON Schema 锁招式枚举），置信度 ≥ 0.7 才采纳。模型不产出数值、不改对局状态；超时 1.5 秒、HTTP 异常、返回越界都回退为「没听出来」，因此断网也能玩。未配 `OPENROUTER_API_KEY` 时整层不启用。
+JEV（`src/game/intent.ts`）接在 `matchAction` 之后：规则认不出、且轮到该玩家时，才把原话和当前阶段发给 OpenRouter（`response_format` 用 JSON Schema 锁招式枚举），置信度 ≥ 0.7 才采纳。模型不产出数值、不改对局状态；超时 2 秒、HTTP 异常、返回越界都回退为「没听出来」，因此断网也能玩。未配 `OPENROUTER_API_KEY` 时整层不启用。
 
 ### 11. 错误不外抛
 
