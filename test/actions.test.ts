@@ -19,6 +19,18 @@ describe('招式识别', () => {
     assert.equal(parseAction('向右闪避！'), 'dodge');
   });
 
+  it('容忍 ASR 同音/近音误识别', () => {
+    // 平台侧 ASR 会把「攻击」转成「公鸡」这类同音字，只能在我们这层兜住
+    assert.equal(parseAction('公鸡'), 'attack');
+    assert.equal(parseAction('我要公鸡你'), 'attack');
+    assert.equal(parseAction('工击'), 'attack');
+    assert.equal(parseAction('多开'), 'dodge');
+    assert.equal(parseAction('防疫'), 'dodge');
+    assert.equal(parseAction('躲闪'), 'dodge');
+    assert.equal(parseAction('回七'), 'recover');
+    assert.equal(parseAction('调西片刻'), 'recover');
+  });
+
   it('无关的话不会被误判', () => {
     assert.equal(parseAction(''), null);
     assert.equal(parseAction('   '), null);
