@@ -8,8 +8,8 @@
 - **分工**：ASR、TTS、唤醒都在灵犀平台侧，本服务只接收文字、只返回文字。不要引入语音库、不要处理音频。
 - **命名**：中文名「共鸣：闻声对决」（暂定）；英文名 `linx-fighter` 用于仓库名、包名、服务名、`systemd` 单元与镜像名。面向玩家的文案用中文名。如需改名，搜这几处并同步灵犀控制台的智能体名称与提示词：`README.md`、`docs/linx-integration.md`、`src/mcp/server.ts`、`src/mcp/tools.ts`、`src/game/narrator.ts`、`src/http/app.ts`、`src/index.ts`、`test/mcp.e2e.test.ts`。
 - **截止**：黑客松评审 2026-10-26 09:00 现场演示，时间以小时计。优先级 **闭环能玩 > 数值平衡 > 打磨**；每个需求先问「演示必须吗」。
-- **现状**：MCP 双传输、对局状态、播报已打通；命中、伤害、对手行动、胜负仍是占位，接入点集中在 `src/game/engine.ts` 的 `resolveTurn` 与 `TODO(玩法)`。
-- **路线**：PVP 双人对战在规划中，服务端要预留配对与房间；演示阶段可以只做口头承诺，底层视时间再实现。
+- **现状**：v0.2 玩法（七招、真气循环、伤害加成、先手补偿）、AI 对手、双人联机（房间号 + 视角镜像）与 JEV 意图模型均已落地；规则对拍 256,000 局零漂移，部署在 `100.100.61.41`。
+- **路线**：演示前以稳定性为主，数值平衡与观战/回放留到评审后；双人联机已可用，断线重连与超时判负未做。
 - **明确不做**（除非用户要求）：多实例/Redis/数据库、账号体系、前端页面、可观测性平台、容器编排。
 
 ## 资料
@@ -34,6 +34,8 @@ pnpm coverage   # 覆盖率并校验阈值（行 95% / 分支 90% / 函数 95%�
 pnpm typecheck  # 唯一的静态门禁（没有 lint）
 pnpm demo       # 不连 MCP，直接看每个指令的播报
 pnpm smoke      # 真实调用链自检（默认 http://127.0.0.1:8000）
+pnpm validate   # 规则对拍：复刻 PR 参考仿真 256,000 局
+pnpm coverage:lcov # 生成 coverage/lcov.info（CI 上传 Codecov）
 ```
 
 每次改完至少跑 `pnpm typecheck`。`pnpm test` 与 `pnpm coverage` 不必每个任务都跑，按天收口：每天收工前跑一遍并保持全绿、行覆盖 ≥ 95%。改玩法必须补测试；补覆盖率要补有断言的用例，不要为了数字写空转测试。
@@ -45,12 +47,15 @@ pnpm smoke      # 真实调用链自检（默认 http://127.0.0.1:8000）
 | 要改什么 | 改哪里 |
 | --- | --- |
 | 招式、口语别名、ASR 误识别、唤出指令 | `src/game/types.ts` 的 `ActionId` + `src/game/actions.ts` 的 `ACTIONS` |
-| 回合结算、数值、胜负 | `src/game/engine.ts` 的 `resolveTurn` |
+| 回合结算、数值、胜负 | `src/game/engine.ts` 的 `resolveTurn`；数值在 `src/game/rules.ts` |
+| 对手 AI | `src/game/enemy.ts` |
+| 双人房间与视角 | `src/game/pvp.ts`、`src/store/rooms.ts` |
+| 意图模型 | `src/game/intent.ts`（规则在 `actions.ts`） |
 | 播报文案 | `src/game/narrator.ts` |
 | 业务流程（开局 / 出招 / 战况 / 说明） | `src/game/service.ts` |
 | 工具定义与参数 | `src/mcp/tools.ts`、`src/mcp/server.ts` |
 | 路由、传输、请求头 | `src/http/app.ts` |
-| 存储 | `src/store/battles.ts`（对外 `get/set/delete/sweep/size` 不变） |
+| 存储 | `src/store/battles.ts`、`src/store/rooms.ts`（对外 `get/set/delete/sweep/size` 不变） |
 
 ## 语音输入
 
@@ -58,7 +63,7 @@ ASR 在平台侧，错误是常态（「攻击」被识别成「公鸡」）。�
 
 - `matchAction` 必须容忍同音/近音（公鸡、工击 → 攻击）和句中夹杂（「我要公鸡你」）。常见误识别按招式维护在 `ACTIONS.asrErrors` 里，与口语别名区分开，新增招式时一并补误识别样例。
 - 每招两条中二「唤出指令」（`ACTIONS.chants`，如「共鸣斩破军」）：整句靠包含匹配命中，命中后播报先回念一句；一个唤出词只映射一招，不能影响单字别名「打」「躲」的精确匹配。
-- 可选方向（未选型）：加一层「文本 → 招式 + 置信度」的决策模型（如 JEV/LAYA 一类），让说法更自由。约束：规则匹配必须作为兜底；模型只归一化意图，不产出数值、不改对局状态；要能离线跑、低延迟；选型定了先更新本节。
+- 已接入 JEV 意图模型（`src/game/intent.ts`，OpenRouter 上的 `google/gemma-4-26b-a4b-it`）：规则匹配优先，规则认不出时把「文本 → 招式 + 置信度」交给模型，置信度 ≥ 0.7 才生效，只归一化意图、不产出数值、不改对局状态；超时 1.5 秒、失败/异常一律按没认出来处理。未配 `OPENROUTER_API_KEY` 时只用规则匹配，测试全部用假 fetch，不依赖网络。
 
 ## 规则
 
@@ -70,7 +75,7 @@ ASR 在平台侧，错误是常态（「攻击」被识别成「公鸡」）。�
 6. **身份只从请求头来**：`X-Linx-Device-Id` / `X-Linx-Agent-Id` / `X-Linx-Session-Id` 由平台注入，不进工具入参；对局键是 `deviceId#agentId`，不要按 session 存。
 7. **两套传输都留着**：平台实测走 `POST /mcp`（Streamable HTTP），SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）保持兼容，`DELETE /mcp` 直接 200。改路由前先看 `docs/architecture.md` 的设计决策。
 8. **招式扩展不新增工具**：扩 `ActionId` 复用 `game_action`；工具总数控制在 5 个以内（平台侧模型工具越多越容易选错）。只有需要驱动设备动作才返回 `structuredContent.funcs`（`linx_play` / `linx_stop` / `change_role`），`content.text` 保持可读。
-9. **数值集中**：可调参数放 `engine.ts` 顶部常量或独立数值表，不散落魔法数字；同时把取值与理由写进 `docs/game-design.md`。
+9. **数值集中**：可调参数放 `src/game/rules.ts`，不散落魔法数字；同时把取值与理由写进 `docs/game-design.md`。
 10. **日志**用 `src/log.ts` 的 `createLogger` 结构化字段（`logger.info('消息', { ... })`），不要 `console.log`（`log.ts` 内部除外）。
 11. **不加依赖、不扩栈**：需要新库先问；单实例内存存储够用。
 12. **README 是门面**：新增命令、端点、请求头、配置项或测试文件时，同步更新 `README.md` 的对应表格与目录结构；README 里只写已验证的行为，不写计划中的能力。

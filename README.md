@@ -1,25 +1,31 @@
 # 共鸣：闻声对决（linx-fighter）
 
+[![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
+
 > 灵犀语音硬件上的 1v1 回合制对战。玩家用嘴下令，服务端持有对局并裁定每一手；平台侧只负责听、说和调用工具。
 
 中文名「共鸣：闻声对决」为暂定名；仓库名、包名、`systemd` 单元与镜像名统一用 `linx-fighter`。
 
-当前进度：**框架阶段**。MCP 链路、对局状态管理、语音招式识别与播报已完成并有测试覆盖；命中判定、伤害公式、对手策略、胜负结算仍待接入，接入点集中在 `src/game/engine.ts` 的 `resolveTurn`，见 [docs/game-design.md](docs/game-design.md)。
+当前进度：**v0.2 玩法已落地**。七种招式、真气循环、伤害加成、先手补偿、AI 对手与双人联机（房间号 + 视角镜像）全部接通；结算由服务端唯一裁定，并用 PR 参考仿真的 256,000 局做数值对拍。规则与调参见 [docs/game-design.md](docs/game-design.md)。
 
 ## 一次语音出招是怎么走完的
 
-1. 玩家对设备说「攻击」，灵犀平台完成唤醒、ASR 与意图理解；
+1. 玩家对设备说「强攻」，灵犀平台完成唤醒、ASR 与意图理解；
 2. 平台把意图交给智能体，智能体调用 MCP 工具 `game_action`，设备与智能体身份通过请求头传入；
-3. 服务端按 `deviceId#agentId` 取出对局，识别招式、推进回合、生成播报文本；
-4. 平台把返回文本 TTS 给玩家，一回合结束。
+3. 服务端按 `deviceId#agentId` 取出对局：主动阶段先锁伤害，再把出手回合交给对手（单人走 AI，双人等另一位玩家）；
+4. 对手出招后，玩家说「格挡」「闪避」或「承受」完成应对，服务端结算、判胜负、生成播报；
+5. 平台把返回文本 TTS 给玩家，一回合结束。
 
 所有数值与胜负只以服务端为准（`src/game/engine.ts`），平台侧模型不需要记忆对局状态。
 
 ## 核心能力
 
-- **语音即操作，不止认关键词**：口语别名（攻击 / 打 / 砍、闪避 / 躲开、回气 / 调息）、句中夹杂（「我要公鸡你」）、ASR 同音误识别（「公鸡」「工击」→ 攻击，「闪币」→ 闪避）都能命中；每招另有中二唤出指令（「共鸣斩破军」「流光换位」），念出来会被回念一句。
-- **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示可选招式。语音错误是常态，不能让玩家白丢一手。
-- **没有对局也能直接开口**：首句「攻击」自动开局，降低演示与试玩门槛。
+- **完整回合制玩法**：普攻 / 强攻 / 大招 / 蓄力 / 格挡 / 闪避 / 承受；真气上限 5、主动阶段回气、第 3 轮起伤害加成、先手 14 血 / 后手 18 血、大招一局一次。
+- **语音即操作，不止认关键词**：口语别名（强攻 / 猛攻 / 抡、格挡 / 防御、承受 / 硬抗）、句中夹杂（「我要公鸡你」）、ASR 同音误识别（「公鸡」「工击」→ 普攻，「墙攻」「抢攻」→ 强攻，「大召」→ 大招）；每招另有中二唤出指令（「共鸣斩破军」「天倾共此声」），念出来会被回念一句。
+- **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；配了 OpenRouter Key 时再叠一层 JEV 意图模型，把「给我狠狠来一下」这类自由说法归一化成招式，规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。
+- **AI 对手**：按「能斩杀优先、保大招、血线安全时攒气、否则先避免致死再最小期望伤害」做效用打分，不掷随机数；单人随时能开局。策略见 [docs/ai-enemy.md](docs/ai-enemy.md)。
+- **双人联机**：说「开双人房」得到 4 位房间号，对手「加入房间1234」即可开打；对局键仍是 `deviceId#agentId`，每个玩家看到自己的视角，服务端做镜像。
+- **没有对局也能直接开口**：首句「普攻」自动开局，降低演示与试玩门槛。
 - **对局按「设备 + 智能体」归属**：断线重连、多轮对话不丢对局；不同设备天然隔离。
 - **两套传输并存**：Streamable HTTP（`POST /mcp`，平台实测走这条）与 SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）；`DELETE /mcp` 直接 200，避免客户端收尾时报错。
 - **为「听」而写的播报**：文案口语化、单次两句内，不用 Markdown、列表或 emoji——`content[].text` 会被原样念出来。
@@ -43,11 +49,13 @@ pnpm smoke      # 真实调用链自检：initialize → tools/list → 开局 /
 其他常用命令：
 
 ```bash
-pnpm typecheck  # 唯一的静态门禁（没有 lint）
-pnpm test       # 单元测试 + MCP 协议端到端
-pnpm coverage   # 覆盖率并校验阈值（行 95% / 分支 90% / 函数 95%）
-pnpm build      # 编译到 dist/
-pnpm start      # 运行编译产物
+pnpm typecheck     # 唯一的静态门禁（没有 lint）
+pnpm test          # 单元测试 + MCP 协议端到端
+pnpm coverage      # 覆盖率并校验阈值（行 95% / 分支 90% / 函数 95%）
+pnpm coverage:lcov # 生成 coverage/lcov.info，供 Codecov 上传
+pnpm validate      # 规则对拍：8 种策略 × 组合 2000 局，共 256,000 局
+pnpm build         # 编译到 dist/
+pnpm start         # 运行编译产物
 ```
 
 ## MCP 接口
@@ -56,9 +64,9 @@ pnpm start      # 运行编译产物
 
 | 工具 | 玩家说法 | 说明 |
 | --- | --- | --- |
-| `game_start` | 「开始游戏」「来一局」 | 开一局新对局，覆盖未结束的旧对局；可传 `opponent` 指定对手 |
-| `game_action` | 「攻击」「躲开」「回气」「共鸣斩破军」 | 识别招式并推进一个回合，返回播报 |
-| `game_status` | 「战况如何」「我还剩多少血」 | 播报双方气血、真气与回合数 |
+| `game_start` | 「开始游戏」「来一局」「开双人房」「加入房间1234」 | 开一局新对局，覆盖未结束的旧对局；`mode: "pvp"` 建房，`room` 加入房间，`opponent` 指定单人对手 |
+| `game_action` | 「强攻」「格挡」「闪避」「共鸣斩破军」 | 识别招式并推进一个阶段，返回播报 |
+| `game_status` | 「战况如何」「我还剩多少血」 | 播报双方气血、真气与当前阶段 |
 | `game_help` | 「怎么玩」 | 播报玩法说明 |
 
 工具总数刻意控制在 5 个以内：平台侧模型工具越多越容易选错。
@@ -71,8 +79,8 @@ pnpm start      # 运行编译产物
 | `/mcp`、`/sse` | GET | 建立 SSE 长连接，先推 `endpoint` 事件给出 POST 地址 |
 | `/mcp/message?sessionId=<id>` | POST | 老式 SSE 通道：接收 JSON-RPC，响应从 SSE 流返回 |
 | `/mcp` | DELETE | 会话收尾，直接返回 200 |
-| `/health` | GET | 健康检查：状态、对局数、运行时长 |
-| `/debug/*` | GET/POST | 调试接口：`start` / `action` / `status` / `state`，默认仅非生产环境开启 |
+| `/health` | GET | 健康检查：状态、对局数、房间数、运行时长 |
+| `/debug/*` | GET/POST | 调试接口：`start` / `action` / `status` / `state`，默认仅非生产环境开启；`start` 支持 `mode` 与 `room` |
 
 ### 身份
 
@@ -88,7 +96,7 @@ pnpm start      # 运行编译产物
 
 ```json
 {
-  "content": [{ "type": "text", "text": "第 1 回合，你出了「攻击」。……" }],
+  "content": [{ "type": "text", "text": "你一记强攻，对手格挡，只掉了3点气血，还剩12点。轮到你应对。" }],
   "isError": false
 }
 ```
@@ -101,11 +109,15 @@ ASR 在平台侧，同音与近音错误只能由我们兜住。识别按「整�
 
 | 招式 | 口语别名（节选） | 唤出指令 | 常见误识别 |
 | --- | --- | --- | --- |
-| 攻击 | 打、砍、斩、劈、揍、出手 | 共鸣斩破军、音波裂空 | 公鸡、工击、攻鸡、公机 |
-| 闪避 | 躲、闪、躲开、闪开、防御、防 | 流光换位、回声疾步 | 闪币、朵开、多开、防疫、防预 |
-| 回气 | 调息、回血、蓄气、聚气、运功、恢复 | 归元纳息、回响充能 | 回七、回器、回汽、汇气、调西、蓄汽 |
+| 普攻 light | 打、砍、斩、劈、揍、出手 | 共鸣斩破军、音波裂空 | 公鸡、工击、攻鸡、公机 |
+| 强攻 heavy | 猛攻、重击、大招之外的硬拼 | 千军共鸣、裂帛之势 | 墙攻、抢攻、抢功、强工 |
+| 大招 ult | 绝招、必杀、奥义 | 天倾共此声、万籁俱鸣 | 大召、大照、大招儿、大沼 |
+| 蓄力 charge | 聚气、调息、攒气、运功 | 归元纳息、回响充能 | 回七、蓄汽、续力、续利、聚汽 |
+| 格挡 guard | 防御、挡、架招、护体 | 声海化金汤、共鸣成壁 | 哥挡、鸽挡、隔挡、各挡 |
+| 闪避 dodge | 躲、闪、躲开、闪开 | 流光换位、回声疾步 | 闪币、朵开、多开、闪闭 |
+| 承受 take | 硬扛、硬吃、不躲、吃伤害 | — | 成受、乘受、承受伤害、成兽 |
 
-匹配规则集中在 `src/game/actions.ts`；一个唤出词只映射一招，不能影响单字别名（「打」「躲」）的精确匹配。
+匹配规则集中在 `src/game/actions.ts`；一个唤出词只映射一招，单字别名「打」「躲」只走整句精确匹配，不会误伤。
 
 ## 架构
 
@@ -114,13 +126,16 @@ flowchart LR
   Device[灵犀语音硬件] -- WebSocket --> Platform[灵犀平台<br/>ASR · TTS · 设备路由]
   Platform -- "POST /mcp / GET /sse + POST /mcp/message" --> Http[HTTP 外壳<br/>Express]
   Http --> Mcp[MCP 层<br/>工具注册 · 设备上下文]
-  Mcp --> Game[对局服务<br/>开局 · 出招 · 战况 · 说明]
+  Mcp --> Game[对局服务<br/>单人 / 双人分流]
   Game --> Engine[回合引擎<br/>结算与胜负]
+  Game --> Enemy[AI 对手<br/>决策模型]
+  Game --> Pvp[双人联机<br/>房间号 · 视角镜像]
   Game --> Narrator[播报文案]
   Game --> Store[(对局存储<br/>内存 + TTL)]
+  Pvp --> Store
 ```
 
-依赖只允许自上而下：`http` → `mcp` → `game` → `store`。`engine` / `narrator` 不 import MCP 或 HTTP，所以 `scripts/demo.ts` 脱离协议就能跑。分层职责、已定决策与扩展指引见 [docs/architecture.md](docs/architecture.md)。
+依赖只允许自上而下：`http` → `mcp` → `game` → `store`。`engine` / `enemy` / `pvp` / `narrator` 不 import MCP 或 HTTP，所以 `scripts/demo.ts` 脱离协议就能跑。分层职责、已定决策与扩展指引见 [docs/architecture.md](docs/architecture.md)。
 
 ## 配置
 
@@ -131,27 +146,39 @@ flowchart LR
 | `PORT` | `8000` | 监听端口 |
 | `HOST` | `0.0.0.0` | 监听地址 |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error`，日志为单行 JSON |
-| `BATTLE_TTL_SECONDS` | `1800` | 对局空闲过期时间 |
+| `BATTLE_TTL_SECONDS` | `1800` | 对局与房间的空闲过期时间 |
 | `ENABLE_DEBUG_ENDPOINTS` | 非生产环境开启 | 是否暴露 `/debug/*` |
+| `OPENROUTER_API_KEY` | 空 | 配置后启用 JEV 意图模型；为空只用规则匹配 |
+| `OPENROUTER_MODEL` | `google/gemma-4-26b-a4b-it` | 意图模型名 |
+| `INTENT_TIMEOUT_MS` | `1500` | 意图模型超时，超时按没认出来处理 |
 
 ## 测试与质量
 
-`node:test` + 内置覆盖率，不引入额外测试框架。当前 58 个用例，行覆盖 98.3%、分支覆盖 94.8%、函数覆盖 99.0%；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。
+[![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
+
+`node:test` + 内置覆盖率，不引入额外测试框架。当前 **160 个用例**，行覆盖 **98.7%**、分支覆盖 **94.7%**、函数覆盖 **99.0%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
-| `test/actions.test.ts` | 招式表、精确与包含匹配、ASR 误识别、唤出指令、空输入 |
+| `test/actions.test.ts` | 七招表、精确与包含匹配、ASR 误识别、唤出指令唯一性、空输入 |
+| `test/engine.test.ts` | 初始化与先手、伤害/暴击/格挡/闪避、强制承受、真气与大招限制、轮次加成、胜负、纯函数与 seed 复现、双人 pending |
+| `test/enemy.test.ts` | AI 主动/应对决策、斩杀优先、保大招、血线攒气、致死规避 |
+| `test/intent.test.ts` | 意图模型解析、置信度阈值、阶段校验、OpenRouter 调用与失败回退 |
+| `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
+| `test/pvp.test.ts` | 建房/加入、视角镜像、双人出招与应对、房间校验、超时 |
+| `test/rooms.test.ts` | 房间号生成与复用、加入/满员/重复加入、玩家索引、过期清理 |
+| `test/service.test.ts` | 开局 / 出招 / 战况 / 说明、单人 AI 先手、错误文案、双人分流 |
+| `test/simulation.test.ts` | MT19937 复现 + 2000 局镜像快速对拍 |
 | `test/config.test.ts` | 环境变量解析、默认值与非法值回退 |
 | `test/context.test.ts` | 请求头到身份、对局键、头缺失时的兜底 |
 | `test/store.test.ts` | 内存存储读写、TTL 过期、容量上限 |
-| `test/service.test.ts` | 开局 / 出招 / 战况 / 说明的业务流程与播报 |
 | `test/log.test.ts` | 级别过滤、单行 JSON 输出、stderr 分流 |
 | `test/tools.test.ts` | 工具注册与业务异常转 `isError` |
-| `test/http.test.ts` | 路由、健康检查、SSE 握手、调试接口、404 与非法 JSON |
+| `test/http.test.ts` | 路由、健康检查、SSE 握手、调试接口（含双人房）、404 与非法 JSON |
 | `test/streamable.test.ts` | Streamable HTTP：initialize / tools/list / tools/call |
-| `test/mcp.e2e.test.ts` | 完整对局链路、多设备隔离、无对局自动开局 |
+| `test/mcp.e2e.test.ts` | 完整对局链路、多设备隔离、无对局自动开局、双人房 |
 
-CI 在 [.github/workflows/ci.yml](.github/workflows/ci.yml)：安装依赖 → 类型检查 → 覆盖率门禁 → 构建产物。
+规则对拍单独跑：`pnpm validate` 会用纯 TS 复刻 PR 参考仿真的 8 种策略、各组合 2000 局（共 256,000 局），与 `test/fixtures/v02-validation.json` 逐项比对，任何数值、随机数或结算顺序漂移都会以非零退出码失败。CI 在 [.github/workflows/ci.yml](.github/workflows/ci.yml)：安装依赖 → 类型检查 → 覆盖率门禁 → 规则对拍 → 生成 lcov 并上传 Codecov → 构建产物。
 
 ## 部署
 
@@ -183,7 +210,8 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | --- | --- |
 | [README.md](README.md) | 现状、命令、接口、部署 |
 | [docs/architecture.md](docs/architecture.md) | 请求链路、分层职责、已定设计决策 |
-| [docs/game-design.md](docs/game-design.md) | 玩法施工图：已实现 / 待定 / 每项改哪里 |
+| [docs/game-design.md](docs/game-design.md) | v0.2 规则、数值、AI、双人联机与验证 |
+| [docs/ai-enemy.md](docs/ai-enemy.md) | AI 决策模型、权重与自博弈结果 |
 | [docs/linx-integration.md](docs/linx-integration.md) | 平台接入、提示词、排障 |
 | [AGENTS.md](AGENTS.md) | 给 AI 协作者的仓库规范 |
 
@@ -197,29 +225,39 @@ src/
   config.ts           环境变量解析
   log.ts              单行 JSON 日志
   game/
-    types.ts          数据模型：Fighter / Battle / TurnRecord / ActionResult
-    actions.ts        招式定义、口语别名与 ASR 容错
-    engine.ts         创建对局、回合结算（玩法机制接入点）
+    types.ts          数据模型：Fighter / Battle / TurnRecord / 事件
+    actions.ts        七招定义、口语别名、ASR 容错与唤出指令
+    rules.ts          数值表：气血、真气、伤害、暴击、闪避
+    rng.ts            由 seed 派生的可复现随机数
+    engine.ts         创建对局、双阶段结算与胜负（纯函数）
+    enemy.ts          AI 对手的决策模型
+    intent.ts         JEV 意图模型：自然语言归一化招式（规则优先）
+    pvp.ts            双人视角镜像与房间号工具
     narrator.ts       播报文案
-    service.ts        游戏编排：开局 / 出招 / 战况 / 说明
+    service.ts        游戏编排：单人/双人分流
   mcp/
     context.ts        设备上下文与对局归属键
     server.ts         McpServer 创建与 instructions
     tools.ts          工具注册
   http/app.ts         路由：Streamable HTTP / SSE、健康检查、调试接口
-  store/battles.ts    对局存储（内存 + TTL）
+  store/
+    battles.ts        对局存储（内存 + TTL）
+    rooms.ts          房间存储与玩家索引
 scripts/
   demo.ts             脱离 MCP 直接跑播报
   smoke.ts            真实调用链自检
+  validate-v02.ts     256,000 局规则对拍
   deploy.sh           内网部署脚本
-test/                 单元测试 + MCP 协议端到端测试
-docs/                 架构、玩法、接入文档与平台官方文档
+test/
+  helpers/            MT19937、仿真策略与夹具
+  fixtures/           v02-validation.json
+  *.test.ts           单元测试 + MCP 端到端
+docs/                 架构、玩法、AI、接入文档与平台官方文档
 ```
 
 ## 下一步
 
-1. 接入玩法机制：对手行动选择、命中判定、伤害与回气公式、胜负结算（`resolveTurn`）。
-2. 数值平衡与播报打磨，调参理由写进 `docs/game-design.md`。
-3. PVP：配对与房间独立于现有 1v1，不改 `Battle` 语义；无人可配时 AI 兜底，保证随时能玩。
-4. 语音意图决策模型（未选型）：在规则匹配之外加一层「文本 → 招式 + 置信度」，规则匹配始终作兜底。
-5. 按需扩展：Redis 存储、对局结算音效（`structuredContent.funcs` 触发 `linx_play`）。
+1. 数值平衡与播报打磨，调参理由写进 `docs/game-design.md`，并重跑 `pnpm validate`。
+2. 意图模型提示词与阈值调优（真实 OpenRouter Key 下的误识别率、延迟）。
+3. 双人断线重连提示、房间内再来一局、观战与回放。
+4. 按需扩展：Redis 存储、对局结算音效（`structuredContent.funcs` 触发 `linx_play`）。

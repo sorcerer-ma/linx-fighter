@@ -8,7 +8,7 @@
   → 灵犀平台（意图识别 + 带 Function Call 的模型）
   → MCP 客户端：POST /mcp 直接发 JSON-RPC（Streamable HTTP）
   → 本服务 tools.ts / http/app.ts
-  → GameService → engine.ts（结算）+ narrator.ts（播报）
+  → GameService → engine.ts（结算）+ enemy.ts（AI）+ pvp.ts（双人视角）+ narrator.ts（播报）
   → 工具返回 text
   → 平台模型把 text 念给玩家
 ```
@@ -21,10 +21,12 @@
 | --- | --- | --- |
 | 接入层 | `src/http/app.ts` | 两种 MCP 传输（Streamable HTTP / SSE）、设备上下文提取、调试接口 |
 | 协议层 | `src/mcp/server.ts`、`src/mcp/tools.ts` | MCP Server 创建、工具注册与参数校验、异常兜底 |
-| 编排层 | `src/game/service.ts` | 开局 / 出招 / 战况 / 说明的业务流程，读改写存储 |
-| 规则层 | `src/game/engine.ts`、`src/game/actions.ts` | 招式定义、回合结算（待补玩法） |
-| 表现层 | `src/game/narrator.ts` | 播报文案，只依赖对局状态 |
-| 存储层 | `src/store/battles.ts` | 对局读写与过期清理 |
+| 编排层 | `src/game/service.ts` | 开局 / 出招 / 战况 / 说明，单人/双人分流，读改写存储 |
+| 规则层 | `src/game/engine.ts`、`src/game/rules.ts` | 回合结算与全部数值，纯函数、随机数由 seed 派生 |
+| 策略层 | `src/game/enemy.ts` | AI 对手的决策模型，只读公开视角、不掷随机数 |
+| 联机层 | `src/game/pvp.ts` | 房间号、双人视角镜像与写回 |
+| 表现层 | `src/game/narrator.ts` | 播报文案，只依赖对局状态与事件 |
+| 存储层 | `src/store/battles.ts`、`src/store/rooms.ts` | 对局与房间的读写、过期清理 |
 
 依赖方向自上而下，规则层不感知 MCP，因此可以用 `scripts/demo.ts` 脱离协议直接跑玩法。
 
@@ -62,26 +64,43 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 框架阶段没有设备动作（音效、换角色）的需求。返回纯文本对平台侧模型最稳，不需要它理解额外结构。以后要播报音效，再按平台文档在 `structuredContent.funcs` 里下发 `linx_play`，工具的 `content.text` 保持不变即可。
 
-### 5. 认不出招式不消耗回合
+### 5. 随机数全部由对局 seed 派生
+
+`engine.resolveTurn` 保持纯函数，暴击/闪避的随机数来自 `battle.seed` 的计数器（`rng.ts`），不散用 `Math.random`。这样同一 seed 能逐位复现，仿真对拍才有意义：`pnpm validate` 用 CPython 同款 MT19937 重跑 256,000 局，任何结算顺序或数值漂移都会报错。
+
+### 6. 双人联机用「视角镜像」而不复制一套引擎
+
+`Battle` 内部以 `mode: 'solo' | 'pvp'` 区分是否跑 AI。双人模式下，每个玩家读到的都是自己的视角（`pvp.viewAs` 把 `player`/`enemy` 互换），写回时再换回基准视角（`canonicalize`）。引擎结算逻辑只有一份，房间号与「对局键 → 房间」索引放在 `RoomStore`。
+
+### 7. AI 是决策模型，不是随机权重
+
+对手按「能斩杀优先、保大招、血线安全时攒气、否则先避免致死再最小期望伤害」做效用打分（`docs/ai-enemy.md`）。它不掷随机数，所有随机性只来自引擎，因此 AI 变化不会破坏对拍。
+
+### 8. 认不出招式不消耗回合
 
 语音识别错误很常见（「攻击」被识别成「公鸡」）。此时推进回合会让玩家莫名掉血/掉气，体验很差；正确的做法是提示可选招式、保持状态不变，让玩家重说一遍。
 
-### 6. 没有对局时直接出招自动开局
+### 9. 没有对局时直接出招自动开局
 
 玩家第一句往往就是「攻击」而不是「开始游戏」。自动开局避免了一次无意义的往返，播报里会说明「先给你开了一局」。
 
-### 7. 每个 SSE 连接一个 McpServer 实例
+### 10. 每个 SSE 连接一个 McpServer 实例
 
 `McpServer` 内部保存每个连接的协议状态（初始化、能力协商），多连接共用一个实例会串会话。所以 `createMcpServer()` 在 `GET /mcp` 里按连接创建。
 
-### 8. 错误不外抛
+### 12. 意图模型只做归一化，规则匹配永远优先
+
+JEV（`src/game/intent.ts`）接在 `matchAction` 之后：规则认不出、且轮到该玩家时，才把原话和当前阶段发给 OpenRouter（`response_format` 用 JSON Schema 锁招式枚举），置信度 ≥ 0.7 才采纳。模型不产出数值、不改对局状态；超时 1.5 秒、HTTP 异常、返回越界都回退为「没听出来」，因此断网也能玩。未配 `OPENROUTER_API_KEY` 时整层不启用。
+
+### 11. 错误不外抛
 
 工具内部异常统一转成 `isError: true` + 一句玩家能听懂的提示，并记 error 日志。协议层保持 202 正常返回，避免平台侧模型拿到看不懂的协议错误后乱编结果。
 
 ## 扩展指引
 
-- **加招式**：在 `types.ts` 的 `ActionId` 加枚举，在 `actions.ts` 加 `ActionMeta`（含中文名与口语别名），工具参数无需改动；结算逻辑在 `engine.ts`。
-- **加属性**（如护甲、连击数）：加在 `Fighter`，同步 `narrator.ts` 的播报与 `engine.ts` 的初始值。
+- **加招式**：在 `types.ts` 的 `ActionId` 加枚举，在 `actions.ts` 加 `ActionMeta`（含中文名、口语别名、ASR 误识别与唤出指令），工具参数无需改动；数值加到 `rules.ts`，结算逻辑在 `engine.ts`，并补 `test/actions.test.ts` 与仿真对拍。
+- **调数值**：只改 `src/game/rules.ts`，同步 `docs/game-design.md` 与 `test/fixtures/v02-validation.json`（跑 `pnpm validate` 会告诉你哪项漂了）。
+- **加属性**（如护甲、连击数）：加在 `Fighter`，同步 `narrator.ts` 的播报、`engine.ts` 的初始值，并确认 `pvp.swapSides` 仍然成立。
 - **换存储**：实现与 `BattleStore` 相同的 `get` / `set` / `delete` / `sweep` / `size`，在 `index.ts` 替换构造即可。
 - **多实例部署**：除了换 Redis 存储，还要注意 SSE 连接与 POST 必须落到同一实例（会话粘滞），否则 POST 找不到本地 transport。若做无状态部署，需要把会话注册表也放进共享存储。
 - **可观测性**：所有关键动作（连接建立/关闭、开局、出招、工具失败）都有结构化日志，接日志采集时按 `message` 字段建索引。
