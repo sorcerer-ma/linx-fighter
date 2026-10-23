@@ -106,16 +106,25 @@ test/                 单元测试 + MCP 协议端到端测试
 
 ## 部署
 
+当前部署在七牛云内网机器 `100.100.61.41:8000`，systemd 托管（`linx-fighter.service`，运行用户 `linx`，代码在 `/opt/linx-fighter`）。控制台填 `http://100.100.61.41:8000/mcp`。
+
+```bash
+systemctl status linx-fighter
+journalctl -u linx-fighter -f    # 实时日志
+```
+
+也可以用 Docker：
+
 ```bash
 docker build -t linx-fighter .
 docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 ```
 
-平台需要公网可访问的地址，反向代理务必关闭对 SSE 的缓冲（见 [docs/linx-integration.md](docs/linx-integration.md) 里的 Nginx 配置）。
+平台侧要能访问到该地址，不要求公网；反向代理务必关闭对 SSE 的缓冲（配置见 [docs/linx-integration.md](docs/linx-integration.md)）。
 
 ## 接入灵犀平台
 
-操作步骤、Header 配置、可直接粘贴的智能体提示词都在 [docs/linx-integration.md](docs/linx-integration.md)。
+操作步骤、自检方法与可直接粘贴的智能体提示词都在 [docs/linx-integration.md](docs/linx-integration.md)。
 
 ## 下一步
 

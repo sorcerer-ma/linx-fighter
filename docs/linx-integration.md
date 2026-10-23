@@ -1,16 +1,43 @@
 # 接入灵犀平台
 
-按下面五步把服务接到灵犀设备上。前两步是部署，后三步在灵犀控制台配置。
+按下面五步把服务接到灵犀设备上。前两步是部署与自检，后三步在灵犀控制台配置。
 
-## 1. 部署到公网
+## 1. 部署
 
-平台要从云端访问这个服务，所以需要公网可达地址。
+当前部署在七牛云内网机器 `100.100.61.41`，由 systemd 托管：
+
+| 项 | 值 |
+| --- | --- |
+| 控制台填写的 SSE 地址 | `http://100.100.61.41:8000/mcp` |
+| 代码目录 | `/opt/linx-fighter`（编译后的 `dist/` + 生产依赖） |
+| systemd 单元 | `linx-fighter.service` |
+| 运行用户 | `linx`（无登录权限） |
+
+常用操作：
+
+```bash
+systemctl status linx-fighter     # 状态
+systemctl restart linx-fighter    # 重启
+journalctl -u linx-fighter -f     # 实时日志（单行 JSON）
+```
+
+发布新版本（在开发机仓库根目录执行，一条命令完成编译、同步、装依赖、重启、自检）：
+
+```bash
+scripts/deploy.sh
+```
+
+脚本默认发到 `root@100.100.61.41:/opt/linx-fighter`，换机器时传参：`scripts/deploy.sh root@<主机> /opt/linx-fighter`。
+
+部署到其他机器时也可以用 Docker：
 
 ```bash
 docker build -t linx-fighter .
 docker run -d --name linx-fighter -p 8000:8000 -e LOG_LEVEL=info linx-fighter
 curl http://127.0.0.1:8000/health
 ```
+
+> 平台只要能访问到这个地址即可，不要求公网。灵犀平台本身部署在七牛云，内网机器之间通常可以直连；若确实访问不到，再考虑加公网入口（公网 IP + Nginx、frp 等）。
 
 反向代理（Nginx）必须为 SSE 关闭缓冲，否则平台收不到 `endpoint` 事件，表现为「工具调用超时 / 连不上」：
 
@@ -38,28 +65,31 @@ location /mcp/message {
 
 ## 2. 自检
 
+在开发机或跳板机上执行：
+
 ```bash
 # 健康检查
-curl https://<你的域名>/health
+curl http://100.100.61.41:8000/health
 # 应看到 event: endpoint 和 /mcp/message?sessionId=... 两行
-curl -N -H 'Accept: text/event-stream' --max-time 2 https://<你的域名>/mcp
+curl -N -H 'Accept: text/event-stream' --max-time 2 http://100.100.61.41:8000/mcp
 # 完整协议链路（initialize → tools/list → tools/call）
-pnpm exec tsx scripts/smoke.ts https://<你的域名>
+pnpm exec tsx scripts/smoke.ts http://100.100.61.41:8000
 ```
 
 `smoke.ts` 会把开局、出招、战况的播报文本打印出来；文本正常说明服务端没问题，剩下的是平台侧配置。
 
 ## 3. 控制台：配置自定义 MCP
 
-在灵犀控制台新建「自定义 MCP」，填写：
+在灵犀控制台新建「自定义 MCP」，只需要填地址：
 
 | 配置项 | 值 |
 | --- | --- |
-| SSE 地址 | `https://<你的域名>/mcp` |
-| 请求头 / Header | `X-Linx-Device-Id: ${deviceId}`、`X-Linx-Agent-Id: ${agentId}`、`X-Linx-Session-Id: ${sessionId}` |
+| 服务名称 | 灵犀对决 |
+| SSE 地址 | `http://100.100.61.41:8000/mcp` |
+| 描述 | 语音回合制对战游戏 |
 
+- 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
 - 地址填到 `/mcp` 即可，POST 地址由服务端 `endpoint` 事件下发，不要求 URL 以 `/sse` 结尾。
-- 请求头如果控制台支持变量占位，用平台的占位符；如果只能填静态值，说明该平台的设备上下文头是自动注入的，服务端也能正常拿到（见 `src/mcp/context.ts`）。
 - 配好后控制台通常有「测试/校验」按钮，能看到 4 个工具（`game_start`、`game_action`、`game_status`、`game_help`）即说明连通。
 
 ## 4. 控制台：配置智能体
