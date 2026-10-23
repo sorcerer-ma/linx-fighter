@@ -28,6 +28,9 @@ jobs:
       # 覆盖率为软指标的仓库容易腐化，这里直接按阈值失败
       - run: pnpm coverage
 
+      # 与参考实现逐项对拍，数值/随机数/结算顺序漂移直接失败
+      - run: pnpm validate
+
       # 生成 lcov 供 Codecov 展示（公开仓库可不配 token；私有仓库配 CODECOV_TOKEN secret）
       - run: pnpm coverage:lcov
 
