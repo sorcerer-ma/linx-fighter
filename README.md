@@ -106,11 +106,13 @@ test/                 单元测试 + MCP 协议端到端测试
 
 ## 部署
 
-当前部署在七牛云内网机器 `100.100.61.41:8000`，systemd 托管（`linx-fighter.service`，运行用户 `linx`，代码在 `/opt/linx-fighter`）。控制台填 `http://100.100.61.41:8000/mcp`。
+服务跑在七牛云内网机器 `100.100.61.41`（`linx-fighter.service`，用户 `linx`，代码在 `/opt/linx-fighter`）。内网地址 `http://100.100.61.41:8000/mcp` 平台访问不到，另用 `linx-tunnel.service`（bore 内网穿透）暴露到公网，控制台填 **`http://bore.pub:3216/mcp`**。
 
 ```bash
-systemctl status linx-fighter
-journalctl -u linx-fighter -f    # 实时日志
+systemctl status linx-fighter     # 应用状态
+journalctl -u linx-fighter -f     # 实时日志
+systemctl status linx-tunnel      # 隧道状态（实际端口见 journalctl -u linx-tunnel）
+scripts/deploy.sh                 # 编译 + 同步 + 重启 + 自检
 ```
 
 也可以用 Docker：
@@ -120,7 +122,7 @@ docker build -t linx-fighter .
 docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 ```
 
-平台侧要能访问到该地址，不要求公网；反向代理务必关闭对 SSE 的缓冲（配置见 [docs/linx-integration.md](docs/linx-integration.md)）。
+反向代理 / 隧道务必关闭对 SSE 的缓冲（配置见 [docs/linx-integration.md](docs/linx-integration.md)）。
 
 ## 接入灵犀平台
 

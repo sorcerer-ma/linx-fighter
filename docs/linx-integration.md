@@ -4,22 +4,27 @@
 
 ## 1. 部署
 
-当前部署在七牛云内网机器 `100.100.61.41`，由 systemd 托管：
+服务部署在七牛云内网机器 `100.100.61.41`，由 systemd 托管；由于内网地址平台访问不到，另起了一个公网隧道把 8000 端口暴露出去：
 
 | 项 | 值 |
 | --- | --- |
-| 控制台填写的 SSE 地址 | `http://100.100.61.41:8000/mcp` |
-| 代码目录 | `/opt/linx-fighter`（编译后的 `dist/` + 生产依赖） |
-| systemd 单元 | `linx-fighter.service` |
-| 运行用户 | `linx`（无登录权限） |
+| 控制台填写的 SSE 地址 | `http://bore.pub:3216/mcp` |
+| 备用（内网直连） | `http://100.100.61.41:8000/mcp` |
+| 应用服务 | `linx-fighter.service`，`/opt/linx-fighter`，用户 `linx` |
+| 公网隧道 | `linx-tunnel.service`，bore 客户端 → `bore.pub:3216` → 本机 `127.0.0.1:8000` |
 
 常用操作：
 
 ```bash
-systemctl status linx-fighter     # 状态
-systemctl restart linx-fighter    # 重启
-journalctl -u linx-fighter -f     # 实时日志（单行 JSON）
+systemctl status linx-fighter     # 应用状态
+systemctl restart linx-fighter    # 重启应用
+journalctl -u linx-fighter -f     # 应用日志（单行 JSON，能看到平台来的 SSE 连接与出招）
+
+systemctl status linx-tunnel      # 隧道状态
+journalctl -u linx-tunnel -n 20   # 隧道日志，含 "listening at bore.pub:<端口>"
 ```
+
+隧道说明：`bore` 是开源的内网穿透客户端，连的公共中继 `bore.pub`，只转发 TCP，不做 TLS；端口 `3216` 是启动时申请的固定端口，中继侧若被占用会换端口，届时以日志里的 `listening at` 为准，并同步改控制台地址。隧道重启（`systemctl restart linx-tunnel`）后端口不变。
 
 发布新版本（在开发机仓库根目录执行，一条命令完成编译、同步、装依赖、重启、自检）：
 
@@ -36,8 +41,6 @@ docker build -t linx-fighter .
 docker run -d --name linx-fighter -p 8000:8000 -e LOG_LEVEL=info linx-fighter
 curl http://127.0.0.1:8000/health
 ```
-
-> 平台只要能访问到这个地址即可，不要求公网。灵犀平台本身部署在七牛云，内网机器之间通常可以直连；若确实访问不到，再考虑加公网入口（公网 IP + Nginx、frp 等）。
 
 反向代理（Nginx）必须为 SSE 关闭缓冲，否则平台收不到 `endpoint` 事件，表现为「工具调用超时 / 连不上」：
 
@@ -65,15 +68,15 @@ location /mcp/message {
 
 ## 2. 自检
 
-在开发机或跳板机上执行：
+在开发机或任意能上网的机器上执行：
 
 ```bash
-# 健康检查
-curl http://100.100.61.41:8000/health
+# 健康检查（走公网隧道）
+curl http://bore.pub:3216/health
 # 应看到 event: endpoint 和 /mcp/message?sessionId=... 两行
-curl -N -H 'Accept: text/event-stream' --max-time 2 http://100.100.61.41:8000/mcp
+curl -N -H 'Accept: text/event-stream' --max-time 2 http://bore.pub:3216/mcp
 # 完整协议链路（initialize → tools/list → tools/call）
-pnpm exec tsx scripts/smoke.ts http://100.100.61.41:8000
+pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
 ```
 
 `smoke.ts` 会把开局、出招、战况的播报文本打印出来；文本正常说明服务端没问题，剩下的是平台侧配置。
@@ -85,7 +88,7 @@ pnpm exec tsx scripts/smoke.ts http://100.100.61.41:8000
 | 配置项 | 值 |
 | --- | --- |
 | 服务名称 | 灵犀对决 |
-| SSE 地址 | `http://100.100.61.41:8000/mcp` |
+| SSE 地址 | `http://bore.pub:3216/mcp` |
 | 描述 | 语音回合制对战游戏 |
 
 - 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
@@ -126,7 +129,10 @@ pnpm exec tsx scripts/smoke.ts http://100.100.61.41:8000
 ## 常见问题
 
 **平台连不上 / 工具调用超时**
-多半是代理缓冲了 SSE，或代理把连接当短连接关掉。按第 1 节配置 `proxy_buffering off` 与长 `proxy_read_timeout`，再确认 `/mcp` 的响应头是 `text/event-stream`。
+先分两种情况判断，看 `journalctl -u linx-fighter -f`：
+
+- **完全没有「SSE 连接建立」日志**：平台的请求没到服务端，是网络或地址问题。检查隧道是否在跑（`systemctl status linx-tunnel`、`journalctl -u linx-tunnel | grep listening`），确认控制台填的端口与日志一致，再在外部机器上 `curl http://bore.pub:<端口>/health` 验证。
+- **有连接日志但拿不到工具调用**：多半是中间代理缓冲了 SSE。按第 1 节配置 `proxy_buffering off` 与长 `proxy_read_timeout`，再确认 `/mcp` 的响应头是 `text/event-stream`。
 
 **能连上但模型从不调用工具**
 意图识别模型不支持 Function Call，或智能体没勾选 MCP；也可能是提示词里没写工具用途。换模型 + 重新保存配置 + 重启设备。
