@@ -116,6 +116,11 @@ describe('Streamable HTTP 通道', () => {
     assert.match(status, /第 1 回合/);
   });
 
+  it('会话结束的 DELETE 请求被礼貌接受', async () => {
+    const response = await fetch(`${baseUrl}/mcp`, { method: 'DELETE' });
+    assert.equal(response.status, 200);
+  });
+
   it('通知类消息返回 202 而不是报错', async () => {
     const result = await notify('notifications/initialized');
     assert.ok([200, 202].includes(result.status), `通知应被接受，实际 ${result.status}：${result.text}`);

@@ -135,6 +135,11 @@ export function createApp(deps: AppDependencies): express.Express {
     }
   });
 
+  // 部分客户端结束会话时会 DELETE /mcp；无状态模式没有可销毁的会话，直接 200 让它安静收尾
+  app.delete('/mcp', (_req, res) => {
+    res.status(200).end();
+  });
+
   // 老版 MCP 客户端（SSE）先 GET 建长连接，再用 POST /mcp/message 下发 JSON-RPC，响应走 SSE 通道
   app.post('/mcp/message', async (req, res) => {
     const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
