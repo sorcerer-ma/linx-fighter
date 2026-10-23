@@ -99,6 +99,51 @@ describe('HTTP 外壳', () => {
     assert.equal(body.error, 'internal_error');
   });
 
+  it('调试接口能开双人房并凭房间号加入', async () => {
+    const opened = await fetch(`${baseUrl}/debug/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'pvp' }),
+    });
+    const openedBody = (await opened.json()) as { ok: boolean; text: string; battle: { code?: string; mode: string } };
+    assert.equal(openedBody.ok, true);
+    assert.equal(openedBody.battle.mode, 'pvp');
+    const code = openedBody.text.match(/房间(\d{4})/)![1]!;
+
+    // 换一台设备加入，避免房主自己进自己的房
+    const joined = await fetch(`${baseUrl}/debug/start?device=debug-2`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ room: code }),
+    });
+    const joinedBody = (await joined.json()) as { ok: boolean; text: string };
+    assert.match(joinedBody.text, /进了房间/);
+  });
+
+  it('关闭调试开关后不注册调试路由', async () => {
+    const logger = createLogger('error');
+    const store = new BattleStore({ ttlMs: 60_000 });
+    const rooms = new RoomStore({ ttlMs: 60_000 });
+    const service = new GameService({ store, rooms, logger });
+    const app = createApp({
+      config: { ...loadConfig({}), enableDebugEndpoints: false },
+      logger,
+      store,
+      rooms,
+      service,
+    });
+    const local = await new Promise<Server>((resolve) => {
+      const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+    });
+    try {
+      const address = local.address() as AddressInfo;
+      const response = await fetch(`http://127.0.0.1:${address.port}/debug/state`);
+      assert.equal(response.status, 404);
+    } finally {
+      await new Promise<void>((resolve) => local.close(() => resolve()));
+    }
+  });
+
   it('/sse 别名与 /mcp 一样能建立 SSE 连接', async () => {
     const controller = new AbortController();
     const response = await fetch(`${baseUrl}/sse`, {

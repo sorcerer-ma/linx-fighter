@@ -67,7 +67,7 @@ describe('游戏服务', () => {
     assert.equal(first.battle?.history.length, 1);
     assert.equal(first.battle?.history[0]?.actor, 'player');
     assert.equal(first.battle?.history[0]?.action, 'light');
-    assert.deepEqual(first.battle?.pending, { actor: 'enemy', move: 'heavy', damage: 5 });
+    assert.deepEqual(first.battle?.pending, { actor: 'enemy', move: 'light', damage: 3 });
     assert.equal(first.battle?.player.ap, 2);
     assert.equal(first.battle?.enemy.hp, 17);
     assert.match(first.text, /普攻/);
@@ -77,7 +77,7 @@ describe('游戏服务', () => {
     assert.equal(second.battle?.round, 2);
     assert.equal(second.battle?.pending, null);
     assert.equal(second.battle?.active, 'player');
-    assert.equal(second.battle?.player.hp, 11);
+    assert.equal(second.battle?.player.hp, 13);
     assert.equal(second.battle?.player.ap, 3);
     assert.equal(second.battle?.history.length, 2);
     assert.match(second.text, /格挡/);
@@ -156,7 +156,7 @@ describe('游戏服务', () => {
 
     const result = service.act(KEY, '攻击');
     assert.equal(result.battle?.round, 1);
-    assert.deepEqual(result.battle?.pending, { actor: 'enemy', move: 'heavy', damage: 5 });
+    assert.deepEqual(result.battle?.pending, { actor: 'enemy', move: 'light', damage: 3 });
     assert.match(result.text, /只能应对/);
   });
 

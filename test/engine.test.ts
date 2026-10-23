@@ -90,7 +90,7 @@ describe('对局初始化', () => {
 });
 
 describe('主动阶段与应对结算', () => {
-  it('普攻锁定伤害 3，对手 AI 格挡后掉 1 点，随后对手强攻待应对', () => {
+  it('普攻锁定伤害 3，对手 AI 格挡后掉 1 点，随后对手普攻待应对', () => {
     const battle = playerFirst();
     const result = resolveTurn(battle, 'light', 1, LOCKED);
     const next = result.battle;
@@ -108,10 +108,10 @@ describe('主动阶段与应对结算', () => {
     assert.equal(attack.damage, 1);
     assert.equal(attack.targetHp, 17);
 
-    // 对手进入主动阶段，3 点真气选择强攻，锁定后等玩家格挡/闪避/承受
+    // 对手进入主动阶段，决策模型选择普攻，锁定后等玩家格挡/闪避/承受
     assert.equal(next.pending?.actor, 'enemy');
-    assert.equal(next.pending?.move, 'heavy');
-    assert.equal(next.pending?.damage, 5);
+    assert.equal(next.pending?.move, 'light');
+    assert.equal(next.pending?.damage, 3);
     assert.equal(next.active, 'enemy');
     assert.deepEqual(
       result.events.map((event) => event.type),
@@ -119,13 +119,13 @@ describe('主动阶段与应对结算', () => {
     );
   });
 
-  it('应对对手强攻：格挡后掉 3 点，进入第 2 轮并按规则回复真气', () => {
+  it('应对对手普攻：格挡后掉 1 点，进入第 2 轮并按规则回复真气', () => {
     const afterAttack = turn(playerFirst(), 'light');
     const result = resolveTurn(afterAttack, 'guard', 2, LOCKED);
     const next = result.battle;
 
     assert.equal(result.rejection, undefined);
-    assert.equal(next.player.hp, 11);
+    assert.equal(next.player.hp, 13);
     // 格挡花 1 点，第二轮开始回复 2 点
     assert.equal(next.player.ap, 3);
     assert.equal(next.round, 2);

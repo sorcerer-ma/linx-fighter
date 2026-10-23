@@ -196,6 +196,16 @@ export class GameService {
       return { text: narrateRoomInvalid(), battle: fallback };
     }
 
+    // 房主自己拿房间号加入：不把它登记成加入者，只提示还在等人
+    const existing = this.rooms.get(code);
+    if (existing && existing.hostKey === sessionKey) {
+      this.logger.debug('房主自己加入房间', { sessionKey, room: code });
+      return {
+        text: narrateWaitingRoom(code),
+        battle: fallback ?? this.store.get(pvpBattleKey(code)) ?? null,
+      };
+    }
+
     const joined = this.rooms.join(code, sessionKey);
     if (!joined.ok) {
       this.logger.info('房间加入失败', { sessionKey, room: code, reason: joined.reason });

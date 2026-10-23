@@ -148,6 +148,85 @@ describe('双人联机', () => {
     assert.match(service.start(GUEST, { room: '1000' }).text, /没找到/);
   });
 
+  it('房间号格式不对、房间不存在与满员分别提示', () => {
+    const { service } = setup();
+
+    assert.match(service.start(GUEST, { room: 'abc' }).text, /四位数字/);
+    assert.match(service.start(GUEST, { room: '9999' }).text, /没找到房间9999/);
+
+    service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    service.start(GUEST, { room: code });
+    assert.match(service.start(OTHER, { room: code }).text, /满员/);
+  });
+
+  it('房主自己加入自己的房间只提示等待', () => {
+    const { service } = setup();
+    service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+
+    assert.match(service.start(HOST, { room: code }).text, /还等着对手加入/);
+    assert.equal(findRoom(service, HOST), code);
+  });
+
+  it('房间没等到人时出招与查战况都只提示等待', () => {
+    const { service } = setup();
+    service.start(HOST, { mode: 'pvp' });
+
+    const acted = service.act(HOST, '普攻');
+    assert.match(acted.text, /还等着对手加入/);
+    assert.equal(acted.battle?.history.length, 0);
+
+    const status = service.status(HOST);
+    assert.match(status.text, /还等着对手加入/);
+    assert.match(status.text, /气血/);
+    assert.equal(service.status(GUEST).battle, null);
+  });
+
+  it('双人出招认不出或没轮到时都被挡回', () => {
+    const { service } = setup();
+    service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    service.start(GUEST, { room: code });
+
+    assert.match(service.act(HOST, '跳个舞').text, /没听清/);
+    assert.match(service.act(GUEST, '普攻').text, /还没轮到你/);
+    assert.match(service.status(GUEST).text, /第1轮/);
+  });
+
+  it('房间超时后双方都回到无对局状态', () => {
+    const { service, advance, rooms } = setup();
+    service.start(HOST, { mode: 'pvp' });
+    findRoom(service, HOST);
+
+    advance(60_001);
+    assert.match(service.status(HOST).text, /没有进行中的对局/);
+    assert.match(service.status(GUEST).text, /没有进行中的对局/);
+    assert.equal(rooms.size, 0);
+  });
+
+  it('房间还在但基准对局丢了：战况、出招、加入都会提示房间失效', () => {
+    const { service, store, rooms } = setup();
+
+    service.start(HOST, { mode: 'pvp' });
+    const first = findRoom(service, HOST);
+    store.delete(`pvp:${first}`);
+    assert.match(service.status(HOST).text, /没找到房间/);
+    assert.equal(rooms.size, 0);
+
+    service.start(HOST, { mode: 'pvp' });
+    const second = findRoom(service, HOST);
+    store.delete(`pvp:${second}`);
+    assert.match(service.act(HOST, '普攻').text, /没找到房间/);
+    assert.equal(rooms.size, 0);
+
+    service.start(HOST, { mode: 'pvp' });
+    const third = findRoom(service, HOST);
+    store.delete(`pvp:${third}`);
+    assert.match(service.start(GUEST, { room: third }).text, /没找到房间/);
+    assert.equal(rooms.size, 0);
+  });
+
   it('MCP 工具层能开房与加入', async () => {
     const { service, rooms } = setup();
     const handlers = new Map<string, (input: Record<string, unknown>) => Promise<{
