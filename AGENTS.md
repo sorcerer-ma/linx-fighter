@@ -30,12 +30,13 @@ TypeScript ESM（NodeNext：相对导入必须带 `.js` 后缀）、Node ≥ 20�
 ```bash
 pnpm dev        # tsx watch，0.0.0.0:8000
 pnpm test       # 单元测试 + MCP 端到端
+pnpm coverage   # 覆盖率并校验阈值（行 95% / 分支 90% / 函数 95%）
 pnpm typecheck  # 唯一的静态门禁（没有 lint）
 pnpm demo       # 不连 MCP，直接看每个指令的播报
-pnpm exec tsx scripts/smoke.ts http://127.0.0.1:8000   # 真实调用链自检
+pnpm smoke      # 真实调用链自检（默认 http://127.0.0.1:8000）
 ```
 
-改完必须 `pnpm typecheck && pnpm test` 全绿；改玩法必须补测试。
+每次改完至少跑 `pnpm typecheck`。`pnpm test` 与 `pnpm coverage` 不必每个任务都跑，按天收口：每天收工前跑一遍并保持全绿、行覆盖 ≥ 95%。改玩法必须补测试；补覆盖率要补有断言的用例，不要为了数字写空转测试。
 
 ## 分层与落点
 
@@ -72,7 +73,8 @@ ASR 在平台侧，错误是常态（「攻击」被识别成「公鸡」）。�
 9. **数值集中**：可调参数放 `engine.ts` 顶部常量或独立数值表，不散落魔法数字；同时把取值与理由写进 `docs/game-design.md`。
 10. **日志**用 `src/log.ts` 的 `createLogger` 结构化字段（`logger.info('消息', { ... })`），不要 `console.log`（`log.ts` 内部除外）。
 11. **不加依赖、不扩栈**：需要新库先问；单实例内存存储够用。
-12. **PVP 是新增层**：配对与房间独立于现有 1v1，不改 `Battle` 的语义；玩家身份仍是 `deviceId#agentId`，没有匹配到人时用 AI 兜底，保证演示随时能玩。
+12. **README 是门面**：新增命令、端点、请求头、配置项或测试文件时，同步更新 `README.md` 的对应表格与目录结构；README 里只写已验证的行为，不写计划中的能力。
+13. **PVP 是新增层**：配对与房间独立于现有 1v1，不改 `Battle` 的语义；玩家身份仍是 `deviceId#agentId`，没有匹配到人时用 AI 兜底，保证演示随时能玩。
 
 ## Git 与 PR
 
@@ -97,5 +99,5 @@ gh pr create --fill
 
 - 内网机 `100.100.61.41`，代码 `/opt/linx-fighter`，systemd `linx-fighter.service`；公网靠 `linx-tunnel.service`（bore），控制台填 `http://bore.pub:3216/mcp`。排障见 `docs/linx-integration.md`。
 - 发布用 `scripts/deploy.sh`（编译 → rsync → 装生产依赖 → 重启 → 自检）。
-- 自检：`curl http://127.0.0.1:8000/health`、`pnpm exec tsx scripts/smoke.ts <baseUrl>`。
+- 自检：`curl http://127.0.0.1:8000/health`、`pnpm smoke <baseUrl>`。
 - 演示前不要动隧道、端口、systemd 配置；不提交 `.env`、密钥、`dist/`、`node_modules/`。
