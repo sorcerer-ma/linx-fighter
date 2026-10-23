@@ -7,6 +7,7 @@ import { GameService } from '../src/game/service.js';
 import { createApp } from '../src/http/app.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
+import { RoomStore } from '../src/store/rooms.js';
 
 /**
  * HTTP 外壳测试：路由、健康检查、旧版 SSE 通道、调试接口与兜底错误处理。
@@ -19,11 +20,13 @@ let baseUrl = '';
 before(async () => {
   const logger = createLogger('error');
   const store = new BattleStore({ ttlMs: 60_000 });
-  const service = new GameService({ store, logger, random: () => 0.5 });
+  const rooms = new RoomStore({ ttlMs: 60_000 });
+  const service = new GameService({ store, rooms, logger, random: () => 0 });
   const app = createApp({
     config: { ...loadConfig({}), enableDebugEndpoints: true },
     logger,
     store,
+    rooms,
     service,
   });
 
@@ -143,18 +146,18 @@ describe('HTTP 外壳', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action: '共鸣斩破军' }),
     });
-    const actedBody = (await acted.json()) as { ok: boolean; text: string; battle: { turn: number } };
+    const actedBody = (await acted.json()) as { ok: boolean; text: string; battle: { round: number } };
     assert.equal(actedBody.ok, true);
-    assert.equal(actedBody.battle.turn, 1);
+    assert.equal(actedBody.battle.round, 1);
     assert.match(actedBody.text, /共鸣斩破军/);
 
     const status = await fetch(`${baseUrl}/debug/status`, { method: 'POST' });
-    const statusBody = (await status.json()) as { battle: { turn: number } };
-    assert.equal(statusBody.battle.turn, 1);
+    const statusBody = (await status.json()) as { battle: { round: number } };
+    assert.equal(statusBody.battle.round, 1);
 
     const state = await fetch(`${baseUrl}/debug/state`);
-    const stateBody = (await state.json()) as { key: string; battle: { turn: number } };
+    const stateBody = (await state.json()) as { key: string; battle: { round: number } };
     assert.equal(stateBody.key, 'debug-device#debug-agent');
-    assert.equal(stateBody.battle.turn, 1);
+    assert.equal(stateBody.battle.round, 1);
   });
 });

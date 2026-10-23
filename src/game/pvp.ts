@@ -1,0 +1,58 @@
+import { otherSide, type Battle, type Side } from './types.js';
+
+/** 房间号长度：四位数字，语音里好念也好记 */
+export const ROOM_CODE_LENGTH = 4;
+
+/** 双人联机对局在 BattleStore 里的键：按房间存，不按设备存 */
+export function pvpBattleKey(code: string): string {
+  return `pvp:${code}`;
+}
+
+/**
+ * 房间号归一：接受阿拉伯数字，也容忍语音识别给出的中文数字。
+ * 不足或超过四位直接判为无效，交给播报层提示重说。
+ */
+export function normalizeRoomCode(raw: string): string | null {
+  const digits = raw
+    .replace(/[零一二三四五六七八九]/g, (ch) => String('零一二三四五六七八九'.indexOf(ch)))
+    .replace(/[^0-9]/g, '');
+  return digits.length === ROOM_CODE_LENGTH ? digits : null;
+}
+
+/**
+ * 把服务端基准对局镜像成某一方的视角。
+ * 双人联机里两位玩家各自通过 deviceId#agentId 读状态，引擎只认 player/enemy，
+ * 因此第二位玩家看到的是左右互换后的局面：气血、真气、先手、待应对一起翻转。
+ */
+export function viewAs(battle: Battle, side: Side): Battle {
+  return side === 'player' ? battle : swapSides(battle);
+}
+
+/**
+ * 把某一方视角的结算结果换回服务端基准视角。
+ * 名字恢复成基准对局里的名字，避免互相看到「对手」后写回存储。
+ */
+export function canonicalize(view: Battle, side: Side, base: Battle): Battle {
+  const battle = side === 'player' ? view : swapSides(view);
+  return {
+    ...battle,
+    player: { ...battle.player, name: base.player.name },
+    enemy: { ...battle.enemy, name: base.enemy.name },
+  };
+}
+
+function swapSides(battle: Battle): Battle {
+  return {
+    ...battle,
+    player: { ...battle.enemy, id: 'player', name: '你' },
+    enemy: { ...battle.player, id: 'enemy', name: '对手' },
+    firstMover: otherSide(battle.firstMover),
+    active: otherSide(battle.active),
+    activePhases: {
+      player: battle.activePhases.enemy,
+      enemy: battle.activePhases.player,
+    },
+    pending: battle.pending ? { ...battle.pending, actor: otherSide(battle.pending.actor) } : null,
+    history: battle.history.map((record) => ({ ...record, actor: otherSide(record.actor) })),
+  };
+}

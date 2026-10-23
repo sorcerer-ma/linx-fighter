@@ -7,6 +7,7 @@ import { GameService } from '../src/game/service.js';
 import { createApp } from '../src/http/app.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
+import { RoomStore } from '../src/store/rooms.js';
 import { McpTestClient } from './helpers/mcp-client.js';
 
 /**
@@ -30,12 +31,14 @@ function newBattleStore(): BattleStore {
 before(async () => {
   const logger = createLogger('error');
   const store = newBattleStore();
-  const service = new GameService({ store, logger });
+  const rooms = new RoomStore({ ttlMs: 60_000 });
+  const service = new GameService({ store, rooms, logger, random: () => 0 });
   // 测试里固定开一台随机端口；配置只关心日志与调试开关
   const app = createApp({
     config: { ...loadConfig({}), enableDebugEndpoints: true },
     logger,
     store,
+    rooms,
     service,
   });
 
@@ -118,15 +121,14 @@ describe('MCP 协议链路', () => {
     assert.match(textOf(start), /守擂教头/);
 
     const turn1 = await callTool(client, 'game_action', { action: '攻击' });
-    assert.match(textOf(turn1), /第 1 回合/);
-    assert.match(textOf(turn1), /攻击/);
+    assert.match(textOf(turn1), /普攻/);
+    assert.match(textOf(turn1), /已锁定/);
 
     const turn2 = await callTool(client, 'game_action', { action: 'dodge' });
-    assert.match(textOf(turn2), /第 2 回合/);
-    assert.match(textOf(turn2), /闪避/);
+    assert.match(textOf(turn2), /躲|闪/);
 
     const status = await callTool(client, 'game_status');
-    assert.match(textOf(status), /第 2 回合/);
+    assert.match(textOf(status), /第2轮/);
     assert.match(textOf(status), /气血/);
   });
 
@@ -138,7 +140,7 @@ describe('MCP 协议链路', () => {
     assert.match(textOf(bad), /没听清/);
 
     const status = await callTool(client, 'game_status');
-    assert.match(textOf(status), /第 0 回合/);
+    assert.match(textOf(status), /第1轮/);
   });
 
   it('同一设备重连不丢对局（设备级归属）', async () => {
@@ -150,7 +152,7 @@ describe('MCP 协议链路', () => {
     // 新会话、同设备：对局应继续
     const second = await connect(DEVICE_A, 'session-reconnect-2');
     const status = await callTool(second, 'game_status');
-    assert.match(textOf(status), /第 1 回合/);
+    assert.match(textOf(status), /第1轮/);
   });
 
   it('不同设备的对局互相隔离', async () => {
@@ -170,22 +172,21 @@ describe('MCP 协议链路', () => {
 
     // 换回来，原对局还在
     const back = await callTool(client, 'game_status');
-    assert.match(textOf(back), /第 1 回合/);
+    assert.match(textOf(back), /第1轮/);
   });
 
   it('没有对局时直接出招会自动开局', async () => {
     const client = await connect('device-c', 'auto-start');
     const action = await callTool(client, 'game_action', { action: '回气' });
 
-    assert.match(textOf(action), /先给你开了一局/);
-    assert.match(textOf(action), /第 1 回合/);
-    assert.match(textOf(action), /回气/);
+    assert.match(textOf(action), /先开一局/);
+    assert.match(textOf(action), /蓄力/);
   });
 
   it('玩法说明工具无需对局', async () => {
     const client = await connect('device-d', 'help');
     const help = await callTool(client, 'game_help');
-    assert.match(textOf(help), /攻击/);
+    assert.match(textOf(help), /普攻/);
     assert.match(textOf(help), /开始游戏/);
   });
 
@@ -212,6 +213,6 @@ describe('MCP 协议链路', () => {
       body: JSON.stringify({ action: '攻击' }),
     });
     const actionBody = (await action.json()) as { ok: boolean; text: string };
-    assert.match(actionBody.text, /第 1 回合/);
+    assert.match(actionBody.text, /普攻/);
   });
 });

@@ -9,11 +9,13 @@ import { applyRequestContext, battleKey, createDeviceContext, type DeviceContext
 import { createMcpServer } from '../mcp/server.js';
 import { registerGameTools } from '../mcp/tools.js';
 import type { BattleStore } from '../store/battles.js';
+import type { RoomStore } from '../store/rooms.js';
 
 export interface AppDependencies {
   config: AppConfig;
   logger: Logger;
   store: BattleStore;
+  rooms: RoomStore;
   service: GameService;
 }
 
@@ -24,7 +26,7 @@ interface McpSession {
 }
 
 export function createApp(deps: AppDependencies): express.Express {
-  const { config, logger, store, service } = deps;
+  const { config, logger, store, rooms, service } = deps;
   const app = express();
   app.disable('x-powered-by');
 
@@ -63,6 +65,7 @@ export function createApp(deps: AppDependencies): express.Express {
       service: 'linx-fighter',
       uptimeSeconds: Math.round(process.uptime()),
       battles: store.size,
+      rooms: rooms.size,
     });
   });
 
@@ -169,7 +172,10 @@ export function createApp(deps: AppDependencies): express.Express {
 
     app.post('/debug/start', (req, res) => {
       const body = asRecord(req.body);
-      const result = service.start(debugBattleKey(req), asText(body.opponent));
+      const modeRaw = asText(body.mode);
+      const mode = modeRaw === 'pvp' || modeRaw === 'solo' ? modeRaw : undefined;
+      const room = asText(body.room) || undefined;
+      const result = service.start(debugBattleKey(req), { opponent: asText(body.opponent), mode, room });
       res.json({ ok: true, text: result.text, battle: result.battle });
     });
 

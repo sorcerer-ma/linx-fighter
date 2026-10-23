@@ -3,14 +3,16 @@ import { GameService } from './game/service.js';
 import { createApp } from './http/app.js';
 import { createLogger } from './log.js';
 import { BattleStore } from './store/battles.js';
+import { RoomStore } from './store/rooms.js';
 import { SERVER_NAME, SERVER_VERSION } from './mcp/server.js';
 
 const config = loadConfig();
 const logger = createLogger(config.logLevel);
 
 const store = new BattleStore({ ttlMs: config.battleTtlMs });
-const service = new GameService({ store, logger });
-const app = createApp({ config, logger, store, service });
+const rooms = new RoomStore({ ttlMs: config.battleTtlMs });
+const service = new GameService({ store, rooms, logger });
+const app = createApp({ config, logger, store, rooms, service });
 
 const server = app.listen(config.port, config.host, () => {
   logger.info('灵犀对决 MCP 服务已启动', {

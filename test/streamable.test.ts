@@ -7,6 +7,7 @@ import { GameService } from '../src/game/service.js';
 import { createApp } from '../src/http/app.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
+import { RoomStore } from '../src/store/rooms.js';
 
 /**
  * Streamable HTTP 版 MCP 端到端测试。
@@ -24,11 +25,13 @@ let baseUrl = '';
 before(async () => {
   const logger = createLogger('error');
   const store = new BattleStore({ ttlMs: 60_000 });
-  const service = new GameService({ store, logger });
+  const rooms = new RoomStore({ ttlMs: 60_000 });
+  const service = new GameService({ store, rooms, logger, random: () => 0 });
   const app = createApp({
     config: { ...loadConfig({}), enableDebugEndpoints: false },
     logger,
     store,
+    rooms,
     service,
   });
 
@@ -108,12 +111,12 @@ describe('Streamable HTTP 通道', () => {
     const started = await callTool('game_start', { opponent: '练功木人' });
     assert.match(started, /练功木人/);
 
-    const acted = await callTool('game_action', { action: '闪避' });
-    assert.match(acted, /第 1 回合/);
-    assert.match(acted, /闪避/);
+    const acted = await callTool('game_action', { action: '普攻' });
+    assert.match(acted, /普攻/);
+    assert.match(acted, /已锁定/);
 
     const status = await callTool('game_status');
-    assert.match(status, /第 1 回合/);
+    assert.match(status, /第1轮/);
   });
 
   it('会话结束的 DELETE 请求被礼貌接受', async () => {

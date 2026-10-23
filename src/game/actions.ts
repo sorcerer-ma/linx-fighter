@@ -1,4 +1,4 @@
-import type { ActionId } from './types.js';
+import type { ActionId, ActiveActionId, ResponseMove } from './types.js';
 
 export interface ActionMeta {
   id: ActionId;
@@ -9,38 +9,76 @@ export interface ActionMeta {
   /** ASR 同音/近音的常见误识别（平台侧转写成什么样不由我们决定），只参与匹配，不进提示文案 */
   asrErrors?: string[];
   /** 中二唤出指令：玩家念整句咒语也能出招，命中后原样回念给玩家听 */
-  chants?: string[];
+  chants: string[];
 }
 
+/**
+ * 招式表：主动阶段的普攻、强攻、大招、蓄力，应对阶段的格挡、闪避、承受。
+ *
+ * v0.2 起「攻击/闪避」不再是一组对等按钮：先手方在主动阶段选招，
+ * 后手方在对手出招后选择应对。匹配层只负责把口语归一化成这七种操作。
+ */
 export const ACTIONS: Record<ActionId, ActionMeta> = {
-  attack: {
-    id: 'attack',
-    label: '攻击',
-    aliases: ['攻击', '打', '砍', '揍', '进攻', '出手', '出招', 'attack', 'hit', 'strike'],
-    asrErrors: ['公鸡', '工击', '攻鸡', '公机'],
-    chants: ['共鸣斩破军', '声浪裂长空'],
+  light: {
+    id: 'light',
+    label: '普攻',
+    aliases: ['普攻', '普通攻击', '轻击', '轻攻', '攻击', '打击', '进攻', '出手', '出招', '打', '砍', '斩', '揍', 'attack', 'atk'],
+    asrErrors: ['公鸡', '工击', '攻鸡', '公机', '恭击'],
+    chants: ['共鸣斩破军', '轻锋裂长空'],
+  },
+  heavy: {
+    id: 'heavy',
+    label: '强攻',
+    aliases: ['强攻', '重击', '重攻', '强击', '猛攻', '全力攻击', '大力攻击', '狠打'],
+    asrErrors: ['强公', '墙攻', '强弓', '羌攻', '强功'],
+    chants: ['重锋碎山河', '千钧落星河'],
+  },
+  ult: {
+    id: 'ult',
+    label: '大招',
+    aliases: ['大招', '绝招', '必杀', '必杀技', '绝技', '终极技', '终极大招', '奥义'],
+    asrErrors: ['大召', '大找', '大昭', '打招', '大着'],
+    chants: ['天倾共此声', '万籁俱寂灭'],
+  },
+  charge: {
+    id: 'charge',
+    label: '蓄力',
+    aliases: ['蓄力', '蓄气', '回气', '聚气', '憋大招', '攒气', '蓄势', '调息', '回力', '运气', 'recover'],
+    asrErrors: ['续力', '蓄利', '蓄立', '续气', '回七', '回器', '回汽', '汇气', '调西', '蓄汽'],
+    chants: ['一息归元海', '静听吾心跳'],
+  },
+  guard: {
+    id: 'guard',
+    label: '格挡',
+    aliases: ['格挡', '格档', '抵挡', '防御', '防守', '护盾', '架住', '挡', '防'],
+    asrErrors: ['哥挡', '隔挡', '防预', '房御', '革挡'],
+    chants: ['声海化金汤', '共鸣壁立千仞'],
   },
   dodge: {
     id: 'dodge',
     label: '闪避',
-    aliases: ['闪避', '闪', '躲', '躲开', '躲闪', '躲避', '闪开', '闪身', '避开', '防御', '防守', '防', 'dodge', 'evade', 'block'],
-    asrErrors: ['闪币', '朵开', '多开', '防疫', '防预'],
-    chants: ['共鸣壁卸力', '听风身不沾'],
+    aliases: ['闪避', '躲避', '躲开', '躲闪', '闪开', '闪身', '避开', '回避', '规避', '躲', '闪'],
+    asrErrors: ['闪币', '散避', '朵开', '多开', '防疫', '躲壁'],
+    chants: ['踏歌借流光', '身随声影动'],
   },
-  recover: {
-    id: 'recover',
-    label: '回气',
-    aliases: ['回气', '调息', '蓄气', '聚气', '回力', '运气', 'recover', 'charge', 'rest'],
-    asrErrors: ['回七', '回器', '回汽', '汇气', '调西', '蓄汽'],
-    chants: ['共鸣桩归元', '一息气自回'],
+  take: {
+    id: 'take',
+    label: '承受',
+    aliases: ['承受', '硬抗', '硬扛', '扛住', '吃伤害', '硬吃', '生吃', '扛'],
+    asrErrors: ['成受', '狠抗', '硬坑'],
+    chants: ['以身为剑鞘', '此身擎天地'],
   },
 };
 
+/** 主动阶段可选的招式（给工具描述与提示用） */
+export const ACTIVE_ACTIONS: ActiveActionId[] = ['light', 'heavy', 'ult', 'charge'];
+
+/** 应对阶段可选的招式 */
+export const RESPONSE_ACTIONS: ResponseMove[] = ['guard', 'dodge', 'take'];
+
 /** 生成给工具描述用的招式提示 */
 export function actionHints(): string {
-  return Object.values(ACTIONS)
-    .map((meta) => `${meta.id}（${meta.label}）`)
-    .join('、');
+  return '主动：light（普攻）、heavy（强攻）、ult（大招）、charge（蓄力）；应对：guard（格挡）、dodge（闪避）、take（承受）';
 }
 
 /** 招式中文名，找不到时回退到原始标识 */
@@ -53,9 +91,19 @@ export function actionLabels(): string[] {
   return Object.values(ACTIONS).map((meta) => meta.label);
 }
 
-/** 参与匹配的全部说法：口语别名 + ASR 常见误识别 */
+/** 主动阶段全部招式的中文名 */
+export function activeActionLabels(): string[] {
+  return ACTIVE_ACTIONS.map((id) => actionLabel(id));
+}
+
+/** 应对阶段全部招式的中文名 */
+export function responseActionLabels(): string[] {
+  return RESPONSE_ACTIONS.map((id) => actionLabel(id));
+}
+
+/** 参与匹配的全部说法：推标识 + 口语别名 + ASR 常见误识别 */
 function matchTerms(meta: ActionMeta): string[] {
-  return [...meta.aliases, ...(meta.asrErrors ?? [])];
+  return [meta.id, ...meta.aliases, ...(meta.asrErrors ?? [])];
 }
 
 export interface ActionMatch {
@@ -64,28 +112,38 @@ export interface ActionMatch {
   chant?: string;
 }
 
-/**
- * 把玩家口语归一化成招式，并带回命中的唤出指令。
- * 平台侧 ASR 会把「攻击」转成「公鸡」、「回气」转成「回七」，所以匹配表里同时带误识别样例。
- * 认不出来返回 null，由调用方提示可选招式（不消耗回合）。
- */
-export function matchAction(raw: string): ActionMatch | null {
-  const text = raw
+/** 归一化：去空白与标点、英文转小写，避免 ASR 标点把招式拆开 */
+function normalize(raw: string): string {
+  return raw
     .trim()
     .toLowerCase()
-    .replace(/[\s，,。．.!！?？、"“”'‘’：:；;]/g, '');
+    .replace(/[\s，,。．.!！?？、"“”'‘’：:；;～~…·]/g, '');
+}
+
+/**
+ * 把玩家口语归一化成招式，并带回命中的唤出指令。
+ *
+ * 匹配顺序：
+ * 1. 精确匹配——单字别名（打、躲、防）只在这里生效，避免「打开菜单」被误判；
+ * 2. 包含匹配——长词优先，让「免疫这次公鸡」先命中「公鸡」而不是更短的词；
+ *    唤出指令与普通说法一起按长度排序，命中咒语时回念整句。
+ *
+ * 认不出来返回 null，由调用方提示可选招式（不消耗回合、不改数值）。
+ */
+export function matchAction(raw: string): ActionMatch | null {
+  const text = normalize(raw);
   if (!text) return null;
 
-  // 1. 精确匹配：单字别名（打、躲）只在这里生效，避免「打开菜单」被误判成攻击
+  // 1. 精确匹配：整句就是某个说法（含单字别名与平台直接下发的英文标识）
   for (const meta of Object.values(ACTIONS)) {
-    if (meta.aliases.includes(text)) return { id: meta.id };
+    if (matchTerms(meta).includes(text)) return { id: meta.id };
   }
 
-  // 2. 包含匹配：别名、误识别、唤出指令一起，按长度从长到短，长句咒语优先
+  // 2. 包含匹配：咒语与多字说法按长度从长到短，长句优先
   const candidates = Object.values(ACTIONS)
     .flatMap((meta) => [
       ...matchTerms(meta).map((term) => ({ id: meta.id, term, chant: undefined as string | undefined })),
-      ...(meta.chants ?? []).map((chant) => ({ id: meta.id, term: chant, chant })),
+      ...meta.chants.map((chant) => ({ id: meta.id, term: chant, chant })),
     ])
     .filter(({ term }) => term.length >= 2)
     .sort((a, b) => b.term.length - a.term.length);

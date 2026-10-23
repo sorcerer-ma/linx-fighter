@@ -12,7 +12,18 @@ export interface ToolDependencies {
 }
 
 const startInput = {
-  opponent: z.string().trim().min(1).max(20).optional().describe('对手名字，可不填，由系统安排'),
+  opponent: z.string().trim().min(1).max(20).optional().describe('单人模式的对手名字，可不填，由系统安排'),
+  mode: z
+    .enum(['solo', 'pvp'])
+    .optional()
+    .describe('solo=和 AI 对手单挑（默认）；pvp=开双人房，等另一位玩家凭房间号加入'),
+  room: z
+    .string()
+    .trim()
+    .min(1)
+    .max(12)
+    .optional()
+    .describe('四位房间号，填了就加入该房间，和另一位玩家对打；房主开房时会拿到房间号'),
 };
 
 const actionInput = {
@@ -20,7 +31,9 @@ const actionInput = {
     .string()
     .trim()
     .min(1)
-    .describe('招式：attack=攻击，dodge=闪避，recover=回气；也可以直接填玩家原话，例如「闪避」'),
+    .describe(
+      '招式：主动阶段 light=普攻、heavy=强攻、ult=大招、charge=蓄力；对手出招后 guard=格挡、dodge=闪避、take=承受。也可以直接填玩家原话，例如「闪避」或「共鸣斩破军」',
+    ),
 };
 
 /**
@@ -37,7 +50,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
       logger.debug('工具调用完成', {
         tool,
         sessionKey: battleKey(ctx),
-        turn: result.battle?.turn ?? 0,
+        round: result.battle?.round ?? 0,
       });
       return { content: [{ type: 'text' as const, text: result.text }] };
     } catch (error) {
@@ -57,10 +70,11 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     'game_start',
     {
       title: '开始游戏',
-      description: '开一局新的灵犀对决，会覆盖当前未结束的对局。玩家说「开始游戏」「来一局」「重新开始」时调用。',
+      description:
+        '开一局新的灵犀对决。默认和 AI 对手单挑；玩家要和另一台灵犀对打时说「双人对战」或「开房间」，传 mode=pvp 开房并拿到四位房间号；另一位玩家说「加入房间1234」时传 room。会覆盖当前未结束的对局。',
       inputSchema: startInput,
     },
-    async ({ opponent }) => invoke('game_start', () => service.start(battleKey(ctx), opponent)),
+    async ({ opponent, mode, room }) => invoke('game_start', () => service.start(battleKey(ctx), { opponent, mode, room })),
   );
 
   server.registerTool(
@@ -68,7 +82,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '出招',
       description:
-        '执行玩家本回合的招式，推进一个回合。玩家说出攻击、闪避、回气或它们的同义说法（打、躲、调息等）时调用。招式认不出来时不会推进回合，返回里会提示可选招式。',
+        '执行玩家这一手的招式或应对。轮到玩家主动时可以用普攻、强攻、大招、蓄力；对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。操作不合法时不会推进回合，返回里会说明原因并给可选说法。',
       inputSchema: actionInput,
     },
     async ({ action }) => invoke('game_action', () => service.act(battleKey(ctx), action)),
@@ -78,7 +92,8 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     'game_status',
     {
       title: '查看战况',
-      description: '查看当前对局双方的气血、真气和回合数。玩家问「战况如何」「我还剩多少血」时调用。',
+      description:
+        '查看当前对局双方的气血、真气和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我还剩多少血」时调用。',
       inputSchema: {},
     },
     async () => invoke('game_status', () => service.status(battleKey(ctx))),

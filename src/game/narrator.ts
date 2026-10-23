@@ -1,56 +1,197 @@
-import { actionLabel, actionLabels } from './actions.js';
-import type { ActionId, Battle } from './types.js';
+import { activeActionLabels, responseActionLabels } from './actions.js';
+import type { AttackMove, Battle, BattleEvent, Side, TurnRejection } from './types.js';
 
 /**
  * 播报文案。
  *
- * 这些文字会被平台侧大模型原样朗读给玩家，所以：
- * - 用口语，不用 Markdown、不用列表符号；
- * - 每次只说一两句，避免语音播报太长；
- * - 机制未定稿前不要承诺具体伤害数值，避免和后续规则冲突。
+ * 这些文字会被平台侧原样朗读给玩家，所以：
+ * - 用口语，不用 Markdown、列表符号或括号补充；
+ * - 每次最多两句、尽量 60 字内；
+ * - 数值只说玩家需要知道的：掉了多少气血、还剩多少。
  */
 
-function fighterLine(battle: Battle): string {
-  const { player, enemy } = battle;
-  return `你 气血 ${player.hp}/${player.maxHp}、真气 ${player.qi}/${player.maxQi}；${enemy.name} 气血 ${enemy.hp}/${enemy.maxHp}、真气 ${enemy.qi}/${enemy.maxQi}。`;
+/** 主动招式的口语前缀 */
+const MOVE_VERB: Record<AttackMove, string> = {
+  light: '一记普攻',
+  heavy: '一记强攻',
+  ult: '一记大招',
+};
+
+/** 标点归一：句末统一由拼装函数补「。」 */
+function sentence(text: string): string {
+  return text.replace(/[。．.!！?？]+$/g, '').trim();
 }
 
-/** 开局播报 */
+function sideName(side: Side): string {
+  return side === 'player' ? '你' : '对手';
+}
+
+/** 双方气血与真气，最多两句里的第二句 */
+export function fighterLine(battle: Battle): string {
+  const { player, enemy } = battle;
+  return `你气血${player.hp}/${player.maxHp}、真气${player.ap}；${enemy.name}气血${enemy.hp}/${enemy.maxHp}、真气${enemy.ap}`;
+}
+
+/** 开局播报：对手、先手、初始气血，一句话说清 */
 export function narrateBattleStart(battle: Battle): string {
-  return [
-    `对决开始，你的对手是${battle.enemy.name}。`,
-    fighterLine(battle),
-    `说「攻击」「闪避」或者「回气」出第一手。当前还是框架演示：招式会被记录并推进回合，伤害结算还没接入。`,
-  ].join('\n');
+  const first = battle.firstMover === 'player' ? '你先手' : '对手先手';
+  return `对决开始，你的对手是${battle.enemy.name}，${first}，你${battle.player.hp}点气血，他${battle.enemy.hp}点气血。`;
 }
 
 /** 没有对局、临时开局的提示，会拼在回合播报前面 */
 export function narrateAutoStart(battle: Battle): string {
-  return `没有进行中的对局，先给你开了一局，对手是${battle.enemy.name}。\n`;
-}
-
-/** 单回合播报 */
-export function narrateTurn(battle: Battle, action: ActionId): string {
-  return [`第 ${battle.turn} 回合，你出了「${actionLabel(action)}」。`, fighterLine(battle)].join('\n');
+  return `没有进行中的对局，先开一局，对手是${battle.enemy.name}。`;
 }
 
 /** 玩家念出唤出指令：先回念一句，紧接着是这一回合的播报 */
 export function narrateChant(chant: string): string {
-  return `你朗声喝道：「${chant}」。\n`;
+  return `你朗声喝道：「${chant}」。`;
+}
+
+/** 主动阶段：蓄力 */
+function chargeSentence(ap: number, side: Side): string {
+  return `${sideName(side)}凝神蓄力，真气涨到${ap}`;
+}
+
+/** 已锁定、等待玩家应对的攻击 */
+function pendingSentence(move: AttackMove, side: Side): string {
+  if (side === 'enemy') return `对手${MOVE_VERB[move]}已锁定，只能格挡、闪避或硬抗`;
+  return `你${MOVE_VERB[move]}已出手，等对手应对`;
+}
+
+/** 一次攻击结算后的句子 */
+function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>): string {
+  const attacker = sideName(event.side);
+  const target = sideName(event.side === 'player' ? 'enemy' : 'player');
+  const verb = MOVE_VERB[event.move];
+  if (event.dodged) return `${attacker}${verb}，${target}闪开了`;
+
+  const hpLeft = Math.max(0, event.targetHp);
+  const crit = event.crit ? '暴击，' : '';
+  if (event.response === 'guard') {
+    return `${attacker}${verb}，${target}格挡，${crit}掉${event.damage}点气血，剩${hpLeft}`;
+  }
+  if (event.response === 'dodge') {
+    return `${attacker}${verb}，${target}没躲干净，${crit}擦中${event.damage}点，剩${hpLeft}`;
+  }
+  const take = event.forced ? '真气耗尽只能硬扛' : '硬扛';
+  return `${attacker}${verb}，${target}${take}，${crit}掉${event.damage}点，剩${hpLeft}`;
+}
+
+/** 终局一句 */
+function endSentence(winner: Side): string {
+  return winner === 'player' ? '你击倒了对手，赢了这一局' : '你倒下了，这一局输了';
+}
+
+/**
+ * 把一次结算的事件转成播报：最多两句。
+ * 事件顺序即发生顺序，通常是一方的出手 + 另一方的出手或待应对。
+ */
+export function narrateTurn(battle: Battle, events: BattleEvent[]): string {
+  const lines: string[] = [];
+  let rampNoticed = false;
+  let winner: Side | null = null;
+
+  for (const event of events) {
+    if (event.type === 'charge') {
+      lines.push(chargeSentence(event.ap, event.side));
+    } else if (event.type === 'attack') {
+      lines.push(attackSentence(event));
+    } else if (event.type === 'pending') {
+      lines.push(pendingSentence(event.move, event.side));
+    } else if (event.type === 'end') {
+      winner = event.winner;
+    } else if (event.type === 'round-start' && event.round === 3 && !rampNoticed) {
+      rampNoticed = true;
+      lines.push('第三轮开始，攻击伤害每轮加2');
+    }
+  }
+
+  // 终局：保留一条过程播报，再接胜负；两句话必须放得下
+  if (winner) {
+    return [...lines.slice(0, 1), endSentence(winner)].join('。') + '。';
+  }
+  if (lines.length === 0) return narrateStatus(battle);
+  return lines.slice(0, 2).join('。') + '。';
 }
 
 /** 战况播报 */
 export function narrateStatus(battle: Battle): string {
-  const last = battle.history[battle.history.length - 1];
-  const tail = last ? `上一手是「${actionLabel(last.playerAction)}」。` : '还没有出过手。';
-  return [`第 ${battle.turn} 回合，对局进行中。`, fighterLine(battle), tail].join('\n');
+  if (battle.phase !== 'battle') return narrateEnded(battle);
+  const parts = [`第${battle.round}轮，${fighterLine(battle)}`];
+  if (battle.pending) {
+    const actor = battle.pending.actor === 'player' ? '你' : '对手';
+    const move = MOVE_VERB[battle.pending.move];
+    parts.push(
+      battle.pending.actor === 'player'
+        ? `你的${move}已出手，等对手应对`
+        : `对手的${move}还等着你应对`,
+    );
+  } else if (battle.mode === 'pvp') {
+    parts.push(battle.active === 'player' ? '轮到你出招' : '等对手出招');
+  }
+  return parts.slice(0, 2).join('。') + '。';
 }
 
-/** 认不出招式：不消耗回合，只提示可选招式 */
+/** 双人联机：房间开好，等另一位玩家 */
+export function narrateRoomCreated(code: string): string {
+  return `房间${code}已开好，把房间号告诉另一位玩家，说「加入房间${code}」就能进来`;
+}
+
+/** 双人联机：成功加入房间 */
+export function narrateRoomJoined(code: string): string {
+  return `你进了房间${code}，对面是另一位玩家`;
+}
+
+/** 双人联机：房间还没等到人 */
+export function narrateWaitingRoom(code: string): string {
+  return `房间${code}还等着对手加入，加入后就能开打`;
+}
+
+/** 双人联机：房间号不存在或已过期 */
+export function narrateRoomMissing(code: string): string {
+  return `没找到房间${code}，确认四位房间号再试一次`;
+}
+
+/** 双人联机：房间已满 */
+export function narrateRoomFull(code: string): string {
+  return `房间${code}已经满员，自己开一局，或者换一个房间号`;
+}
+
+/** 双人联机：房间号格式不对 */
+export function narrateRoomInvalid(): string {
+  return '房间号要四位数字，再说一遍试试';
+}
+
+/** 双人联机：轮到谁出招，拼在回合播报后面 */
+export function narrateTurnHint(battle: Battle): string {
+  return battle.active === 'player' ? '轮到你出招' : '等对手出招';
+}
+
+/** 认不出招式：不消耗回合，只提示可选说法 */
 export function narrateUnknownAction(battle: Battle | null): string {
-  const options = actionLabels().join('、');
-  if (!battle) return `没听清是哪一招。可以说${options}，或者先说「开始游戏」。`;
-  return `没听清是哪一招，可以说${options}。这一手没有生效，当前还是第 ${battle.turn} 回合。`;
+  const hint = battle?.pending
+    ? `可以说${responseActionLabels().join('、')}`
+    : `可以说${activeActionLabels().join('、')}`;
+  return `没听清这一手，没有生效。${hint}。`;
+}
+
+/** 不合法操作：说清楚为什么没生效，再给一条路 */
+export function narrateRejection(battle: Battle, rejection: TurnRejection): string {
+  switch (rejection.reason) {
+    case 'ended':
+      return narrateEnded(battle);
+    case 'wrong-stage':
+      return battle.pending
+        ? '对手已经出招，现在只能应对。可以说格挡、闪避或硬抗。'
+        : '现在还没轮到你出招，等对手先动。';
+    case 'insufficient-ap':
+      return '真气不够，这一招没有打出去。可以先蓄力，或者换一招。';
+    case 'no-ult':
+      return '大招这一局已经用过了，换一招吧。';
+    case 'full-ap':
+      return '真气已经满了，不用再蓄力，直接出招吧。';
+  }
 }
 
 /** 对局已经结束 */
@@ -67,7 +208,7 @@ export function narrateNoBattle(): string {
 /** 玩法说明 */
 export function narrateHelp(): string {
   return [
-    '灵犀对决是回合制对决：你说指令，角色出招，招式有攻击、闪避、回气。',
-    '直接说招式名就能出招，也可以念唤出指令，比如「共鸣斩破军」；说「战况如何」看双方状态，说「开始游戏」开新的一局。',
-  ].join('\n');
+    '先手方在主动阶段说普攻、强攻、大招或蓄力；对手出招后，你只能格挡、闪避或硬抗',
+    '念唤出指令也能出招，说「开始游戏」开局、说「战况如何」查状态',
+  ].join('。') + '。';
 }
