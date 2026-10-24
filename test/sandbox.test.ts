@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { SandboxAgent } from '../sandbox/platform/agent.js';
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -87,6 +89,7 @@ describe('沙箱服务', () => {
       eventsUrl: string;
       defaultDeviceId: string;
       voice: { lang: string };
+      agentMode: string;
     };
 
     assert.equal(body.ok, true);
@@ -96,6 +99,8 @@ describe('沙箱服务', () => {
     assert.equal(body.eventsUrl, `${urlOf(gameServer)}/events`);
     assert.match(body.defaultDeviceId, /^web-/);
     assert.equal(body.voice.lang, 'zh-CN');
+    assert.equal(body.agentMode, 'compatibility');
+    assert.ok(!('apiKey' in body) && !('promptPath' in body) && !('agent' in body));
   });
 
   it('/api/say 把原话透传给 game_say，并带回播报与局面', async () => {
@@ -169,4 +174,26 @@ describe('沙箱服务', () => {
       await new Promise<void>((resolve) => dead.close(() => resolve()));
     }
   });
+});
+
+it('模拟Agent选择真实MCP工具，服务裁决，查询不出招；设备历史隔离', async () => {
+  const seen: Array<{text:string;history:readonly unknown[];tools:Array<{name:string;inputSchema?:unknown}>}> = [];
+  const prompt=readFileSync(loadSandboxConfig({}).agent.promptPath,'utf8');
+  const agent=new SandboxAgent(prompt,{async select(input){
+    seen.push(input);
+    if(input.text==='开始练习')return {tool:'game_start',arguments:{mode:'solo'}};
+    if(input.text==='用力打')return {tool:'game_action',arguments:{action:'heavy'}};
+    return {tool:'game_status',arguments:{}};
+  }});
+  const client=new SandboxClient({upstream:urlOf(gameServer),agentId:'agent-test',timeoutMs:3000,logger:createLogger('error'),agent});
+  const start=await client.say('agent-one','开始练习');
+  assert.equal(start.tool,'game_start');assert.ok(start.state?.battle);
+  const status=await client.say('agent-one','现在怎么样');
+  assert.equal(status.tool,'game_status');assert.deepEqual(status.state?.battle?.you,start.state?.battle?.you);
+  const action=await client.say('agent-one','用力打');assert.equal(action.tool,'game_action');
+  assert.ok(action.trace.requests.some(r=>r.tool==='game_action'));
+  assert.ok(!action.trace.requests.some(r=>r.tool==='game_say'));
+  await client.say('agent-two','现在怎么样');
+  assert.equal(seen[0]?.history.length,0);assert.equal(seen[1]?.history.length,1);assert.equal(seen.at(-1)?.history.length,0);
+  assert.ok(seen[0]?.tools.every(t=>t.name!=='game_say' && t.inputSchema));
 });

@@ -272,3 +272,13 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 | 局面一直「等待局面」 | 页面右上角的连接状态圆点是否绿色；`curl 'http://127.0.0.1:8100/api/config'` 看 `eventsUrl`；服务端是否开了 CORS（`/events` 自带） |
 | 两个窗口是同一个玩家 | 用了复制标签页；换 `?player=2` 或「＋ 新窗口」 |
 | 手机点麦克风没反应 | 页面不是 HTTPS；看页面上的降级提示 |
+
+## 模拟平台Agent配置与验证状态
+
+单源提示词为 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md)，`startSandbox` 在服务端启动时读取一次。`sandbox/config.ts` 的 `agent` 组读取 `SANDBOX_AGENT_MODEL`、`SANDBOX_AGENT_BASE_URL`、`SANDBOX_AGENT_API_KEY`，不继承游戏服务模型或密钥；不自动读取.env，模型名和服务商没有默认值。提示词路径按项目位置解析，不随启动工作目录改变。缺失或空提示词报错。
+
+`SandboxAgent` 接受可注入的厂商无关 `AgentModel.select`，从真实MCP工具清单的四个结构化工具中选择一个；保留工具inputSchema，标准动作由服务端校验与裁决。每个设备＋Agent身份保留最近八次有工具结果的内存交流，不持久化、不跨设备共享。查询不转为出招，失败不切game_say、不盲重试，回复直接使用工具文本；不包含生成式闲聊或战果改写。工具选择协议和真实模型尚待确定，当前测试使用确定性假模型与真实本地MCP。
+
+全部Agent模型参数未配置时，保留并明确标注“兼容直连模式 · 非Agent模拟”，页面经game_say工作；此模式不代表Agent功能交付。配置不完整，或配置完整但没有选定并提供模型适配器时，启动明确失败，不静默降级。模型参数／密钥／提示词不返回页面的 `/api/config`，只返回当前模式。
+
+现有运行服务不会热加载这些服务端变更；重启后才读取新提示词和模式。真实模型工具调用、实际平台提示词同步和真实ASR／TTS仍需后续验证，不因假模型测试通过而标记完成。
