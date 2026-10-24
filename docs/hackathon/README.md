@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | [pitch-deck.pptx](pitch-deck.pptx) | 答辩主稿，10 页 | 每页带备注，写讲法、评审要素与出处；事实口径以备注为准 |
 | [video-script.md](video-script.md) | 110 秒先导片脚本 | 9 个镜号的分镜表 + 拍摄清单 + 字幕规范，附压到 90 秒的删减方案 |
+| [real-device-checklist.md](real-device-checklist.md) | 答辩前真机验收清单 | 手机页、`wait_event` 续挂、ASR 易混词的逐项判据与看日志命令 |
 | [highlights.md](highlights.md) | 十条亮点与证据 | 每条给证据路径、统计口径和边界；末尾列「还没实现的」和「不能说的话」 |
 | [logo.svg](logo.svg) | 主标（标记 + 字标横排） | 文字已转曲，不依赖本机字体；纸色底上用 |
 | [logo-mono.svg](logo-mono.svg) | 单色版 | 用 `currentColor`，放到深色底时改外层 `color` |
@@ -74,6 +75,7 @@
 
 ## 还需要人工补的
 
+- [ ] 手机页与 `wait_event` 续挂按 [real-device-checklist.md](real-device-checklist.md) 走一遍，记录设备、时间与日志。
 - [ ] 第 3 页右侧：本地 Chromium 截图已补，真机验收后替换成真机画面。
 - [ ] 先导片成片：按 [video-script.md](video-script.md) 拍完剪完，替换展位循环素材。
 - [ ] 第 10 页团队页：如评委需要实名，补姓名与背景；当前只写角色分工。
