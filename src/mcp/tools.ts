@@ -24,6 +24,13 @@ const startInput = {
     .max(12)
     .optional()
     .describe('四位房间号，填了就加入该房间，和另一位玩家对打；房主开房时会拿到房间号'),
+  text: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .optional()
+    .describe('玩家原话（可选）：不确定该填 mode 还是 room 时把原话放这里，服务端会识别「开房间」「加入房间1234」'),
 };
 
 const actionInput = {
@@ -44,8 +51,14 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
   const { service, logger, ctx } = deps;
 
   // 统一包装：异常不外抛，转成玩家能听懂的一句失败播报，同时记日志
-  const invoke = async (tool: string, run: () => ServiceResult | Promise<ServiceResult>) => {
+  const invoke = async (
+    tool: string,
+    args: Record<string, unknown>,
+    run: () => ServiceResult | Promise<ServiceResult>,
+  ) => {
     try {
+      // 入参记进日志：平台侧模型到底传了什么，是排查联机/意图问题的第一手证据
+      logger.info('工具调用', { tool, sessionKey: battleKey(ctx), args: previewArgs(args) });
       const result = await run();
       logger.debug('工具调用完成', {
         tool,
@@ -71,10 +84,13 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '开始游戏',
       description:
-        '开一局新的灵犀对决。默认和 AI 对手单挑；玩家要和另一台灵犀对打时说「双人对战」或「开房间」，传 mode=pvp 开房并拿到四位房间号；另一位玩家说「加入房间1234」时传 room。会覆盖当前未结束的对局。',
+        '开一局新的灵犀对决。默认和 AI 对手单挑；玩家说要「联机」「双人对战」「开房间」时必须传 mode=pvp，会开房并拿到四位房间号；另一位玩家说「加入房间1234」时传 room=1234。拿不准参数就把玩家原话放进 text。会覆盖当前未结束的对局。',
       inputSchema: startInput,
     },
-    async ({ opponent, mode, room }) => invoke('game_start', () => service.start(battleKey(ctx), { opponent, mode, room })),
+    async ({ opponent, mode, room, text }) =>
+      invoke('game_start', { opponent, mode, room, text }, () =>
+        service.start(battleKey(ctx), { opponent, mode, room, text }),
+      ),
   );
 
   server.registerTool(
@@ -82,10 +98,10 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '出招',
       description:
-        '执行玩家这一手的招式或应对。轮到玩家主动时可以用普攻、强攻、大招、蓄力；对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。操作不合法时不会推进回合，返回里会说明原因并给可选说法。',
+        '执行玩家这一手的招式或应对。轮到玩家主动时可以用普攻、强攻、大招、蓄力；对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。玩家说「开房间」「联机」「加入房间1234」也原样传进 action，服务端会按联机处理。操作不合法时不会推进回合，返回里会说明原因并给可选说法。',
       inputSchema: actionInput,
     },
-    async ({ action }) => invoke('game_action', () => service.act(battleKey(ctx), action)),
+    async ({ action }) => invoke('game_action', { action }, () => service.act(battleKey(ctx), action)),
   );
 
   server.registerTool(
@@ -96,7 +112,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         '查看当前对局双方的气血、真气和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我还剩多少血」时调用。',
       inputSchema: {},
     },
-    async () => invoke('game_status', () => service.status(battleKey(ctx))),
+    async () => invoke('game_status', {}, () => service.status(battleKey(ctx))),
   );
 
   server.registerTool(
@@ -106,6 +122,15 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
       description: '说明玩法与可用指令。玩家问「怎么玩」「你能做什么」时调用。',
       inputSchema: {},
     },
-    async () => invoke('game_help', () => service.help()),
+    async () => invoke('game_help', {}, () => service.help()),
   );
+}
+
+/** 工具入参摘要：只留短字符串，避免把整段语音原话写进日志 */
+function previewArgs(args: Record<string, unknown>): Record<string, string> {
+  const preview: Record<string, string> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === 'string' && value.trim()) preview[key] = value.trim().slice(0, 40);
+  }
+  return preview;
 }

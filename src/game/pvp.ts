@@ -19,6 +19,17 @@ export function normalizeRoomCode(raw: string): string | null {
   return digits.length === ROOM_CODE_LENGTH ? digits : null;
 }
 
+/** 玩家原话里是否在说「开房间 / 联机」。语音链路常把整句话塞进参数，服务端兜底识别。 */
+export function wantsOpenRoom(text: string): boolean {
+  return /(联机|双人|开个?房|开房|建个?房|创建房|一起打|组队)/.test(text);
+}
+
+/** 从玩家原话里抽房间号：必须带「房间 / 加入 / 进」语义，避免把普通数字当房间号 */
+export function roomCodeFromPhrase(text: string): string | null {
+  if (!/(房间|加入|进房)/.test(text)) return null;
+  return normalizeRoomCode(text);
+}
+
 /**
  * 把服务端基准对局镜像成某一方的视角。
  * 双人联机里两位玩家各自通过 deviceId#agentId 读状态，引擎只认 player/enemy，

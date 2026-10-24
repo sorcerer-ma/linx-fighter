@@ -283,3 +283,35 @@ describe('双人联机的意图模型兜底', () => {
     assert.deepEqual(calls, ['我稳如泰山']);
   });
 });
+
+describe('语音原话兜底开房与加入', () => {
+  it('没有对局时直接说「开个房间」也能开房', async () => {
+    const { service } = setup();
+    const result = await service.act(HOST, '开个房间');
+    assert.match(result.text, /房间\d{4}已开好/);
+    assert.equal(result.battle?.mode, 'pvp');
+  });
+
+  it('把「加入房间1234」原话传进 action 也能加入', async () => {
+    const { service } = setup();
+    await service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    const joined = await service.act(GUEST, `加入房间${code}`);
+    assert.match(joined.text, /你进了房间/);
+    assert.equal(joined.battle?.mode, 'pvp');
+    assert.equal(joined.battle?.player.id, 'player');
+  });
+
+  it('game_start 把原话放在 text 里也能识别联机', () => {
+    const { service } = setup();
+    const result = service.start(HOST, { text: '咱们联机打一把' });
+    assert.match(result.text, /房间\d{4}已开好/);
+    assert.equal(result.battle?.mode, 'pvp');
+  });
+
+  it('普通开局仍走单人，不误判联机', () => {
+    const { service } = setup();
+    const result = service.start(HOST, { text: '开始游戏' });
+    assert.equal(result.battle?.mode, 'solo');
+  });
+});

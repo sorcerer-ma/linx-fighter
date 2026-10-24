@@ -23,7 +23,7 @@ import {
   narrateUnknownAction,
   narrateWaitingRoom,
 } from './narrator.js';
-import { canonicalize, normalizeRoomCode, pvpBattleKey, viewAs } from './pvp.js';
+import { canonicalize, normalizeRoomCode, pvpBattleKey, roomCodeFromPhrase, viewAs, wantsOpenRoom } from './pvp.js';
 import type { Battle, BattleEvent, Side } from './types.js';
 
 /** 一次工具调用的结果：可直接朗读的文本 + 当前玩家视角的最新对局状态 */
@@ -38,6 +38,8 @@ export interface StartOptions {
   mode?: 'solo' | 'pvp';
   /** 四位房间号，填了就加入房间，忽略 mode */
   room?: string;
+  /** 玩家原话：平台模型不确定结构化参数时塞进来，服务端兜底识别「开房间 / 加入房间」 */
+  text?: string;
 }
 
 export interface GameServiceDeps {
@@ -79,11 +81,20 @@ export class GameService {
   start(sessionKey: string, options: StartOptions = {}): ServiceResult {
     if (options.room) return this.joinRoom(sessionKey, options.room);
 
+    // 语音链路常把整句话塞进参数：先看原话里有没有房间号和联机意图
+    const phrase = [options.opponent, options.text].filter(Boolean).join(' ');
+    const phraseRoom = roomCodeFromPhrase(phrase);
+    if (phraseRoom) return this.joinRoom(sessionKey, phraseRoom);
+
     // 已在房间里又开新局：先撤掉旧房间与旧对局，避免对手对着已失效的局面出招
     const existing = this.rooms.byPlayer(sessionKey);
     if (existing) this.leaveRoom(existing, '重新开局');
 
-    if (options.mode === 'pvp') return this.startPvp(sessionKey);
+    if (options.mode === 'pvp' || wantsOpenRoom(phrase)) {
+      // 从单人局切到联机时把旧对局清掉，避免退出房间后还对着过期局面出招
+      this.store.delete(sessionKey);
+      return this.startPvp(sessionKey);
+    }
 
     const battle = this.spawnSolo(options.opponent);
     this.store.set(sessionKey, battle);
@@ -104,6 +115,14 @@ export class GameService {
   async act(sessionKey: string, rawAction: string): Promise<ServiceResult> {
     const room = this.rooms.byPlayer(sessionKey);
     if (room) return this.actPvp(sessionKey, room, rawAction);
+
+    // 平台模型可能把「开房间」「加入房间1234」原话直接传进 action，这里兜底成联机操作
+    const phraseRoom = roomCodeFromPhrase(rawAction);
+    if (phraseRoom) return this.joinRoom(sessionKey, phraseRoom);
+    if (wantsOpenRoom(rawAction)) {
+      this.store.delete(sessionKey);
+      return this.startPvp(sessionKey);
+    }
 
     const direct = matchAction(rawAction);
     // 没有对局又认不出招式：不自动开局，避免随便一句话就开一局
@@ -239,6 +258,7 @@ export class GameService {
     }
 
     const view = viewAs(canonical, 'enemy');
+    this.store.delete(sessionKey);
     this.rooms.touch(code);
     this.logger.info('房间加入', {
       sessionKey,
