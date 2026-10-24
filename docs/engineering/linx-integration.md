@@ -173,9 +173,9 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 提示词唯一来源为 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md)，属于项目配置并纳入版本管理。平台配置时复制该文件全文，沙箱服务端启动时直接读取同一文件；本文不再维护提示词副本，不宣称能够自动同步平台。修改后需按平台现有流程保存并重启体验，沙箱也需重启以重新加载。
 
-平台Agent负责理解原话、选择工具与参数，游戏服务负责合法性与裁决。模拟Agent首版使用 `game_start`／`game_action`／`game_status`／`game_help`，保留 `game_say` 兼容其他现有接入，但不将它作为固定入口或失败后静默兜底。工具结果保持原样作为本轮回复，不新增闲聊生成或润色战果。
+平台／沙箱Agent每条原话固定调用一次game_say，由游戏服务理解、执行并返回结果，不在Agent端分类或把查询／开房当作选其他工具的例外。允许根据人设改写整句，但必须保留战果、数字、归属、成功失败、胜负与下一步。请求结果未知时先核实，不能断言未生效或换工具重试。双人房无人加入时继续等待，不自动补AI。
 
-沙箱模型提供方与工具调用协议尚未选定，目前仅完成可注入的Agent模型边界与假模型测试；未配置时明确显示“兼容直连模式 · 非Agent模拟”，不能把此模式当作平台Agent验收。
+已确认表达模型为deepseek-v4.1-flash-free，baseURL为https://opencode.ai/inference/openai/v1。官方[模型表](https://opencode.ai/v2/docs/console/models/)将其列为OpenAI兼容Chat Completions端点；适配器仅做本地假fetch测试，未验证真实账号与模型可用性。MCP可验证演绎事实契约尚待确认，实际回复未接模型，不能宣称人设演绎已交付。
 
 ## 常见问题
 

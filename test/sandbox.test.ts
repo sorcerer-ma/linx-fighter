@@ -176,24 +176,16 @@ describe('沙箱服务', () => {
   });
 });
 
-it('模拟Agent选择真实MCP工具，服务裁决，查询不出招；设备历史隔离', async () => {
-  const seen: Array<{text:string;history:readonly unknown[];tools:Array<{name:string;inputSchema?:unknown}>}> = [];
+it('原话Agent经真实MCP执行一次game_say；查询不出招、身份隔离', async () => {
   const prompt=readFileSync(loadSandboxConfig({}).agent.promptPath,'utf8');
-  const agent=new SandboxAgent(prompt,{async select(input){
-    seen.push(input);
-    if(input.text==='开始练习')return {tool:'game_start',arguments:{mode:'solo'}};
-    if(input.text==='用力打')return {tool:'game_action',arguments:{action:'heavy'}};
-    return {tool:'game_status',arguments:{}};
-  }});
+  const agent=new SandboxAgent(prompt);
   const client=new SandboxClient({upstream:urlOf(gameServer),agentId:'agent-test',timeoutMs:3000,logger:createLogger('error'),agent});
-  const start=await client.say('agent-one','开始练习');
-  assert.equal(start.tool,'game_start');assert.ok(start.state?.battle);
-  const status=await client.say('agent-one','现在怎么样');
-  assert.equal(status.tool,'game_status');assert.deepEqual(status.state?.battle?.you,start.state?.battle?.you);
-  const action=await client.say('agent-one','用力打');assert.equal(action.tool,'game_action');
-  assert.ok(action.trace.requests.some(r=>r.tool==='game_action'));
-  assert.ok(!action.trace.requests.some(r=>r.tool==='game_say'));
-  await client.say('agent-two','现在怎么样');
-  assert.equal(seen[0]?.history.length,0);assert.equal(seen[1]?.history.length,1);assert.equal(seen.at(-1)?.history.length,0);
-  assert.ok(seen[0]?.tools.every(t=>t.name!=='game_say' && t.inputSchema));
+  const start=await client.say('agent-one','开始游戏');
+  assert.equal(start.tool,'game_say');assert.ok(start.state?.battle);
+  const status=await client.say('agent-one','战况如何');
+  assert.equal(status.tool,'game_say');assert.deepEqual(status.state?.battle?.you,start.state?.battle?.you);
+  assert.equal(status.reply,status.sourceReply);assert.equal(status.rewriteStatus,'awaiting-facts');
+  const calls=status.trace.requests.filter(r=>r.method==='tools/call');
+  assert.equal(calls.length,1);assert.equal(calls[0]?.tool,'game_say');
+  const other=await client.say('agent-two','战况如何');assert.equal(other.state?.battle,null);
 });

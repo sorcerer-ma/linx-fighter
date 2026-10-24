@@ -277,8 +277,10 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 
 单源提示词为 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md)，`startSandbox` 在服务端启动时读取一次。`sandbox/config.ts` 的 `agent` 组读取 `SANDBOX_AGENT_MODEL`、`SANDBOX_AGENT_BASE_URL`、`SANDBOX_AGENT_API_KEY`，不继承游戏服务模型或密钥；不自动读取.env，模型名和服务商没有默认值。提示词路径按项目位置解析，不随启动工作目录改变。缺失或空提示词报错。
 
-`SandboxAgent` 接受可注入的厂商无关 `AgentModel.select`，从真实MCP工具清单的四个结构化工具中选择一个；保留工具inputSchema，标准动作由服务端校验与裁决。每个设备＋Agent身份保留最近八次有工具结果的内存交流，不持久化、不跨设备共享。查询不转为出招，失败不切game_say、不盲重试，回复直接使用工具文本；不包含生成式闲聊或战果改写。工具选择协议和真实模型尚待确定，当前测试使用确定性假模型与真实本地MCP。
+`SandboxAgent`不再选择工具。每条输入原文只调用一次game_say，服务端负责理解执行；保留旧五工具契约与身份安全规则。工具文本／isError原样保留，sourceReply记录事实来源，reply是页面实际展示／朗读的文字。当前MCP没有可验证演绎facts，Agent转发模式标记rewriteStatus=awaiting-facts，reply仍为原工具文本；不会调用表达模型，也不会用仅匹配数字的检查冒充语义事实保证。
 
-全部Agent模型参数未配置时，保留并明确标注“兼容直连模式 · 非Agent模拟”，页面经game_say工作；此模式不代表Agent功能交付。配置不完整，或配置完整但没有选定并提供模型适配器时，启动明确失败，不静默降级。模型参数／密钥／提示词不返回页面的 `/api/config`，只返回当前模式。
+用户已允许人设整句改写，但必须保留战果、必要数字、数值归属、谁做什么、成功失败、胜负与下一步；落地该验证边界前不启用实际改写，也不擅自扩展MCP返回契约。表达失败时可保留已有工具原文，不再执行game_say。表达网络适配器为独立OpenAI兼容非流式Chat Completions客户端，仅本地假fetch验证，不含游戏工具或额外行动能力，不处理reasoning_content为最终话术。
 
-现有运行服务不会热加载这些服务端变更；重启后才读取新提示词和模式。真实模型工具调用、实际平台提示词同步和真实ASR／TTS仍需后续验证，不因假模型测试通过而标记完成。
+用户已指定非秘密配置：baseURL=https://opencode.ai/inference/openai/v1，model=deepseek-v4.1-flash-free；[官方模型表](https://opencode.ai/v2/docs/console/models/)列出此模型与chat/completions端点。真实调用和账号权限未测。密钥由用户在本地受忽略的.env中填写；未经明确授权不读取、保存、打印或调用，启动使用Node --env-file显式加载而非shell source。当前未创建.env、未加载真实密钥或调用远端。
+
+全部模型参数未配置时保留明确原话直连模式；不完整配置报错。完整参数可建立原话Agent转发层，但不代表人设改写可用；缺事实契约时仍只返回原文。模型参数、密钥与提示词不返回/api/config，只返回模式。现有运行服务不热加载服务端变更，未经授权不重启；浏览器与真实ASR／TTS仍需验收。

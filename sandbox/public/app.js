@@ -164,7 +164,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       })
       .then(function (data) {
         config = data;
-        $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 人设改写待事实契约' : '兼容直连模式 · 非Agent模拟（尚未配置）';
+        $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 人设改写待事实契约' : '原话直连 · 人设改写未启用';
         connectStream(data);
       })
       .catch(function () {
