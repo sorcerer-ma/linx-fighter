@@ -50,7 +50,7 @@ describe('游戏服务', () => {
     assert.deepEqual(result.battle.history, []);
     assert.match(result.text, /对决开始/);
     assert.match(result.text, /守擂教头/);
-    assert.match(result.text, /你先手/);
+    assert.match(result.text, /我先手/);
   });
 
   it('开局可以指定对手名字', async () => {
@@ -72,8 +72,8 @@ describe('游戏服务', () => {
     assert.deepEqual(first.battle?.pending, { actor: 'enemy', move: 'light', damage: 3 });
     assert.equal(first.battle?.player.ap, 2);
     assert.equal(first.battle?.enemy.hp, 17);
-    assert.match(first.text, /普攻/);
-    assert.match(first.text, /已锁定/);
+    assert.match(first.text, /我普攻，对手格挡，掉1点生命值，剩17/);
+    assert.match(first.text, /对手普攻还没结算，我该格挡、闪避，还是承受/);
 
     const second = await service.say(KEY, '格挡');
     assert.equal(second.battle?.round, 2);
@@ -127,7 +127,7 @@ describe('游戏服务', () => {
     const result = await service.say(KEY, '攻击');
     assert.equal(result.battle?.phase, 'victory');
     assert.equal(result.battle?.history.length, 0);
-    assert.match(result.text, /你赢了/);
+    assert.match(result.text, /我赢了/);
   });
 
   it('念唤出指令时先回念一句再播报回合', async () => {
@@ -145,7 +145,7 @@ describe('游戏服务', () => {
     const battle = (await service.start(KEY)).battle!;
 
     store.set(KEY, { ...battle, phase: 'defeat' });
-    assert.match((await service.say(KEY, '攻击')).text, /你输了/);
+    assert.match((await service.say(KEY, '攻击')).text, /这局输了/);
 
     store.set(KEY, { ...battle, phase: 'unknown' as typeof battle.phase });
     assert.match((await service.say(KEY, '攻击')).text, /这一局已经结束/);
@@ -159,7 +159,7 @@ describe('游戏服务', () => {
     const result = await service.say(KEY, '攻击');
     assert.equal(result.battle?.round, 1);
     assert.deepEqual(result.battle?.pending, { actor: 'enemy', move: 'light', damage: 3 });
-    assert.match(result.text, /只能应对/);
+    assert.match(result.text, /格挡、闪避或承受/);
   });
 
   it('能量不足与能量已满都不会改对局', async () => {
@@ -170,7 +170,7 @@ describe('游戏服务', () => {
     const low = await service.say(KEY, '强攻');
     assert.equal(low.battle?.player.ap, 1);
     assert.equal(low.battle?.history.length, 0);
-    assert.match(low.text, /能量不够/);
+    assert.match(low.text, /我只有1点能量，强攻要2点/);
 
     store.set(KEY, { ...battle, player: { ...battle.player, ap: 5 } });
     const full = await service.say(KEY, '蓄力');
@@ -192,7 +192,7 @@ describe('游戏服务', () => {
     assert.equal(responded.battle?.active, 'player');
     // 首个主动阶段不恢复能量：3 - 1（闪避）= 2
     assert.equal(responded.battle?.player.ap, 2);
-    assert.match(responded.text, /闪/);
+    assert.match(responded.text, /我躲开啦/);
   });
 
   it('玩法说明不需要对局', async () => {
@@ -353,7 +353,7 @@ describe('双人补账播报', () => {
     await service.say(KEY_B, `加入房间${code}`);
 
     const attack = await service.say(KEY, '强攻');
-    assert.match(attack.text, /已出手/);
+    assert.match(attack.text, /接招/);
 
     // 对手应招时出手方不在场：这一声只念给应对方
     const response = await service.say(KEY_B, '格挡');
@@ -362,7 +362,7 @@ describe('双人补账播报', () => {
 
     const catchUp = await service.say(KEY, '战况如何');
     assert.match(catchUp.text, /^刚才那一手。/);
-    assert.match(catchUp.text, /你一记强攻，对手格挡，掉3点生命值，剩15/);
+    assert.match(catchUp.text, /我强攻，对手格挡，掉3点生命值，剩15/);
     assert.match(catchUp.text, /第1轮/);
 
     // 补过一次就不再重复
@@ -379,7 +379,7 @@ describe('双人补账播报', () => {
     await service.say(KEY, '蓄力');
     const guestTurn = await service.say(KEY_B, '普攻');
     assert.match(guestTurn.text, /^刚才那一手。对手凝神蓄力，能量涨到4。/);
-    assert.match(guestTurn.text, /一记普攻已出手/);
+    assert.match(guestTurn.text, /我出普攻，接招！等对手应对/);
   });
 
   it('换局后不把上一局的结果补到新对局里', async () => {
@@ -412,12 +412,12 @@ describe('双人补账播报', () => {
     await service.say(KEY, '蓄力'); // 房主先手，蓄力后轮到访客
     await service.say(KEY_B, '普攻');
     const finisher = await service.say(KEY, '承受');
-    assert.match(finisher.text, /这一局输了/);
+    assert.match(finisher.text, /这局输了/);
 
     const catchUp = await service.say(KEY_B, '战况如何');
     assert.match(catchUp.text, /^刚才那一手。/);
-    assert.match(catchUp.text, /你一记普攻，对手硬扛，掉\d+点，剩0/);
-    assert.match(catchUp.text, /你赢了/);
+    assert.match(catchUp.text, /我普攻，对手承受，掉3点生命值，剩0/);
+    assert.match(catchUp.text, /我赢了/);
   });
 
   it('有屏客户端取走补账但不念出来，下次也不会再补', async () => {

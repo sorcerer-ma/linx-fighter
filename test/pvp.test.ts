@@ -113,7 +113,7 @@ describe('双人联机', () => {
     const first = await service.say(HOST, '普攻');
     assert.deepEqual(first.battle?.pending, { actor: 'player', move: 'light', damage: 3 });
     assert.equal(first.battle?.enemy.hp, 18);
-    assert.match(first.text, /已出手/);
+    assert.match(first.text, /接招/);
 
     const second = await service.say(GUEST, '格挡');
     assert.equal(second.battle?.pending, null);
@@ -141,11 +141,11 @@ describe('双人联机', () => {
 
     const hostStatus = service.status(HOST);
     assert.equal(hostStatus.battle?.phase, 'defeat');
-    assert.match(hostStatus.text, /你输了/);
+    assert.match(hostStatus.text, /这局输了/);
 
     const guestStatus = service.status(GUEST);
     assert.equal(guestStatus.battle?.phase, 'victory');
-    assert.match(guestStatus.text, /你赢了/);
+    assert.match(guestStatus.text, /我赢了/);
   });
 
   it('房主没等到人时出招只提示等对手', async () => {
@@ -154,7 +154,7 @@ describe('双人联机', () => {
 
     const result = await service.say(HOST, '普攻');
     assert.equal(result.battle?.history.length, 0);
-    assert.match(result.text, /还等着对手加入/);
+    assert.match(result.text, /还等着另一位玩家加入/);
   });
 
   it('房间满员与房间不存在都有明确播报', async () => {
@@ -228,7 +228,7 @@ describe('双人联机', () => {
     await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
 
-    assert.match((await service.start(HOST, { room: code })).text, /还等着对手加入/);
+    assert.match((await service.start(HOST, { room: code })).text, /还等着另一位玩家加入/);
     assert.equal(findRoom(service, HOST), code);
   });
 
@@ -237,11 +237,11 @@ describe('双人联机', () => {
     await service.start(HOST, { mode: 'pvp' });
 
     const acted = await service.say(HOST, '普攻');
-    assert.match(acted.text, /还等着对手加入/);
+    assert.match(acted.text, /还等着另一位玩家加入/);
     assert.equal(acted.battle?.history.length, 0);
 
     const status = service.status(HOST);
-    assert.match(status.text, /还等着对手加入/);
+    assert.match(status.text, /还等着另一位玩家加入/);
     assert.match(status.text, /生命值/);
     assert.equal(service.status(GUEST).battle, null);
   });
@@ -253,7 +253,7 @@ describe('双人联机', () => {
     await service.start(GUEST, { room: code });
 
     assert.match((await service.say(HOST, '跳个舞')).text, /没听清/);
-    assert.match((await service.say(GUEST, '普攻')).text, /还没轮到你/);
+    assert.match((await service.say(GUEST, '普攻')).text, /还没轮到我出招/);
     assert.match(service.status(GUEST).text, /第1轮/);
   });
 
@@ -381,7 +381,7 @@ describe('双人联机的意图模型兜底', () => {
     // 房主先出招，随后轮到对手应对；房主此时再说话不该惊动模型
     await service.say(HOST, '普攻');
     const hostAgain = await service.say(HOST, '我稳如泰山');
-    assert.match(hostAgain.text, /已经出手/);
+    assert.match(hostAgain.text, /已经出招了/);
     assert.deepEqual(calls, []);
 
     const guestBlock = await service.say(GUEST, '我稳如泰山');
@@ -417,7 +417,7 @@ describe('语音原话兜底开房与加入', () => {
   it('没有对局时直接说「开个房间」也能开房', async () => {
     const { service } = setup();
     const result = await service.say(HOST, '开个房间');
-    assert.match(result.text, /房间\d{4}已开好/);
+    assert.match(result.text, /房间\d{4}开好了/);
     assert.equal(result.battle?.mode, 'pvp');
   });
 
@@ -426,7 +426,7 @@ describe('语音原话兜底开房与加入', () => {
     await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
     const joined = await service.say(GUEST, `加入房间${code}`);
-    assert.match(joined.text, /你进了房间/);
+    assert.match(joined.text, /我进了房间/);
     assert.equal(joined.battle?.mode, 'pvp');
     assert.equal(joined.battle?.player.id, 'player');
   });
@@ -434,7 +434,7 @@ describe('语音原话兜底开房与加入', () => {
   it('game_start 把原话放在 text 里也能识别联机', async () => {
     const { service } = setup();
     const result = await service.start(HOST, { text: '咱们联机打一把' });
-    assert.match(result.text, /房间\d{4}已开好/);
+    assert.match(result.text, /房间\d{4}开好了/);
     assert.equal(result.battle?.mode, 'pvp');
   });
 
@@ -609,7 +609,7 @@ describe('房间与席位的边界', () => {
     const code = findRoom(service, HOST);
 
     const again = await service.say(HOST, `加入房间${code}`);
-    assert.match(again.text, /还等着对手加入/);
+    assert.match(again.text, /还等着另一位玩家加入/);
     const room = rooms.get(code);
     assert.ok(room);
     assert.equal(room.guestKey, null);

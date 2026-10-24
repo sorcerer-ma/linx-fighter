@@ -112,8 +112,8 @@ describe('Streamable HTTP 通道', () => {
     assert.match(started, /练功木人/);
 
     const acted = await callTool('game_action', { action: '普攻' });
-    assert.match(acted, /普攻/);
-    assert.match(acted, /已锁定/);
+    assert.match(acted, /我普攻，对手格挡，掉1点生命值/);
+    assert.match(acted, /对手普攻还没结算，我该格挡、闪避，还是承受/);
 
     const status = await callTool('game_status');
     assert.match(status, /第1轮/);

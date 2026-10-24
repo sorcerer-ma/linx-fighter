@@ -56,7 +56,7 @@ await call('game_say', { text: '战况如何' }, talker);
 
 // 单人：开局 → 主动出招（对手先手时先应对）→ 应对 → 战况 → 说明
 const opened = await call('game_start');
-if (opened.includes('还等着你应对')) {
+if (opened.includes('对手先手')) {
   await call('game_action', { action: '格挡' });
   await call('game_action', { action: '攻击' });
 } else {

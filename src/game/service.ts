@@ -14,6 +14,7 @@ import {
   narrateEnded,
   narrateHelp,
   narrateNoBattle,
+  narrateOpening,
   narrateRejection,
   narrateRoomCreated,
   narrateRoomFull,
@@ -23,7 +24,6 @@ import {
   narrateStaleAction,
   narrateStatus,
   narrateTurn,
-  narrateTurnHint,
   narrateUnknownAction,
   narrateWaitingRoom,
 } from './narrator.js';
@@ -153,8 +153,9 @@ export class GameService {
 
     const view = table.view(sessionKey) ?? battle;
     const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
-    const head = table.waiting() ? `${narrateWaitingRoom(table.room ?? '')}。` : '';
-    return { text: `${catchUp}${head}${narrateStatus(view)}`, battle: view };
+    const waiting = table.waiting();
+    const head = waiting ? `${narrateWaitingRoom(table.room ?? '')}。` : '';
+    return { text: `${catchUp}${head}${narrateStatus(view, { waiting })}`, battle: view };
   }
 
   /** 玩法说明，用于玩家不知道说什么的场景 */
@@ -342,9 +343,7 @@ export class GameService {
     if (!written.pending) this.recordCatchUp(table, seat, written, result.events);
 
     const chantLine = match.chant ? narrateChant(match.chant) : '';
-    const body = table.room
-      ? this.pvpTurnText(result.battle, result.events)
-      : narrateTurn(result.battle, result.events);
+    const body = narrateTurn(result.battle, result.events);
     return { text: `${catchUp}${prefix}${chantLine}${body}`, battle: result.battle };
   }
 
@@ -404,11 +403,7 @@ export class GameService {
       enemy: battle.enemy.name,
       firstMover: battle.firstMover,
     });
-    const text = [
-      narrateBattleStart(battle),
-      battle.pending ? narrateTurn(battle, []) : '说普攻、强攻、大招或蓄力出招。',
-    ].join('');
-    return { text, battle };
+    return { text: narrateOpening(battle), battle };
   }
 
   /**
@@ -421,7 +416,7 @@ export class GameService {
     const existing = this.rooms.byPlayer(sessionKey);
     if (existing && existing.hostKey === sessionKey && existing.guestKey === null) {
       return {
-        text: `${narrateWaitingRoom(existing.code)}。等对手进来再开打。`,
+        text: `${narrateWaitingRoom(existing.code)}。`,
         battle: this.store.get(pvpBattleKey(existing.code)) ?? null,
       };
     }
@@ -439,7 +434,7 @@ export class GameService {
     this.logger.info('房间创建', { sessionKey, room: room.code, battleId: battle.id });
     // 开房时对手还没进来，不能提前播「对决开始」，否则玩家会以为已经有对手了
     return {
-      text: `${narrateRoomCreated(room.code)}。等对手进来再开打。`,
+      text: `${narrateRoomCreated(room.code)}。`,
       battle,
     };
   }
@@ -544,13 +539,6 @@ export class GameService {
     return { action: id };
   }
 
-  /** 双人回合播报：轮次信息并进最后一句，保证最多两句 */
-  private pvpTurnText(battle: Battle, events: BattleEvent[]): string {
-    const narration = narrateTurn(battle, events);
-    if (battle.phase !== 'battle' || battle.pending) return narration;
-    return `${narration.replace(/。$/, '')}，${narrateTurnHint(battle)}。`;
-  }
-
   /**
    * 取走这位玩家错过的结算；没有就给空串，拼在播报最前面。
    *
@@ -576,7 +564,7 @@ export class GameService {
     const missed = mirrorEvents(events).filter(
       (event) => event.type !== 'round-start' && event.type !== 'end',
     );
-    this.echo.push(waitingKey, narrateTurn(viewAs(base, otherSide(seat)), missed));
+    this.echo.push(waitingKey, narrateTurn(viewAs(base, otherSide(seat)), missed, { hint: false }));
   }
 
   /** 当前玩家视角的最新局面：房间里按座位镜像，单人是自己的对局 */

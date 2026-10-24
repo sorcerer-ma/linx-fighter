@@ -1,43 +1,192 @@
-import { activeActionLabels, responseActionLabels } from './actions.js';
-import type { AttackMove, Battle, BattleEvent, Side, TurnRejection } from './types.js';
+import { actionLabel, activeActionLabels, responseActionLabels } from './actions.js';
+import { ATTACKS, RESPONSES } from './rules.js';
+import {
+  isAttackMove,
+  otherSide,
+  type ActionId,
+  type AttackMove,
+  type Battle,
+  type BattleEvent,
+  type ResponseMove,
+  type Side,
+  type TurnRejection,
+} from './types.js';
 
 /**
- * 播报文案。
+ * 播报文案：本方伙伴以第一人称「我」向玩家自述。
  *
  * 这些文字会被平台侧原样朗读给玩家，所以：
+ * - 说话的是伙伴：「我」指本方伙伴，「你」指指挥它的玩家，另一方战斗角色统一叫「对手」；
  * - 用口语，不用 Markdown、列表符号或括号补充；
- * - 每次最多两句、尽量 60 字内；
- * - 数值只说玩家需要知道的：掉了多少生命值、还剩多少。
+ * - 每次最多两句、尽量 60 字内，先说事实，再说下一步；
+ * - 数值只说玩家需要知道的：掉了多少生命值、还剩多少、能量与大招剩几次。
  */
 
-/** 主动招式的口语前缀 */
-const MOVE_VERB: Record<AttackMove, string> = {
-  light: '一记普攻',
-  heavy: '一记强攻',
-  ult: '一记大招',
+/** 攻击的短称呼，放在第一人称句子里用 */
+const ATTACK_NAME: Record<AttackMove, string> = {
+  light: '普攻',
+  heavy: '强攻',
+  ult: '大招',
 };
 
-/** 标点归一：句末统一由拼装函数补「。」 */
+/** 视角里的自称：自己永远是「我」，另一方叫「对手」 */
+function sideName(side: Side): string {
+  return side === 'player' ? '我' : '对手';
+}
+
+/** 大招次数的口语说法 */
+function times(count: number): string {
+  return count === 1 ? '一次' : `${count}次`;
+}
+
+/**
+ * 句末标点归一：只在拼装时补一个「。」，
+ * 但句子里已经以 ！ 或 ？ 收尾时不再补，避免念出「！。」。
+ */
+function joinLines(lines: string[]): string {
+  let text = '';
+  for (const line of lines) {
+    const part = line.trim();
+    if (!part) continue;
+    if (text && !/[。．.!！?？]$/.test(text)) text += '。';
+    text += part;
+  }
+  if (!text) return '';
+  return /[。．.!！?？]$/.test(text) ? text : `${text}。`;
+}
+
+/** 补账时逐句拼接：去掉每句自带的句末标点，避免重复 */
 function sentence(text: string): string {
   return text.replace(/[。．.!！?？]+$/g, '').trim();
 }
 
-function sideName(side: Side): string {
-  return side === 'player' ? '你' : '对手';
-}
-
-/** 双方生命值与能量，最多两句里的第二句 */
+/** 双方生命值与能量；数字全部来自服务端结算 */
 export function fighterLine(battle: Battle): string {
   const { player, enemy } = battle;
-  return `你生命值${player.hp}/${player.maxHp}、能量${player.ap}；${enemy.name}生命值${enemy.hp}/${enemy.maxHp}、能量${enemy.ap}`;
+  return `我${player.hp}点生命值、${player.ap}点能量，对手${enemy.hp}点生命值、${enemy.ap}点能量`;
+}
+
+/** 本局大招剩余次数：查询应直接答出数字 */
+function ultLine(battle: Battle): string {
+  const mine = battle.player.ultLeft;
+  const theirs = battle.enemy.ultLeft;
+  if (mine > 0 && theirs > 0) return `我还剩${times(mine)}大招，对手还剩${times(theirs)}大招`;
+  if (mine > 0) return `我还剩${times(mine)}大招，对手的已经用掉`;
+  if (theirs > 0) return `我的大招已经用掉，对手还剩${times(theirs)}大招`;
+  return '双方的大招都已经用掉';
+}
+
+/** 主动阶段：蓄力 */
+function chargeSentence(ap: number, side: Side): string {
+  return `${sideName(side)}凝神蓄力，能量涨到${ap}`;
+}
+
+/** 已经锁定、等待应对方出手的攻击 */
+function pendingSentence(move: AttackMove, actor: Side): string {
+  if (actor === 'enemy') return `对手${ATTACK_NAME[move]}还没结算，我该格挡、闪避，还是承受？`;
+  return `我出${ATTACK_NAME[move]}，接招！等对手应对`;
+}
+
+/** 一次攻击结算后的句子 */
+function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>): string {
+  const attacker = sideName(event.side);
+  const target = sideName(otherSide(event.side));
+  const verb = ATTACK_NAME[event.move];
+  if (event.dodged) {
+    // 闪避成功是防守方的感受，站在被躲的一边只听结果
+    return event.side === 'player' ? `我${verb}，对手闪开了` : `对手${verb}，我躲开啦！`;
+  }
+
+  const crit = event.crit ? '暴击' : '';
+  const hpLeft = Math.max(0, event.targetHp);
+  if (event.response === 'guard') {
+    return `${attacker}${verb}${crit}，${target}格挡，掉${event.damage}点生命值，剩${hpLeft}`;
+  }
+  if (event.response === 'dodge') {
+    // 闪避失败吃的是全额伤害，不能写成「擦中」
+    return `${attacker}${verb}${crit}，${target}没躲开，掉${event.damage}点生命值，剩${hpLeft}`;
+  }
+  const take = event.forced ? `${target}没能量，只能硬扛` : `${target}承受`;
+  return `${attacker}${verb}${crit}，${take}，掉${event.damage}点生命值，剩${hpLeft}`;
+}
+
+/** 终局一句 */
+function endSentence(winner: Side): string {
+  return winner === 'player' ? '我赢了，击倒对手啦' : '我被击倒了，这局输了';
+}
+
+/** 下一手该谁：没有待应对时，玩家不用再问一次 */
+function turnHint(battle: Battle): string {
+  return battle.active === 'player' ? '该我出招，听你的' : '等对手出招';
+}
+
+/**
+ * 把一次结算的事件转成播报：最多两句。
+ * 事件顺序即发生顺序，通常是一方的出手 + 另一方的出手或待应对。
+ *
+ * 补账只复述已经发生的结算，不再说「该谁出招」——那句话在补账时已经过时，
+ * 当前这一回合的下一步会由本次回复给出。
+ */
+export function narrateTurn(battle: Battle, events: BattleEvent[], options: { hint?: boolean } = {}): string {
+  const lines: string[] = [];
+  let rampNoticed = false;
+  let locked = false;
+  let winner: Side | null = null;
+
+  for (const event of events) {
+    if (event.type === 'charge') {
+      lines.push(chargeSentence(event.ap, event.side));
+    } else if (event.type === 'attack') {
+      lines.push(attackSentence(event));
+    } else if (event.type === 'pending') {
+      locked = true;
+      lines.push(pendingSentence(event.move, event.side));
+    } else if (event.type === 'end') {
+      winner = event.winner;
+    } else if (event.type === 'round-start' && event.round === 3 && !rampNoticed) {
+      rampNoticed = true;
+      lines.push('第三轮开始，攻击伤害每轮加2');
+    }
+  }
+
+  // 终局：保留一条过程播报，再接胜负；两句话必须放得下
+  if (winner) return joinLines([lines[0] ?? '', endSentence(winner)]);
+  if (lines.length === 0) return narrateStatus(battle);
+
+  const shown = lines.slice(0, 2);
+  // 局面还在继续：没有待应对时补一句该谁出手，玩家不必再问
+  if (options.hint !== false && !battle.pending && !locked) {
+    const hint = turnHint(battle);
+    const second = shown[1];
+    if (second === undefined) {
+      shown.push(hint);
+    } else {
+      // 前一句可能以 ！ 收尾（闪避成功），先去掉标点再用逗号并进去，避免念出「！，」
+      const merged = `${second.replace(/[。．.!！?？]+$/g, '')}，${hint}`;
+      // 两句都放不下时保留结算事实，宁可少一句提示
+      if (merged.length <= 60) shown[1] = merged;
+    }
+  }
+  return joinLines(shown);
 }
 
 /** 开局播报：对手、先手、初始生命值，一句话说清 */
 export function narrateBattleStart(battle: Battle): string {
-  const first = battle.firstMover === 'player' ? '你先手' : '对手先手';
+  const first = battle.firstMover === 'player' ? '我先手' : '对手先手';
+  const foe = battle.enemy.name === '对手' ? '对手' : battle.enemy.name;
   // 联机换视角后对手没有名字，统一叫「对手」，别再念成「你的对手是对手」
-  const opponent = battle.enemy.name === '对手' ? '' : `你的对手是${battle.enemy.name}，`;
-  return `对决开始，${opponent}${first}，你${battle.player.hp}点生命值，他${battle.enemy.hp}点生命值。`;
+  const opponent = foe === '对手' ? '' : `你的对手是${foe}，`;
+  return `对决开始，${opponent}${first}，我${battle.player.hp}点生命值，${foe}${battle.enemy.hp}点生命值。`;
+}
+
+/** 单人开局：局面加下一手，恰好两句 */
+export function narrateOpening(battle: Battle): string {
+  const next = battle.pending
+    ? pendingSentence(battle.pending.move, battle.pending.actor)
+    : battle.active === 'player'
+      ? '该我出招，说普攻、强攻、大招或蓄力，听你的'
+      : turnHint(battle);
+  return joinLines([narrateBattleStart(battle), next]);
 }
 
 /** 没有对局、临时开局的提示，会拼在回合播报前面 */
@@ -50,104 +199,31 @@ export function narrateChant(chant: string): string {
   return `你朗声喝道：「${chant}」。`;
 }
 
-/** 主动阶段：蓄力 */
-function chargeSentence(ap: number, side: Side): string {
-  return `${sideName(side)}凝神蓄力，能量涨到${ap}`;
-}
-
-/** 已锁定、等待玩家应对的攻击 */
-function pendingSentence(move: AttackMove, side: Side): string {
-  if (side === 'enemy') return `对手${MOVE_VERB[move]}已锁定，只能格挡、闪避或硬抗`;
-  return `你${MOVE_VERB[move]}已出手，等对手应对`;
-}
-
-/** 一次攻击结算后的句子 */
-function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>): string {
-  const attacker = sideName(event.side);
-  const target = sideName(event.side === 'player' ? 'enemy' : 'player');
-  const verb = MOVE_VERB[event.move];
-  if (event.dodged) return `${attacker}${verb}，${target}闪开了`;
-
-  const hpLeft = Math.max(0, event.targetHp);
-  const crit = event.crit ? '暴击，' : '';
-  if (event.response === 'guard') {
-    return `${attacker}${verb}，${crit}${target}格挡，掉${event.damage}点生命值，剩${hpLeft}`;
-  }
-  if (event.response === 'dodge') {
-    return `${attacker}${verb}，${crit}${target}没躲干净，擦中${event.damage}点，剩${hpLeft}`;
-  }
-  const take = event.forced ? '能量耗尽只能硬扛' : '硬扛';
-  return `${attacker}${verb}，${crit}${target}${take}，掉${event.damage}点，剩${hpLeft}`;
-}
-
-/** 终局一句 */
-function endSentence(winner: Side): string {
-  return winner === 'player' ? '你击倒了对手，赢了这一局' : '你倒下了，这一局输了';
-}
-
-/**
- * 把一次结算的事件转成播报：最多两句。
- * 事件顺序即发生顺序，通常是一方的出手 + 另一方的出手或待应对。
- */
-export function narrateTurn(battle: Battle, events: BattleEvent[]): string {
-  const lines: string[] = [];
-  let rampNoticed = false;
-  let winner: Side | null = null;
-
-  for (const event of events) {
-    if (event.type === 'charge') {
-      lines.push(chargeSentence(event.ap, event.side));
-    } else if (event.type === 'attack') {
-      lines.push(attackSentence(event));
-    } else if (event.type === 'pending') {
-      lines.push(pendingSentence(event.move, event.side));
-    } else if (event.type === 'end') {
-      winner = event.winner;
-    } else if (event.type === 'round-start' && event.round === 3 && !rampNoticed) {
-      rampNoticed = true;
-      lines.push('第三轮开始，攻击伤害每轮加2');
-    }
-  }
-
-  // 终局：保留一条过程播报，再接胜负；两句话必须放得下
-  if (winner) {
-    return [...lines.slice(0, 1), endSentence(winner)].join('。') + '。';
-  }
-  if (lines.length === 0) return narrateStatus(battle);
-  return lines.slice(0, 2).join('。') + '。';
-}
-
-/** 战况播报 */
-export function narrateStatus(battle: Battle): string {
+/** 战况播报：轮次、双方生命值与能量、大招次数，再提示下一步 */
+export function narrateStatus(battle: Battle, options: { waiting?: boolean } = {}): string {
   if (battle.phase !== 'battle') return narrateEnded(battle);
-  const parts = [`第${battle.round}轮，${fighterLine(battle)}`];
+  const lines = [`第${battle.round}轮，${fighterLine(battle)}，${ultLine(battle)}`];
   if (battle.pending) {
-    const actor = battle.pending.actor === 'player' ? '你' : '对手';
-    const move = MOVE_VERB[battle.pending.move];
-    parts.push(
-      battle.pending.actor === 'player'
-        ? `你的${move}已出手，等对手应对`
-        : `对手的${move}还等着你应对`,
-    );
-  } else if (battle.mode === 'pvp') {
-    parts.push(battle.active === 'player' ? '轮到你出招' : '等对手出招');
+    lines.push(pendingSentence(battle.pending.move, battle.pending.actor));
+  } else if (!options.waiting) {
+    lines.push(turnHint(battle));
   }
-  return parts.slice(0, 2).join('。') + '。';
+  return joinLines(lines);
 }
 
 /** 双人联机：房间开好，等另一位玩家 */
 export function narrateRoomCreated(code: string): string {
-  return `房间${code}已开好，把房间号告诉另一位玩家，说「加入房间${code}」就能进来`;
+  return `房间${code}开好了，把房间号告诉另一位玩家，说「加入房间${code}」就能进来`;
 }
 
 /** 双人联机：成功加入房间 */
 export function narrateRoomJoined(code: string): string {
-  return `你进了房间${code}，对面是另一位玩家`;
+  return `我进了房间${code}，对面就是另一位玩家`;
 }
 
 /** 双人联机：房间还没等到人 */
 export function narrateWaitingRoom(code: string): string {
-  return `房间${code}还等着对手加入，加入后就能开打`;
+  return `房间${code}还等着另一位玩家加入，进来就能开打`;
 }
 
 /** 双人联机：房间号不存在或已过期 */
@@ -165,11 +241,6 @@ export function narrateRoomInvalid(): string {
   return '房间号要四位数字，再说一遍试试';
 }
 
-/** 双人联机：轮到谁出招，拼在回合播报后面 */
-export function narrateTurnHint(battle: Battle): string {
-  return battle.active === 'player' ? '轮到你出招' : '等对手出招';
-}
-
 /**
  * 这句话不像是在出招：否定与歧义都不执行，只说清为什么没出手。
  *
@@ -177,8 +248,8 @@ export function narrateTurnHint(battle: Battle): string {
  */
 export function narrateActionBlocked(reason: 'negated' | 'ambiguous'): string {
   return reason === 'negated'
-    ? '这一手没打出去，你说的像是先不动手。想出手就直接说招式。'
-    : '这一句话里提到了两种招式，没敢替你选。一次只说一种。';
+    ? '这一手我没打出去，听着像先不动手。想出手就直接说招式。'
+    : '这句话里提到了两种招式，我没敢替你选。一次只说一种。';
 }
 
 /** 异步等待期间局面已经变了：这次识别作废，让玩家对着新局重说 */
@@ -186,15 +257,25 @@ export function narrateStaleAction(): string {
   return '这一手没生效，局面已经变了。重新说一次要出的招。';
 }
 
-/** 认不出招式：不消耗回合，只提示可选说法 */
+/** 认不出招式：不消耗回合，只提示当前阶段能说什么 */
 export function narrateUnknownAction(battle: Battle | null): string {
   if (battle?.pending && battle.mode === 'pvp' && battle.pending.actor === 'player') {
-    return '你已经出手了，等对手应对。';
+    return '我已经出招了，这一手等对手应对。';
   }
-  const hint = battle?.pending
-    ? `可以说${responseActionLabels().join('、')}`
-    : `可以说${activeActionLabels().join('、')}`;
-  return `没听清这一手，没有生效。${hint}。`;
+  if (battle?.pending) {
+    return `没听清这一手，我还没应对。可以说${responseActionLabels().join('、')}。`;
+  }
+  if (battle && battle.active !== 'player') {
+    return '还没轮到我出招，等对手先动。';
+  }
+  return `没听清这一手，我还没出招。可以说${activeActionLabels().join('、')}。`;
+}
+
+/** 招式要的能量：播报里要给具体数字，玩家才知道差多少 */
+function apCostOf(action: ActionId): number {
+  if (isAttackMove(action)) return ATTACKS[action].apCost;
+  if (action === 'charge') return 0;
+  return RESPONSES[action as ResponseMove].apCost;
 }
 
 /** 不合法操作：说清楚为什么没生效，再给一条路 */
@@ -203,38 +284,44 @@ export function narrateRejection(battle: Battle, rejection: TurnRejection): stri
     case 'ended':
       return narrateEnded(battle);
     case 'waiting-opponent':
-      return '你已经出招，这一手等对手应对。';
+      return '我已经出招了，这一手等对手应对。';
     case 'wrong-stage':
-      if (battle.pending) return '对手已经出招，现在只能应对。可以说格挡、闪避或硬抗。';
+      if (battle.pending) return '对手这一手还没结算，我只能格挡、闪避或承受。';
       return battle.active === 'player'
-        ? '轮到你了，主动阶段可以说普攻、强攻、大招或蓄力。'
-        : '现在还没轮到你出招，等对手先动。';
-    case 'insufficient-ap':
-      return '能量不够，这一招没有打出去。可以先蓄力，或者换一招。';
+        ? '该我出招了，可以说普攻、强攻、大招或蓄力。'
+        : '还没轮到我出招，等对手先动。';
+    case 'insufficient-ap': {
+      const label = actionLabel(rejection.action);
+      const cost = apCostOf(rejection.action);
+      // 应对阶段不能建议蓄力，只能承受；主动阶段才谈得上先攒能量
+      const next = battle.pending ? '现在只能承受，硬吃这一下' : '可以先蓄力，或者换一招';
+      return `我只有${battle.player.ap}点能量，${label}要${cost}点。${next}。`;
+    }
     case 'no-ult':
-      return '大招这一局已经用过了，换一招吧。';
+      return '我的大招这一局用过了，换一招吧。';
     case 'full-ap':
-      return '能量已经满了，不用再蓄力，直接出招吧。';
+      return '我能量已经满了，不用再蓄力，直接出招。';
   }
 }
 
-/** 对局已经结束 */
+/** 对局已经结束：一句结果，一句重开方式 */
 export function narrateEnded(battle: Battle): string {
-  const result = battle.phase === 'victory' ? '你赢了' : battle.phase === 'defeat' ? '你输了' : '这一局已经结束';
-  return `${result}。说「开始游戏」可以再来一局。`;
+  const result =
+    battle.phase === 'victory' ? '我赢了，击倒对手啦' : battle.phase === 'defeat' ? '我被击倒了，这局输了' : '这一局已经结束';
+  return joinLines([result, '说「开始游戏」可以再来一局']);
 }
 
 /** 还没有对局 */
 export function narrateNoBattle(): string {
-  return '现在没有进行中的对局。说「开始游戏」就能开局。';
+  return '现在没有进行中的对局。说「开始游戏」，我陪你练一局。';
 }
 
 /** 玩法说明 */
 export function narrateHelp(): string {
-  return [
-    '先手方在主动阶段说普攻、强攻、大招或蓄力；对手出招后，你只能格挡、闪避或硬抗',
+  return joinLines([
+    '轮到我主动时，说普攻、强攻、大招或蓄力；对手出招后，我按你的话格挡、闪避或承受',
     '念唤出指令也能出招，说「开始游戏」开局、说「战况如何」查状态',
-  ].join('。') + '。';
+  ]);
 }
 
 /**

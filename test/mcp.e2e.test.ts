@@ -122,7 +122,7 @@ describe('MCP 协议链路', () => {
 
     const turn1 = await callTool(client, 'game_action', { action: '攻击' });
     assert.match(textOf(turn1), /普攻/);
-    assert.match(textOf(turn1), /已锁定/);
+    assert.match(textOf(turn1), /对手普攻还没结算，我该格挡、闪避，还是承受/);
 
     const turn2 = await callTool(client, 'game_action', { action: 'dodge' });
     assert.match(textOf(turn2), /躲|闪/);

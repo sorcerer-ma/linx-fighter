@@ -56,7 +56,7 @@ pnpm sandbox        # 终端 2：沙箱，0.0.0.0:8100
 2. 窗口 B：说「加入房间1234」（页面提供复制房间号的按钮）；
 3. 两个窗口各自看到自己视角的生命值、能量与轮次。
 
-一方出招后，另一方的应对在自己的回合结算，出手方当场听不到结果。服务端会在出手方**下一次开口**时先补一句「刚才那一手。你一记强攻，对手格挡，掉3点生命值，剩15。」，再播当前这一回合——补过一次不重复。网页端另有局面面板，随时能看到。
+一方出招后，另一方的应对在自己的回合结算，出手方当场听不到结果。服务端会在出手方**下一次开口**时先补一句「刚才那一手。我强攻，对手格挡，掉3点生命值，剩15。」，再播当前这一回合——补过一次不重复。网页端另有局面面板，随时能看到。
 
 > 注意：浏览器「复制标签页」会把 sessionStorage 一起复制过去，两个标签页会变成同一个玩家。要多开请用页面上的「＋ 新窗口」或带 `?player=` 的地址。
 
@@ -130,7 +130,7 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
 ```json
 {
   "ok": true,
-  "reply": "你一记强攻，对手格挡，掉2点生命值，剩15。",
+  "reply": "我强攻，对手格挡，掉2点生命值，剩15。",
   "isError": false,
   "tool": "game_say",
   "deviceId": "web-p1",
@@ -146,7 +146,7 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
         "status": 200,
         "ms": 18,
         "request": { "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "game_say", "arguments": { "text": "强攻" } } },
-        "response": { "jsonrpc": "2.0", "id": 2, "result": { "content": [{ "type": "text", "text": "你一记强攻……" }] } }
+        "response": { "jsonrpc": "2.0", "id": 2, "result": { "content": [{ "type": "text", "text": "我强攻，对手格挡……" }] } }
       }
     ]
   }
@@ -226,7 +226,7 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 | `side` | 你在基准对局里坐哪边：`player` 房主 / `enemy` 加入者；快照已镜像，页面不用管 |
 | `phase` | `battle` / `victory` / `defeat` |
 | `active` | 现在轮到谁主动出招（视角内） |
-| `pending` | 已锁定、等应对的攻击；`actor` 是「谁打出来的」，视角内 `player` 表示你已出手等对手 |
+| `pending` | 已锁定、等应对的攻击；`actor` 是「谁打出来的」，视角内 `player` 表示我已出手、等对手应对 |
 | `winner` | `player` / `enemy` / `null`，视角内 |
 | `history` | 最近战报，最多 30 条；`actionLabel`/`responseLabel` 已是中文，直接显示 |
 | `revision` | 快照版本，仅用于页面丢弃乱序事件 |
