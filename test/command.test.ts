@@ -14,6 +14,27 @@ describe('一句话读成命令', () => {
     }
   });
 
+  it('蓄力的能量说法读成 turn，不落到战况', () => {
+    for (const text of [
+      '回能量', '回点能量', '回满能量', '补能量', '补点能量', '补满能量',
+      '攒能量', '攒点能量', '攒满能量', '存能量', '蓄能量', '聚能量', '我回点能量',
+    ]) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应读成 turn`);
+      assert.equal(command.kind === 'turn' ? command.action : null, 'charge', `「${text}」是在蓄力`);
+    }
+    // 查询句仍走战况：招式匹配前的问句拦截优先
+    for (const text of ['能量', '能量够不够', '还剩多少能量', '我的能量还剩多少']) {
+      expectKind(text, 'status');
+    }
+  });
+
+  it('问蓄力要几回合仍读成 status，不能真去蓄力', () => {
+    for (const text of ['回满能量要几回合', '补满能量要几回合', '回能量要几轮', '攒点能量要多久', '怎么回能量']) {
+      expectKind(text, 'status');
+    }
+  });
+
   it('问玩法读成 help，且不会被「出招」抢成招式', () => {
     for (const text of ['怎么玩', '怎么出招', '规则是什么', '教我一下', '怎么才能赢']) {
       expectKind(text, 'help');

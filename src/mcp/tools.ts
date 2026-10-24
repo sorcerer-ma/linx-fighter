@@ -146,7 +146,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '查看战况',
       description:
-        '查看当前对局双方的生命值、能量和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我的生命值还剩多少」时调用。',
+        '查看当前对局双方的生命值、能量、大招剩余次数和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我的生命值还剩多少」时调用。',
       inputSchema: {},
     },
     async () => invoke('game_status', {}, () => service.status(battleKey(ctx), speakOptions())),
