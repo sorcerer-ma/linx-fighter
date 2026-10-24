@@ -279,12 +279,12 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 
 `SandboxAgent`每条原话只调用一次game_say，由服务端理解与执行。工具文本/isError及sourceReply保留，reply是页面实际展示和朗读的文字。MCP新增兼容字段structuredContent.presentation（version=1）：kind、certainty、facts和renderings。facts包括真实双方资源、轮次阶段、裁决events、下一步与明确拒绝原因；来自ServiceResult、Battle和引擎事件，不解析播报。等待朋友加入时不伪造对手资源；异常确定性为unknown，不能说未执行。
 
-战况与已提交的行动结果提供由同一事实生成的完整句子候选；补账、唤出词与必要前缀完整保留。未覆盖的开局、帮助或异常等场景仅原文，不强行自由生成。服务端默认text保持兼容；异常文案改为结果未确认、先核实战况，避免泛化“没生效，再说一次”。
+战况与已提交的行动结果提供由同一事实生成的完整句子候选；补账、唤出词与必要前缀完整保留。已确认开局（含开房等待／加入）、战况、明确重说与拒绝均可整句人设表达；重说和拒绝标为not-applied，不得说已经出手。未覆盖的帮助、闲聊、归属静默和结果未知异常仍使用原文。服务端默认text保持兼容；异常文案改为结果未确认、先核实战况，避免泛化“没生效，再说一次”。
 
 用户允许整句人设表达，模型可自由生成完整话术，不限服务端renderings；该字段保留兼容参考，表达请求不发送它作为菜单。reply-check.ts进行有限启发式检查：数值及可识别的“我／对手”归属、明显胜负、单次闪避／格挡、待应对与下一步矛盾；同义词和句序变化可以通过，不使用完整句式白名单。数字归属或语义不易判定时可能保守回原文；检查也可能漏掉未覆盖的自然语言矛盾，不保证彻底验证所有语义，仍需人审与真实场景测试。
 
-事实未知、未覆盖回复类型、模型异常或检查失败时采用已有工具原文，永不重试game_say。rewriteStatus区分rewritten、original、fallback-invalid、fallback-error；受控expressionError只含HTTP状态或通用不可用提示，不含认证头与响应正文。
+事实未知、未覆盖回复类型、模型异常或检查失败时采用已有工具原文，永不重试game_say。rewriteStatus区分rewritten、original、fallback-invalid、fallback-error；受控expressionError只含HTTP状态或通用不可用提示，不含认证头与响应正文。沙箱转发日志记录随机requestId、rewriteStatus和受控expressionError，不再记录原话或回复片段；可据此区别跳过表达、校验回退与模型请求失败。
 
-表达适配器采用非流式OpenAI兼容Chat Completions，不提供游戏工具。非秘密设置为baseURL=https://opencode.ai/inference/openai/v1、model=deepseek-v4.1-flash-free；[官方模型表](https://opencode.ai/v2/docs/console/models/)列出相应端点。提示词启动读取一次，密钥仅通过用户本地受忽略.env和Node --env-file加载，不能source、入库、返浏览器或记录。游戏服务不继承沙箱表达密钥。
+表达适配器采用非流式OpenAI兼容Chat Completions，不提供游戏工具。服务商地址和模型由本地环境变量指定，实际可用性以获授权目的地的本轮验证为准。提示词启动读取一次，密钥仅通过用户本地受忽略.env和Node --env-file加载，不能source、入库、返浏览器或记录。游戏服务不继承沙箱表达密钥。
 
 模型参数未配时是原话直连，不声称已有人设模型；不完整配置报错，完整配置创建表达层。当前运行进程不会热加载服务端改动，重启前须确认进程归属和无待保护的活动对局。实际模型服务可用性、平台结构化返回消费、真实ASR／TTS与手机体验须按本轮实测报告判断，不能用离线假模型通过代替。

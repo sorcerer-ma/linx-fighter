@@ -189,3 +189,23 @@ it('原话Agent经真实MCP执行一次game_say；查询不出招、身份隔离
   assert.equal(calls.length,1);assert.equal(calls[0]?.tool,'game_say');
   const other=await client.say('agent-two','战况如何');assert.equal(other.state?.battle,null);
 });
+
+
+it('真实MCP开局与拒绝进入表达，日志只记录状态；表达失败不重试工具',async()=>{
+ const logs:Array<{message:string;fields?:Record<string,unknown>}>=[];
+ const logger={...createLogger('error'),info(message:string,fields?:Record<string,unknown>){logs.push({message,fields})}};
+ let modelCalls=0;
+ const agent=new SandboxAgent('伙伴',{async rewrite(_prompt,source,facts){modelCalls++;if(facts?.kind==='opening')return source.replace('对决开始','开打啦');throw new Error('unavailable with fake-secret');}});
+ const client=new SandboxClient({upstream:urlOf(gameServer),agentId:'feedback-agent',timeoutMs:3000,logger,agent});
+ const opened=await client.say('feedback-private-device','开始');
+ assert.equal(opened.rewriteStatus,'rewritten');assert.match(opened.reply,/开打啦/);
+ const refused=await client.say('feedback-private-device','不要普攻');
+ assert.equal(refused.rewriteStatus,'fallback-error');assert.equal(refused.reply,refused.sourceReply);
+ assert.equal(modelCalls,2);
+ for(const result of [opened,refused])assert.equal(result.trace.requests.filter(r=>r.method==='tools/call').length,1);
+ const entries=logs.filter(x=>x.message==='沙箱转发');assert.equal(entries.length,2);
+ assert.equal(entries[0]?.fields?.rewriteStatus,'rewritten');assert.equal(entries[1]?.fields?.rewriteStatus,'fallback-error');
+ assert.equal(entries[1]?.fields?.expressionError,'表达模型不可用');
+ for(const entry of entries){assert.ok(!('text' in entry.fields!));assert.ok(!('reply' in entry.fields!));assert.ok(typeof entry.fields?.requestId==='string');}
+ assert.ok(!JSON.stringify(entries).includes('fake-secret'));
+});

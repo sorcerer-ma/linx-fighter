@@ -73,3 +73,23 @@ it('表达失败只返回受控错误码，不回显异常中的配置或认证�
   assert.equal('expressionError' in result ? result.expressionError : '',message.startsWith('表达模型请求失败')?message:'表达模型不可用');
  }
 });
+
+
+it('开局、重说和明确拒绝可自由表达，仍只调用一次原话工具',async()=>{
+ const {presentation}=await import('../src/game/presentation.js');
+ const cases=[
+  {kind:'opening' as const,source:'对决开始。',reply:'开打啦，我准备好了！'},
+  {kind:'retry' as const,source:'没听清这一手，再说一次。',reply:'没听懂，再告诉我一次？'},
+  {kind:'rejected' as const,source:'我只有3点能量，大招要4点。',reply:'我现在3点能量，大招要4点，换个办法吧？'},
+ ];
+ for(const c of cases){
+  let tools=0,models=0;const facts=presentation(c.kind,null);
+  const agent=new SandboxAgent('伙伴',{async rewrite(){models++;return c.reply}});
+  const result=await agent.run('原话',{async callTool(name,args){tools++;assert.equal(name,'game_say');assert.deepEqual(args,{text:'原话'});return {text:c.source,isError:false,presentation:facts}}});
+  assert.equal(result.text,c.reply);assert.equal(result.rewriteStatus,'rewritten');assert.equal(models,1);assert.equal(tools,1);
+ }
+ const facts=presentation('retry',null);facts.facts.next='act';
+ const agent=new SandboxAgent('伙伴',{async rewrite(){return '我命中了！'}});
+ const result=await agent.run('未知',{async callTool(){return {text:'没听清，再说一次。',isError:false,presentation:facts}}});
+ assert.equal(result.rewriteStatus,'fallback-invalid');assert.equal(result.text,'没听清，再说一次。');
+});

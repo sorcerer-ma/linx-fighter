@@ -260,7 +260,7 @@ flowchart TB
 
 灵犀硬件只是载体，真正对外的是这套 MCP 服务。任何新载体只需要回答两个问题：**怎么把玩家的话送进来**（调 `game_say`）、**怎么把结果呈现出去**（念出来，或画出来）。请求头 `X-Linx-Display` 就是载体能力的声明：`voice` 保留补账播报，`screen` 关掉、由客户端自己画局面。
 
-`sandbox/` 是这台「替身设备」：页面把原话交给沙箱，沙箱像平台一样只发 HTTP 调 `game_say`，不 import 服务端内部函数。所以多窗口对战、手机访问、Agent 用脚本自己打完整局，走的都是真实链路。详见 [docs/testing/sandbox.md](docs/testing/sandbox.md)。
+`sandbox/` 是这台「替身设备」：页面把原话交给沙箱，沙箱像平台一样只发 HTTP 调 `game_say`，不 import 服务端内部函数。所以多窗口对战、手机访问、Agent 用脚本自己打完整局，走的都是真实链路。详见 [docs/testing/sandbox.md](docs/testing/sandbox.md)。 配置沙箱表达模型后，开局、战况、回合结果、需重说和明确拒绝可按共享战斗伙伴人设整句表达；事实未知或表达校验失败时回工具原文，不重复执行游戏。转发日志通过 `rewriteStatus` 和受控 `expressionError` 区分实际改写与回退，不记录原话和回复片段。
 
 ### 扩展点
 

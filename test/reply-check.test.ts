@@ -27,3 +27,15 @@ it('征求指挥保留主动下一步，不能省略玩家所需的行动提示'
  assert.equal(checkReply('该我出招。','我该怎么做？',active),true);
  assert.equal(checkReply('该我出招。','真痛快！',active),false);
 });
+
+
+it('开局名称归属可替换为对手，仍拒绝数字交换；等待加入不得开打',()=>{
+ const facts=presentation('opening',null);facts.facts.opponentName='守擂教头';facts.facts.next='act';
+ const source='我14点生命值，守擂教头18点生命值。该我出招。';
+ assert.equal(checkReply(source,'我14点生命值，对手18点生命值。我该怎么做？',facts),true);
+ assert.equal(checkReply(source,'我18点生命值，对手14点生命值。我该怎么做？',facts),false);
+ facts.facts.next='wait-join';
+ assert.equal(checkReply('还在等对手加入。','开打啦！',facts),false);
+ const ended=presentation('status',null);ended.facts.next='ended';
+ assert.equal(checkReply('这局结束了。','我该怎么做？',ended),false);
+});
