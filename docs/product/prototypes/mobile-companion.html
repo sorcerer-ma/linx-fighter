@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light"><meta name="theme-color" content="#f0f2e9"><title>共鸣 · 伙伴设备｜设计原型</title>
+<style>
+:root{--ink:#223d3a;--muted:#52685e;--paper:#f0f2e9;--mint:#b9e4b9;--glow:#86d6ad;--light:#84d6af;--accent:#527566}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+button,input,select{font:inherit}
+button,summary,select{touch-action:manipulation}
+button:focus-visible,summary:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #436e59;outline-offset:4px}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 20% 10%,#fff7df88,transparent 50%),radial-gradient(ellipse at 90% 75%,#b8d6c344,transparent 45%)}
+.app{position:relative;width:min(100%,460px);margin:auto;padding:calc(20px + env(safe-area-inset-top)) 24px calc(20px + env(safe-area-inset-bottom));min-height:100svh}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+.wordmark{font-size:20px;font-weight:700;letter-spacing:3px}
+.edition{font-size:10px;letter-spacing:2px;color:var(--muted)}
+.pill{font-size:10px;padding:7px 10px;border:1px solid #bcc9bc;border-radius:30px;white-space:nowrap}
+.intro{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:15px}
+.intro h1{margin:0;font-size:25px;font-weight:550;letter-spacing:-.5px}
+.intro p{margin:5px 0 0;font-size:11px;color:var(--muted)}
+.live{font-size:11px;color:var(--accent);display:flex;gap:6px;align-items:center;white-space:nowrap}
+.live i{width:5px;height:5px;background:var(--light);border-radius:50%}
+.stage{position:relative;padding:14px 0 12px;border-top:1px solid #bccbbb;border-bottom:1px solid #bccbbb}
+.view-label{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--muted);letter-spacing:.3px}
+.view-label b{font-size:9px;letter-spacing:1.5px;font-weight:500;opacity:.7}
+.front-wrap{position:relative;display:grid;place-items:center;min-height:274px;padding:15px 0 9px}
+.floor{position:absolute;bottom:9px;width:204px;height:22px;border-radius:50%;background:#59756220;filter:blur(9px)}
+.hardware{position:relative;background:linear-gradient(125deg,#fffcf0 2%,#e8e9d9 65%,#d4ddcc);border:1px solid #fffdf5;border-radius:48px;box-shadow:inset 1px 2px 2px #fff, inset -4px -5px 8px #9cae972c,0 14px 24px #294a3515,0 3px 0 #bbc9b7;transform-origin:50% 65%}
+.front{width:228px;height:246px;padding:18px 15px 15px}
+.corner{position:absolute;left:21px;top:13px;width:32px;height:2px;border-radius:4px;background:#a6b8a677}
+.top-led{width:35px;height:4px;background:var(--light);border-radius:5px;margin:0 auto 13px;box-shadow:0 0 9px color-mix(in srgb,var(--light),transparent 40%)}
+.screen{position:relative;background:var(--screen-base,#183f37);border:4px solid #405d4b;border-radius:32px;height:176px;overflow:hidden;box-shadow:0 0 0 2px #c4d2b9,inset 0 4px 15px #0b21196e;color:#edf7dc}
+.screen:before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 55%,var(--screen-center,#427f55) 0,var(--screen-edge,#1d493c) 68%);opacity:.8}
+.screen:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 14px #09271c88;border-radius:26px}
+.screen-meta{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;font-size:8px;letter-spacing:1px;color:#c9dfc1}
+.screen-meta .dots{letter-spacing:2px;color:#9bd39b}
+.portrait{position:absolute;inset:25px 16px 57px;display:grid;place-items:center}
+.buddy{width:132px;height:116px;overflow:visible;filter:drop-shadow(0 8px 7px #092b2344)}
+.eye-open{display:initial}
+.eye-closed{display:none}
+.brows{opacity:0;transition:opacity .18s}
+.resources{position:absolute;bottom:9px;left:13px;right:13px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 26px;gap:7px;align-items:center;min-height:26px}
+.resource{display:flex;align-items:center;gap:4px;min-width:0;color:#b9e3a4}
+.resource-icon{flex:none;width:11px;height:11px}
+.resource.energy{color:#f1d89d}
+.track{height:4px;flex:1;background:#9ab09b35;border-radius:5px;overflow:hidden}
+.fill{width:100%;height:100%;background:#91d793;transition:width .3s}
+.energy-dots{display:flex;gap:3px}
+.energy-dots i{width:6px;height:6px;border-radius:50%;border:1px solid #c7c4a78a;background:transparent}
+.energy-dots i.on{background:#f1d89d;border-color:#f1d89d}
+.ultimate{width:26px;height:26px;color:#a0b49a;display:grid;place-items:center}
+.ultimate svg{width:24px;height:24px;overflow:visible}
+.ult-star{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round}
+.ult-ring{fill:none;stroke:currentColor;stroke-width:1.2;opacity:0}
+.ult-rays{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;opacity:0}
+.ult-slash{fill:none;stroke:currentColor;stroke-width:3.2;stroke-linecap:round;opacity:0}
+.ultimate[data-availability="ready"]{color:#ffe6a1}
+.ultimate[data-availability="ready"] .ult-star{fill:currentColor;stroke-width:1}
+.ultimate[data-availability="ready"] .ult-ring,.ultimate[data-availability="ready"] .ult-rays{opacity:1}
+.ultimate[data-availability="used"]{color:#c0c8b8}
+.ultimate[data-availability="used"] .ult-slash{opacity:1;filter:drop-shadow(0 0 1px #183f37)}
+.state-listening .eye-open{opacity:.8}
+.state-attacking .brows,.state-defending .brows{opacity:1}
+.state-hurt .mouth,.state-repeat .mouth,.state-offline .mouth{transform:translateY(166px) scaleY(-1)}
+.state-victory .eye-open{display:none}
+.state-victory .eye-closed{display:initial}
+.speaker{margin:13px auto 0;display:flex;gap:3px;justify-content:center}
+.speaker i{width:3px;height:3px;border-radius:50%;background:#9aab91}
+.device-sign{position:absolute;bottom:7px;right:24px;font-size:7px;letter-spacing:1.8px;color:#7f9379}
+.back-line{display:flex;gap:15px;align-items:center;margin-top:8px}
+.back-caption{flex:1;color:var(--muted);font-size:10px;line-height:1.7}
+.back-caption strong{font-size:11px;color:var(--ink);font-weight:500;display:block}
+.back{flex:none;width:108px;height:112px;border-radius:26px;box-shadow:inset 1px 2px 2px #fff,inset -3px -4px 6px #9cae972c,0 6px 12px #294a3512,0 2px 0 #b4c3b0}
+.back:before{content:"";position:absolute;inset:10px;border:1px solid #aabb9f55;border-radius:19px}
+.back:after{content:"";position:absolute;left:37px;right:37px;bottom:19px;height:2px;background:#a2b29a66;border-radius:10px}
+.back-led{position:absolute;left:36px;right:36px;top:27px;height:4px;border-radius:4px;background:var(--light);box-shadow:0 0 11px color-mix(in srgb,var(--light),transparent 25%)}
+.back-emblem{position:absolute;left:43px;top:47px;width:22px;height:22px;opacity:.25}
+.sync-note{font-size:9px;color:var(--muted);margin:12px 0 0;display:flex;gap:5px;align-items:center}
+.sync-note svg{width:11px;height:11px}
+.voice{padding:17px 0 10px}
+.voice-head{display:flex;align-items:center;gap:6px;color:var(--accent);font-size:10px;margin-bottom:8px}
+.wave{display:flex;align-items:center;height:13px;gap:2px}
+.wave i{width:2px;background:#6b9a7d;height:5px;border-radius:3px}
+.wave i:nth-child(2n){height:10px}
+.voice-text{font-size:15px;line-height:1.65;margin:0;min-height:50px;letter-spacing:.1px}
+.voice-foot{margin:4px 0 0;font-size:9px;color:var(--muted)}
+details{margin-top:12px;border:1px solid #bacbb9;border-radius:15px;background:#ffffff42}
+summary{padding:12px 14px;font-size:11px;cursor:pointer;list-style:none;display:flex;justify-content:space-between}
+summary::-webkit-details-marker{display:none}
+summary:after{content:"＋"}
+details[open]>summary:after{content:"−"}
+.panel{padding:0 14px 14px}
+.panel select{width:100%;border:1px solid #b3c4b0;border-radius:9px;background:#fcfdf5;padding:9px;color:var(--ink);font-size:12px}
+.controls{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.controls button{border:1px solid #a5bca3;background:#e8efe1;padding:9px 11px;border-radius:9px;font-size:11px;color:var(--ink);cursor:pointer}
+.controls button.primary{background:#345d4c;color:#f3f7e8;border-color:#345d4c}
+.controls button:disabled{opacity:.5;cursor:default}
+.hint{font-size:10px;line-height:1.75;color:var(--muted);margin:10px 0 0}
+.checks{display:flex;gap:7px;font-size:10px;margin-top:12px;align-items:center}
+.checks input{accent-color:#345d4c}
+.legend{border-top:1px solid #bdcabb;margin-top:12px;padding-top:9px;font-size:10px;line-height:1.8;color:var(--muted)}
+footer{margin-top:12px;font-size:9px;line-height:1.7;color:var(--muted);text-align:center}
+.state-listening .back-led,.state-listening .top-led{animation:listen 1.6s ease-in-out infinite}
+.state-accepted .brows{opacity:1}
+.state-hurt .eye-closed,.state-defeat .eye-closed{display:initial}
+.state-repeat .brows{opacity:1}
+
+
+.no-motion *,.no-motion *:before,.no-motion *:after{animation:none!important;transition:none!important}
+@keyframes listen{50%{opacity:.4}}
+@media(max-width:360px){.app{padding-left:18px;padding-right:18px}
+header{margin-bottom:13px}
+.intro h1{font-size:23px}
+.front-wrap{min-height:253px}
+.front{width:210px;height:230px;padding:16px 14px}
+.screen{height:164px}
+.buddy{width:118px;height:103px}
+.top-led{margin-bottom:10px}
+.back{width:96px;height:101px}
+.back-led{left:31px;right:31px}
+.back-emblem{left:37px;top:44px}
+.voice-text{font-size:14px}
+.back-line{gap:12px}}
+@media(min-width:760px){.app{margin:26px auto;min-height:0;padding:25px 32px;border:1px solid #c9d4c1;border-radius:28px;background:#f6f7ee95;box-shadow:0 20px 100px #3d694018}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+.impact-face,.tired-face{display:none}
+.state-hurt.impact-active .eye-open,.state-hurt.impact-active .eye-closed,.state-hurt.impact-active .mouth,.state-hurt.impact-active .brows,.state-defeat .eye-open,.state-defeat .eye-closed,.state-defeat .mouth,.state-defeat .brows{display:none}
+.state-hurt.impact-active .impact-face,.state-defeat .tired-face{display:initial}
+.state-hurt:not(.impact-active) .eye-open{display:initial}
+.state-hurt:not(.impact-active) .eye-closed{display:none}
+.state-hurt:not(.impact-active) .mouth{transform:none}
+.state-defeat .buddy{opacity:1}
+.state-hurt.impact-active .screen:before{animation:impact-tone .7s ease-out 1}
+.state-hurt.impact-active .top-led,.state-hurt.impact-active .back-led{animation:impact-tone .7s ease-out 1}
+@keyframes impact-tone{0%{opacity:.55}30%{opacity:1}100%{opacity:.8}}
+.attentive-face{display:none}
+.state-listening .eye-open,.state-listening .eye-closed,.state-listening .mouth,.state-listening .brows{display:none}
+.state-listening .attentive-face{display:initial}
+.state-listening .screen:after{inset:5px;border:2px solid #a9e9da;border-radius:22px;box-shadow:none}
+.aura{display:none;position:absolute;width:166px;height:118px;left:50%;top:50%;transform:translate(-50%,-50%);fill:none;stroke:#eddf9d;stroke-width:2;filter:drop-shadow(0 0 5px #e6d48188);pointer-events:none}
+.aura-inner{stroke-width:4;opacity:.65}
+.ultimate-ready .aura{display:block;animation:energy-aura 2.8s ease-in-out infinite}
+@keyframes energy-aura{0%,100%{opacity:.65}50%{opacity:1}}
+.hardware{border:2px solid #69806b;box-shadow:inset 2px 2px 0 #fffdef,inset -4px -4px 0 #c5cfb9,0 4px 0 #8c9e85,0 12px 20px #294a351a}
+.screen{border-color:#314e3b;box-shadow:0 0 0 2px #a8ba97,inset 0 3px 0 #112e27}
+.buddy .eye-open{stroke:#254d3c;stroke-width:2.5}
+.buddy .mouth{stroke-width:5}
+.buddy .eye-closed{stroke-width:5}
+.buddy>ellipse{opacity:.8}
+.state-hurt.impact-active .buddy{filter:drop-shadow(2px 2px 0 #3e2925)}
+.state-listening .attentive-face{filter:drop-shadow(1px 2px 0 #163c38)}
+.held-pose{display:none}
+.guard-face{display:none}
+.state-defending .held-pose,.state-guardIntent .held-pose,.state-defending .guard-face,.state-guardIntent .guard-face{display:initial}
+.state-guardIntent .held-shield{stroke-dasharray:7 5}
+.state-guardIntent .held-pose{display:initial;opacity:.65}
+.state-defending .eye-open,.state-defending .eye-closed,.state-defending .mouth,.state-defending .brows,.state-guardIntent .eye-open,.state-guardIntent .eye-closed,.state-guardIntent .mouth,.state-guardIntent .brows{display:none}
+
+/* Offline system type, botanical toy shell, original comic face; controls stay outside hardware. */
+.app{padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
+.intro h1{text-wrap:balance}
+.voice-text,.back-caption,.hint,.legend{overflow-wrap:anywhere}
+.back-caption{min-width:0;font-size:11px}
+.sync-note,.voice-foot,footer{font-size:11px}
+.view-label,.voice-head{font-size:12px}
+summary{min-height:48px;align-items:center;font-size:14px;gap:8px}
+summary span{font-size:11px;color:var(--muted)}
+.panel select{min-height:48px;font-size:16px}
+.controls button{min-height:44px;font-size:13px;padding:10px 12px}
+.checks{min-height:44px;font-size:13px;cursor:pointer}
+.checks input{width:18px;height:18px;flex:none}
+.hint,.legend{font-size:12px}
+button,summary,select,input,a{-webkit-tap-highlight-color:#52756630}
+.controls button:hover:not(:disabled){border-color:#345d4c;box-shadow:0 2px 0 #345d4c33}
+.controls button:active:not(:disabled){transform:translateY(1px)}
+summary:hover{background:#d7e2d144;border-radius:15px}
+.skip{position:fixed;top:8px;left:8px;z-index:10;padding:12px;background:#223d3a;color:#fff;border-radius:8px;transform:translateY(-180%)}
+.skip:focus{transform:none;outline:3px solid #739174;outline-offset:3px}
+#demo-controls{scroll-margin-top:16px}
+@media(max-width:360px){.app{padding-left:max(18px,env(safe-area-inset-left));padding-right:max(18px,env(safe-area-inset-right))}
+.sync-note{font-size:10px}
+.back-caption{font-size:10px}}
+
+/* Defense: one centered face-over-shield composition; no floating aura frame. */
+.state-defending .guard-face,.state-guardIntent .guard-face{transform:translateY(-12px)}
+.state-accepted .screen:after{inset:5px;border:2px solid #efd79c;border-radius:22px;box-shadow:none;animation:accepted-wait 3s ease-in-out infinite}
+.state-accepted .top-led,.state-accepted .back-led{animation:accepted-wait 3s ease-in-out infinite}
+@keyframes accepted-wait{0%,100%{opacity:.6}50%{opacity:1}}
+.no-network{display:none;position:absolute;width:100px;height:84px;left:50%;top:50%;transform:translate(-50%,-50%)}
+.state-offline .buddy{visibility:hidden;opacity:1}
+.state-offline .no-network{display:block}
+.state-offline .fill{width:100%!important;background:repeating-linear-gradient(135deg,#9db8a4 0 3px,transparent 3px 6px)}
+.state-offline .energy-dots i{border-style:dashed;background:linear-gradient(135deg,transparent 40%,#c7c4a7 40% 60%,transparent 60%)}
+
+.dodge-trail{display:none;position:absolute;width:150px;height:94px;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}
+.state-dodgeIntent .brows,.state-dodgeSuccess .brows{opacity:1}
+.state-dodgeSuccess .buddy{transform-box:fill-box;transform-origin:center;transform:translate(-12px,-2px) rotate(-8deg);animation:dodge-step .4s ease-out 1}
+.state-dodgeSuccess .dodge-trail{display:block}
+@keyframes dodge-step{0%{transform:none}55%{transform:translate(-17px,-3px) rotate(-12deg)}100%{transform:translate(-12px,-2px) rotate(-8deg)}}
+.state-dodgeFailed.impact-active .eye-open,.state-dodgeFailed.impact-active .mouth,.state-dodgeFailed.impact-active .brows{display:none}
+.state-dodgeFailed.impact-active .impact-face{display:initial}
+.state-dodgeFailed.impact-active .screen:before,.state-dodgeFailed.impact-active .top-led,.state-dodgeFailed.impact-active .back-led{animation:impact-tone .7s ease-out 1}
+
+/* Enlarge the expression within a reserved stage; keep a separate, two-row HUD. */
+.portrait{inset:10px 12px 51px}
+.buddy{width:158px;height:122px}
+.aura{width:174px;height:110px}
+.resources{grid-template-columns:minmax(0,1fr) 32px;gap:5px 10px;min-height:32px;align-items:center}
+.resource.life{grid-column:1;grid-row:1}
+.resource.energy{grid-column:1;grid-row:2}
+.resource{gap:5px}
+.resource-icon{width:14px;height:14px}
+.track{height:6px}
+.energy-dots{gap:5px}
+.energy-dots i{width:8px;height:8px;border-width:1.3px}
+.ultimate{grid-column:2;grid-row:1 / span 2;width:32px;height:32px}
+.ultimate svg{width:30px;height:30px}
+.ult-star{stroke-width:2;stroke-linejoin:round}
+.ult-core{fill:none;stroke:currentColor;stroke-width:1.5}
+.ultimate[data-availability="ready"] .ult-star{fill:currentColor;stroke-width:1.5}
+.ultimate[data-availability="ready"] .ult-core{fill:#345b42;stroke:none}
+.ultimate[data-availability="used"] .ult-star,.ultimate[data-availability="used"] .ult-core{opacity:.5}
+.ultimate[data-availability="used"] .ult-slash{opacity:1;stroke-width:3.5}
+
+
+
+/* Compact demo controls, independent of the device visualization scale. */
+summary{min-height:44px;padding:9px 12px;font-size:12px}
+summary span{font-size:10px}
+.panel{padding:0 12px 12px}
+.panel>.hint:first-child{display:block;font-size:11px;margin-top:0;margin-bottom:5px}
+.panel select{min-height:44px;padding:6px 9px;font-size:16px}
+.controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:7px}
+.controls button{min-height:44px;font-size:12px;padding:6px 4px;line-height:1.3}
+.options-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+.checks{margin-top:0;min-height:44px;font-size:11px;line-height:1.5;gap:5px}
+.hint,.legend{font-size:11px}
+@media(pointer:fine){.panel select{font-size:13px}}
+@media(max-width:360px){.portrait{left:10px;right:10px}.buddy{width:146px;height:116px}}
+/* Reserve real room for the enlarged face, shield and two-row HUD. */
+.front{height:262px}
+.screen{height:190px}
+.front-wrap{min-height:290px}
+.portrait{bottom:63px}
+@media(max-width:360px){.front{height:246px}.screen{height:178px}.front-wrap{min-height:269px}}
+
+.prototype-notes{margin-top:8px;background:transparent}.prototype-notes>summary{font-size:11px}.prototype-notes .legend{margin:0;padding:0 10px 10px;border-top:0}
+
+/* Face centered in the small screen; one quiet HUD row below. */
+.portrait{inset:0}
+.resource.life{grid-column:1;grid-row:1}
+.resource.energy{grid-column:2;grid-row:1}
+.resources{grid-template-columns:minmax(0,1fr) auto;gap:10px;min-height:16px;bottom:10px}
+.track{height:8px}
+.energy-bolts{display:flex;gap:3px;align-items:center}
+.energy-point{width:10px;height:15px;fill:none;stroke:#8f9d95;stroke-width:1.3;stroke-linejoin:round}
+.energy-point.on{fill:#f1d89d;stroke:#f1d89d}
+.state-offline .energy-point{fill:none;stroke-dasharray:2 2}
+.ultimate{position:absolute;right:9px;top:9px;width:28px;height:28px;z-index:2}
+.ultimate svg{width:26px;height:26px}
+.state-defending .guard-face,.state-guardIntent .guard-face{transform:none}
+.cheer-face{display:none}
+.state-victory .eye-open,.state-victory .eye-closed,.state-victory .mouth,.state-victory .brows{display:none}
+.state-victory .cheer-face{display:initial}
+.dodge-trail{width:174px;height:120px}
+.state-dodgeSuccess .buddy{transform:translate(-20px,-26px) rotate(-5deg);animation:clear-dodge .45s ease-out 1}
+@keyframes clear-dodge{0%{transform:none}55%{transform:translate(-24px,-29px) rotate(-7deg)}100%{transform:translate(-20px,-26px) rotate(-5deg)}}
+
+/* Original rounded burst core: broken / charged / spent, without blade-like points. */
+.ultimate{width:28px;height:31px;right:9px;top:7px}
+.ultimate svg{width:26px;height:29px}
+.ult-ring{display:initial;opacity:1;stroke:currentColor;stroke-width:2;stroke-dasharray:43 20;stroke-dashoffset:-4;fill:none}
+.ult-core{fill:none;stroke:currentColor;stroke-width:2}
+.ult-flare{display:none;fill:currentColor;stroke:none}
+.ultimate[data-availability="ready"] .ult-core{fill:currentColor;stroke:none}
+.ultimate[data-availability="ready"] .ult-ring{stroke-dasharray:none}
+.ultimate[data-availability="ready"] .ult-flare{display:initial}
+.ultimate[data-availability="used"] .ult-ring{display:none}
+.ultimate[data-availability="used"] .ult-core{fill:none;opacity:.6}
+
+/* One shared face: fixed eye slots (28×36) and mouth anchor (100,87). */
+.app .buddy{transform:none;animation:none}
+.eyes-happy,.eyes-impact,.eyes-low,.brow-ready,.brow-listen,.brow-question,.mouth-listen,.mouth-cheer,.mouth-shock,.mouth-low,.mouth-question,.question-mark,.impact-lines{display:none}
+.state-listening .brow-listen{display:initial}
+.state-listening .mouth-neutral,.state-accepted .mouth-neutral,.state-attacking .mouth-neutral,.state-defending .mouth-neutral,.state-guardIntent .mouth-neutral,.state-dodgeIntent .mouth-neutral{display:none}
+.state-listening .mouth-listen,.state-accepted .mouth-listen,.state-attacking .mouth-listen,.state-defending .mouth-listen,.state-guardIntent .mouth-listen,.state-dodgeIntent .mouth-listen{display:initial}
+.state-accepted .brow-ready,.state-attacking .brow-ready,.state-defending .brow-ready,.state-guardIntent .brow-ready,.state-dodgeIntent .brow-ready,.state-dodgeSuccess .brow-ready{display:initial}
+.state-victory .eyes-open,.state-victory .mouth-neutral{display:none}
+.state-victory .eyes-happy,.state-victory .mouth-cheer{display:initial}
+.state-hurt.impact-active .eyes-open,.state-dodgeFailed.impact-active .eyes-open,.state-hurt.impact-active .mouth-neutral,.state-dodgeFailed.impact-active .mouth-neutral{display:none}
+.state-hurt.impact-active .eyes-impact,.state-dodgeFailed.impact-active .eyes-impact,.state-hurt.impact-active .mouth-shock,.state-dodgeFailed.impact-active .mouth-shock,.state-hurt.impact-active .impact-lines,.state-dodgeFailed.impact-active .impact-lines{display:initial}
+.state-defeat .eyes-open,.state-defeat .mouth-neutral{display:none}
+.state-defeat .eyes-low,.state-defeat .mouth-low{display:initial}
+.state-repeat .mouth-neutral{display:none}
+.state-repeat .mouth-question,.state-repeat .brow-question,.state-repeat .question-mark{display:initial}
+.state-dodgeSuccess .dodge-trail{animation:attack-pass .45s ease-out 1}
+@keyframes attack-pass{0%{opacity:.25;transform:translate(calc(-50% + 10px),calc(-50% - 8px))}100%{opacity:1;transform:translate(-50%,-50%)}}
+.resource-preview{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:9px;margin-top:7px}
+.resource-preview label{font-size:11px;color:var(--muted)}
+
+.dodge-faces{display:none}
+.state-dodgeSuccess .primary-face{display:none}
+.state-dodgeSuccess .dodge-faces{display:initial}
+.dodge-faces>use{opacity:.55}
+.state-dodgeSuccess .dodge-speed{animation:dodge-speed .45s ease-out 1;transform-box:fill-box;transform-origin:center}
+@keyframes dodge-speed{0%{opacity:.25;transform:translateX(4px)}100%{opacity:1;transform:none}}
+
+/* Charged atmosphere belongs to the small screen, not a frame pasted onto the face. */
+.ultimate-ready .screen:before{background:radial-gradient(ellipse at 50% 42%,#a4622b 0%,#744627 53%,#304338 100%);opacity:1}
+.aura{width:176px;height:128px;stroke:none;filter:none;opacity:.9}
+.ultimate-ready .aura{animation:charged-breath 2.6s ease-in-out infinite}
+@keyframes charged-breath{0%,100%{opacity:.28}50%{opacity:1}}
+
+.ultimate-ready .screen:before{animation:charged-screen-breath 2.6s ease-in-out infinite}
+@keyframes charged-screen-breath{0%,100%{opacity:.84}50%{opacity:1}}
+.dodge-faces>use:first-child{opacity:.4}
+.dodge-faces>use:nth-child(2){opacity:.65}
+
+.dodge-faces>use.dodge-side{opacity:.14}
+.dodge-faces>use.dodge-moving{opacity:.65;transform:none;transform-box:fill-box;transform-origin:center}
+.state-dodgeSuccess .dodge-moving{animation:dodge-sway .4s ease-in-out infinite}
+@keyframes dodge-sway{0%,100%{transform:translateX(-8px)}50%{transform:translateX(8px)}}
+
+/* Selected rising-flame treatment: continuous base, rounded unequal tongues. */
+.ultimate-ready .aura{animation:none;opacity:.95}
+.flame-sheet,.flame-stream{transform-box:fill-box;transform-origin:center bottom}
+.ultimate-ready .flame-sheet{animation:flame-rise 1.15s ease-in-out infinite}
+.ultimate-ready .flame-left{animation:flame-stream .85s ease-in-out infinite;animation-delay:-.3s}
+.ultimate-ready .flame-right{animation:flame-stream 1s ease-in-out infinite;animation-delay:-.65s}
+@keyframes flame-rise{0%,100%{transform:scaleY(.97)}50%{transform:translateY(-2px) scaleY(1.025)}}
+@keyframes flame-stream{0%,100%{transform:scaleY(.92)}50%{transform:translateY(-3px) scaleY(1.055)}}
+</style>
+</head>
+<body>
+<a class="skip" href="#demo-controls">跳至演示控制</a>
+<main class="app state-idle" id="app">
+<header><div><div class="wordmark">共鸣</div></div><span class="pill">概念原型</span></header>
+<div class="intro"><div><h1>它住在这里。</h1><p>同一位伙伴，同一台设备的两面。</p></div><span class="live"><i></i><span id="state-name">待机</span></span></div>
+<section class="stage" aria-label="同一伙伴设备的两个视图">
+<div class="view-label"><span>对手看到的正面</span></div>
+<div class="front-wrap"><div class="floor"></div><div class="hardware front" aria-label="本方硬件正面概念外观"><span class="corner"></span><div class="top-led"></div><div class="screen">
+<div class="ultimate" id="ultimate" role="img" aria-label="大招未就绪" data-availability="insufficient"><svg viewBox="0 0 32 36" aria-hidden="true"><circle class="ult-ring" cx="16" cy="23" r="10"/><circle class="ult-core" cx="16" cy="23" r="6"/><path class="ult-flare" d="M10 15C5 9 10 6 13 3c-1 6 4 8 5 2 8 5 10 12 4 14-2-5-8-6-12-4Z"/><path class="ult-slash" d="m7 32 18-18"/></svg></div><div class="portrait"><svg class="aura" viewBox="0 0 200 140" aria-hidden="true"><defs><linearGradient id="charged-energy" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#efa64f" stop-opacity=".12"/><stop offset=".55" stop-color="#f5c56e" stop-opacity=".26"/><stop offset="1" stop-color="#ffe4a7" stop-opacity=".42"/></linearGradient><linearGradient id="charged-stream" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffd899" stop-opacity=".03"/><stop offset="1" stop-color="#ffe4a7" stop-opacity=".22"/></linearGradient></defs><path class="flame-sheet" d="M18 128C7 109 35 89 31 68c14 6 12 25 22 36C66 83 59 56 69 38q3-5 6-4t0 7C68 61 86 73 91 90C104 72 89 42 105 23q4-7 7-2t0 8C108 50 128 70 123 93C137 79 136 67 146 54q4-6 7-1C154 74 176 99 184 128Z" fill="url(#charged-energy)"/><path class="flame-stream flame-left" d="M45 128c-9-16 12-29 10-55 19 20 8 33 23 45 4-8 1-18 7-25 13 14 6 28 7 35Z" fill="url(#charged-stream)"/><path class="flame-stream flame-right" d="M107 128c-5-17 18-34 11-59 21 16 15 37 23 44 8-8 5-18 8-24 15 19 9 31 13 39Z" fill="url(#charged-stream)"/></svg><svg class="buddy" viewBox="22 5 156 120" role="img" aria-label="伙伴表情，固定五官锚点"><defs><g id="face-art">
+<g class="face-anchors" aria-hidden="true" fill="transparent" pointer-events="none"><rect data-anchor="left-eye" x="51" y="37" width="28" height="36"/><rect data-anchor="right-eye" x="121" y="37" width="28" height="36"/><rect data-anchor="mouth" x="78" y="66" width="44" height="42"/></g>
+<g class="eyes-open" style="display:var(--face-eyes-open,inline)" fill="#d9f8b7" stroke="none"><ellipse class="eye-body" data-center="65 55" data-size="24 32" cx="65" cy="55" rx="12" ry="16"/><ellipse class="eye-body" data-center="135 55" data-size="24 32" cx="135" cy="55" rx="12" ry="16"/></g>
+<g class="eyes-happy" style="display:var(--face-eyes-happy,none)" fill="none" stroke="#d9f8b7" stroke-width="6" stroke-linecap="round"><path d="M53 57q12-28 24 0M123 57q12-28 24 0"/></g>
+<g class="eyes-impact" style="display:var(--face-eyes-impact,none)" fill="none" stroke="#d9f8b7" stroke-width="6" stroke-linecap="round"><path d="m55 43 20 24m0-24-20 24m70-24 20 24m0-24-20 24"/></g>
+<g class="eyes-low" style="display:var(--face-eyes-low,none)" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"><path d="M53 52q12 13 24 0M123 52q12 13 24 0M55 64h20M125 64h20"/></g>
+<g class="brow-ready" style="display:var(--face-brow-ready,none)" fill="none" stroke="#d9f8b7" stroke-width="4" stroke-linecap="round"><path d="m51 28 28 7m42 0 28-7"/></g>
+<g class="brow-listen" style="display:var(--face-brow-listen,none)" fill="none" stroke="#d9f8b7" stroke-width="4" stroke-linecap="round"><path d="M51 30q14-10 28-3M121 27q14-7 28 3"/></g>
+<g class="brow-question" style="display:var(--face-brow-question,none)" fill="none" stroke="#d9f8b7" stroke-width="4" stroke-linecap="round"><path d="M51 29q14-9 28-1m42 7 28-6"/></g>
+<g class="mouth-anchor" transform="translate(100 87)">
+<path class="mouth-neutral" style="display:var(--face-mouth-neutral,inline)" d="M-18-5Q0 15 18-5" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"/>
+<path class="mouth-listen" style="display:var(--face-mouth-listen,none)" d="M-13 0H13" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"/>
+<g class="mouth-cheer" style="display:var(--face-mouth-cheer,none)"><path d="M-18-15Q0-9 18-15Q20 18 0 18T-18-15Z" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="mouth-shock" style="display:var(--face-mouth-shock,none)"><ellipse cx="0" cy="0" rx="11" ry="17" fill="#d9f8b7"/><ellipse cx="0" cy="0" rx="5" ry="10" fill="#644337"/></g>
+<path class="mouth-low" style="display:var(--face-mouth-low,none)" d="M-18 5Q0-15 18 5" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"/>
+<path class="mouth-question" style="display:var(--face-mouth-question,none)" d="M-13 2Q0-6 13 2" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"/>
+</g>
+<g class="face-cheeks" fill="#e5be98" opacity=".75"><ellipse cx="41" cy="76" rx="10" ry="5"/><ellipse cx="159" cy="76" rx="10" ry="5"/></g>
+<g class="question-mark" style="display:var(--face-question-mark,none)" fill="none" stroke="#d9f8b7" stroke-width="4" stroke-linecap="round"><path d="M93 14c0-13 22-13 22-1 0 7-11 7-11 14"/><circle cx="104" cy="34" r="2" fill="#d9f8b7" stroke="none"/></g>
+<g class="impact-lines" style="display:var(--face-impact-lines,none)" fill="none" stroke="#ffdc89" stroke-width="4"><path d="m23 31-9-6 4 17-14-2 13 13M177 31l9-6-4 17 14-2-13 13"/></g>
+<g class="held-pose" style="display:var(--face-held-pose,none);opacity:var(--face-shield-opacity,1)"><path class="held-shield" style="stroke-dasharray:var(--face-shield-dash,none)" d="m110 44 38 14v24q0 17-38 34-38-17-38-34V58Z" fill="#b6d4db" stroke="#254d3c" stroke-width="4" stroke-linejoin="round"/><path d="m110 52 30 11v19q0 12-30 25Z" fill="#709ca8"/><path d="m80 64 30-12 30 12" fill="none" stroke="#eff6df" stroke-width="3" stroke-linejoin="round"/><ellipse cx="73" cy="83" rx="9" ry="11" fill="#d9f8b7" stroke="#254d3c" stroke-width="4"/><ellipse cx="147" cy="83" rx="9" ry="11" fill="#d9f8b7" stroke="#254d3c" stroke-width="4"/></g></g></defs><g class="primary-face"><use href="#face-art"/></g><g class="dodge-faces" aria-hidden="true"><use class="dodge-side" href="#face-art" transform="translate(-21 0)"/><use class="dodge-side" href="#face-art" transform="translate(21 0)"/><use class="dodge-moving" href="#face-art"/></g></svg><svg class="no-network" viewBox="0 0 120 100" role="img" aria-label="连接中断，战况待核实"><g fill="none" stroke="#d9f8b7" stroke-width="6" stroke-linecap="round"><path d="M15 32q45-38 90 0M31 49q29-23 58 0M47 65q13-10 26 0"/><path d="m25 11 72 77" stroke="#183f37" stroke-width="12"/><path d="m25 11 72 77" stroke="#d9f8b7"/></g><circle cx="60" cy="80" r="5" fill="#d9f8b7"/></svg></div>
+<div class="resources"><div class="resource life"><svg class="resource-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17 3 10C-2 4 6-1 10 5c4-6 12-1 7 5Z" fill="currentColor"/></svg><div class="track" role="img" aria-label="生命状态条"><div class="fill" id="hp-fill"></div></div></div><div class="resource energy"><div class="energy-bolts" id="energy-dots" role="img" aria-label="能量闪电"><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg></div></div></div></div><div class="speaker" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
+<div class="view-label"><span>主人看到的背面</span></div>
+<div class="back-line"><div class="hardware back" aria-label="同一硬件背面，仅外壳与指示灯，无屏幕"><div class="back-led"></div><svg class="back-emblem" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7q5-6 10 0M7 17q5 6 10 0M5 10v4M19 10v4" stroke="#547959" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div><div class="back-caption"><strong>看不见正面，也能并肩战斗。</strong>必要信息由伙伴的语音传达。<br>背面只有外壳与指示灯。</div></div>
+<p class="sync-note"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M11 5A4 4 0 0 0 3 4M3 9a4 4 0 0 0 8 1M11 2v3H8M3 12V9h3"/></svg>两种观察视角，共用一个模拟状态；不是双面屏。</p>
+</section>
+<section class="voice" aria-label="主人必要语音反馈的文字示意"><div class="voice-head"><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span id="voice-heading">伙伴对主人说 · 文案示意</span></div><p class="voice-text" id="voice-text" aria-live="polite">我准备好了，听你指挥。</p><p class="voice-foot">原型仅显示语音文案，不播放声音，不采集麦克风。</p></section>
+<details id="demo-panel"><summary id="demo-controls">原型演示控制<span>非产品操作</span></summary><div class="panel"><label for="state" class="hint">演示状态</label><select id="state" name="demo-state"><option value="idle">待机 · 准备好</option><option value="listening">倾听 · 接收中</option><option value="accepted">指令接受 · 等待对手</option><option value="attacking">行动 · 已裁决命中</option><option value="guardIntent">防御意图 · 尚未裁决</option><option value="defending">防御 · 格挡结算</option><option value="dodgeIntent">闪避意图 · 尚未裁决</option><option value="dodgeSuccess">闪避成功 · 已裁决</option><option value="dodgeFailed">闪避失败 · 实际承伤</option><option value="hurt">受击 · 实际承伤</option><option value="victory">胜利 · 对局结束</option><option value="defeat">失败 · 对局结束</option><option value="repeat">需重说 · 未执行</option><option value="offline">连接异常 · 结果待核实</option><option value="ultReady">大招 · 主动阶段可释放</option><option value="ultUsed">大招 · 本局已用</option><option value="responseReady">能量足 · 需要先应对</option><option value="waitingReady">能量足 · 等待对手</option></select><div class="resource-preview"><label for="demo-energy">能量预览</label><select id="demo-energy" name="demo-energy"><option value="auto">按场景</option><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div><p class="hint">选择能量只预览待机资源，不执行行动。</p><div class="controls"><button type="button" class="primary" id="sequence">播放演示</button><button type="button" id="stop">停止复位</button><button type="button" id="shake">模拟晃动</button></div><div class="options-grid"><label class="checks"><input type="checkbox" id="auto-shake" name="demo-shake" checked>受击时晃动硬件（原型假设）</label><label class="checks"><input type="checkbox" id="motion" name="demo-reduced-motion">减少动态效果</label></div><p class="hint" id="sequence-note">状态均为预设演示，不接入真实识别、双机对战或服务裁决。演示控制不是最终产品的触控出招按钮。</p><p class="hint" id="ult-detail" aria-live="polite">大招 · 能量未足</p><details class="prototype-notes"><summary>图例与原型假设</summary><div class="legend">图标说明：爱心与绿色条表示生命；五个闪电表示能量，黄色实心为拥有，灰色空心为耗尽。右上角圆核气焰徽记：空心核心与断弧表示未就绪，实心核心、完整弧与向上气焰表示可释放，气焰消失并以核心斜划表示本局已用；不依赖颜色。能量只改变闪电资源与大招可用判定，不驱动表情。能量预览复用同一个待机场景，不执行行动。同一角色统一使用纯实心单色眼形，不保留内孔、高光、独立瞳孔或异色描边，固定眼部边界和嘴部锚点；需重说增加问号，区别于断网图标；防御将盾举到脸前，可遮住眼睛，由两只简化握手明确持盾，虚线盾仅为意图预演，实线盾对应已结算格挡，仍可能承伤，不代表免伤。意图预演不代表服务提供独立中间状态或新增确认播报。闪避意图只预演准备表情；实际成功后使用同一伙伴的三张同尺寸虚影：两侧更淡且固定，中间整张脸快速左右往返。侧影平移21个SVG单位、中央往返8个单位，均不缩放；允许局部重叠，不单独漂移五官，设备与资源不随动。0.4秒运动周期仅为原型假设，减少动态时保留静态三影，不代表多位伙伴。闪避失败按实际承伤展示受击反馈。仅为原型预设结果，不掷骰或改变规则。可释放时眼神复用接受指令的眉眼，不复制其嘴型或边框慢闪。只有可释放时，小屏切为橙色深绿的统一蓄势背景，气焰从表情后方下缘形成连续宽底，以少量圆钝、长短不一的焰头向上流动，不用两侧括号弧；其他状态不显示气场。可用性原因仅在本演示面板说明，不显示在设备屏内。<br>讨论假设：原创漫画表情、粗轮廓与赛璐璐色块、受击冲击线、圆角硬件造型与尺寸、灯光颜色及节奏、动画节奏与晃动方式。均非最终角色或工业设计。晃动仅作用于两视图的硬件，不移动文字或整页；不调用手机震动。倾听以抬眉、收拢嘴部及屏幕内框区别于放松待机，不代表真实收音。受击采用一次短暂表情冲击、硬件晃动及背景/灯变化，之后恢复平静；失败保持疲惫表情及低沉背景/灯状态。减少动态效果时不晃动，受击静态表情保留到切换状态。接受指令后边框与两侧灯同步缓慢明暗变化，只表示已接受并等待，不表示命中。断网保留正常设备配色，用无网络图标替代表情；生命条斜纹及闪电虚线表示尚未核实，不代表生命满或能量为零。就绪气焰错峰伸缩向上流动，小屏背景以2.6秒周期柔和明暗辅助，离开可释放条件立即清除循环；减少动态时保持静态氛围。上述时序与灯效映射均为原型假设。大招提示按预设的阶段、待应对状态、能量与本局剩余次数展示；仅当前可主动出招、无待应对攻击、至少4点能量且尚有次数时显示可释放，连接异常时不作可用承诺。</div></details></div></details>
+<footer>静态概念占位造型 · 非真实硬件照片<br>手机演示补充，最终产品不是手机端</footer>
+</main>
+<script>
+(()=>{'use strict';const $=id=>document.getElementById(id),app=$('app');const states={
+ idle:{name:'待机',phase:'READY',hp:14,energy:3,color:'#84d6af',text:'我准备好了，听你指挥。'},
+ listening:{name:'倾听中',phase:'LISTENING',hp:14,energy:3,color:'#abdccc',text:'模拟倾听中；此状态不新增伙伴语音。'},
+ accepted:{name:'等待对手',phase:'WAITING',hp:14,energy:1,color:'#f1cf8c',text:'我出强攻，剩1点能量。等对手应对。'},
+ attacking:{name:'行动结算',phase:'RESOLVED',hp:14,energy:1,color:'#a4dcb2',text:'我强攻命中，对手承受，掉5点生命值，剩13。等对手出招。'},
+ defending:{name:'格挡结算',phase:'RESOLVED',hp:13,energy:2,color:'#9bded1',text:'我格挡普攻，掉1点生命值，剩13。该我出招，听你的。'},
+ hurt:{name:'受击结算',phase:'RESOLVED',hp:9,energy:3,color:'#e7ad8e',text:'我承受强攻，掉5点生命值，剩9。请指挥我出招。'},
+ victory:{name:'胜利',phase:'VICTORY',hp:9,energy:2,color:'#e8d58c',text:'我赢了，击倒对手啦！'},
+ defeat:{name:'失败',phase:'DEFEAT',hp:0,energy:1,color:'#b0b9b2',text:'我被击倒了，这局输了。'},
+ repeat:{name:'请重说',phase:'REPEAT',hp:14,energy:3,color:'#e9cd8b',text:'没听清，这次没出招。请再说一次。'},
+ offline:{name:'连接异常',phase:'UNCONFIRMED',hp:14,energy:3,color:'#b0b9b2',text:'连接出了问题，刚才的结果还没确认。先核实战况，再决定下一步。'}
+};Object.assign(states,{
+ dodgeIntent:{name:'闪避意图示意',phase:'UNCONFIRMED',hp:14,energy:3,color:'#9bcbe4',turn:'response',text:'这次闪避还没结算。'},
+ dodgeSuccess:{name:'闪避成功',phase:'RESOLVED',hp:14,energy:2,color:'#9bcbe4',turn:'active',text:'我躲开普攻了，没受伤。该我出招，听你的。'},
+ dodgeFailed:{name:'闪避失败',phase:'RESOLVED',hp:11,energy:2,color:'#e7ad8e',turn:'active',text:'我没躲开普攻，掉3点生命值，剩11。该我出招。'},
+ guardIntent:{name:'格挡意图示意',phase:'UNCONFIRMED',hp:14,energy:3,color:'#9bcbe4',turn:'response',text:'这次攻防还没结算。'},
+ ultReady:{name:'轮到我出招',phase:'YOUR TURN',hp:9,energy:4,color:'#e8d58c',turn:'active',text:'我准备好了，听你指挥。'},
+ ultUsed:{name:'大招已用',phase:'YOUR TURN',hp:9,energy:5,color:'#84d6af',turn:'active',ultLeft:0,text:'我的大招这局已经用过了。请指挥我出招。'},
+ responseReady:{name:'需要应对',phase:'RESPOND',hp:9,energy:4,color:'#e9cd8b',turn:'response',text:'我得先应对这招。格挡、闪避，还是承受？'},
+ waitingReady:{name:'等待对手',phase:'WAITING',hp:9,energy:4,color:'#e9cd8b',turn:'waiting',text:'我出普攻，剩4点能量。等对手应对。'}
+});
+// 仅根据预设快照展示状态；不执行或替代服务端战斗裁决。
+function ultimateStatus(s,key){key=s.visual??key;
+ if(key==='offline')return ['unknown','大招 · 状态待核实'];
+ if(['victory','defeat'].includes(key))return ['ended','大招 · 对局已结束'];
+ if((s.ultLeft??1)<=0)return ['used','大招 · 本局已用'];
+ const turn=s.turn??({accepted:'waiting',attacking:'waiting',defending:'active',hurt:'active'}[key]??'active');
+ if(turn==='response')return ['response','大招 · 先应对当前攻击'];
+ if(turn==='waiting')return ['waiting','大招 · 等待对手'];
+ if(s.energy<4)return ['insufficient','大招 · 能量未足'];
+ return ['ready','大招 · 可释放'];
+}
+let timers=[],reactionTimer=null,hardwareAnimations=[];const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');$('motion').checked=reduced.matches;function cancelHardwareMotion(){hardwareAnimations.forEach(a=>a.cancel());hardwareAnimations=[]}
+
+function refreshFace(overrideKey){
+ const current=states[app.dataset.state],key=overrideKey??current?.visual??app.dataset.state;
+ const parts=['eyes-open','eyes-happy','eyes-impact','eyes-low','brow-ready','brow-listen','brow-question','mouth-neutral','mouth-listen','mouth-cheer','mouth-shock','mouth-low','mouth-question','question-mark','impact-lines','held-pose'];
+ const shown=new Set(['eyes-open','mouth-neutral']);
+ if(['listening','accepted','attacking','guardIntent','defending','dodgeIntent'].includes(key)){shown.delete('mouth-neutral');shown.add('mouth-listen');shown.add(key==='listening'?'brow-listen':'brow-ready')}
+ if(key==='dodgeSuccess')shown.add('brow-ready');
+ if(['guardIntent','defending'].includes(key))shown.add('held-pose');
+ if(key==='victory'){shown.delete('eyes-open');shown.delete('mouth-neutral');shown.add('eyes-happy');shown.add('mouth-cheer')}
+ if(['hurt','dodgeFailed'].includes(key)&&app.classList.contains('impact-active')){shown.delete('eyes-open');shown.delete('mouth-neutral');shown.add('eyes-impact');shown.add('mouth-shock');shown.add('impact-lines')}
+ if(key==='defeat'){shown.delete('eyes-open');shown.delete('mouth-neutral');shown.add('eyes-low');shown.add('mouth-low')}
+ if(key==='repeat'){shown.delete('mouth-neutral');shown.add('mouth-question');shown.add('brow-question');shown.add('question-mark')}
+ if(app.classList.contains('ultimate-ready'))shown.add('brow-ready');
+ parts.forEach(part=>app.style.setProperty('--face-'+part,shown.has(part)?'inline':'none'));
+ app.style.setProperty('--face-shield-dash',key==='guardIntent'?'7 5':'none');app.style.setProperty('--face-shield-opacity',key==='guardIntent'?'.65':'1');
+}
+function settleImpact(){app.classList.remove('impact-active');applyPalette('idle',states.idle.color);refreshFace()}
+function applyMotion(){const off=$('motion').checked||reduced.matches;app.classList.toggle('no-motion',off);if(off){cancelHardwareMotion();clearTimeout(reactionTimer);if((app.classList.contains('state-hurt')||app.classList.contains('state-dodgeFailed'))){app.classList.add('impact-active');applyPalette('hurt',states.hurt.color)}}else if((app.classList.contains('state-hurt')||app.classList.contains('state-dodgeFailed'))&&app.classList.contains('impact-active')){clearTimeout(reactionTimer);reactionTimer=setTimeout(settleImpact,900)}refreshFace()}applyMotion();$('motion').addEventListener('change',applyMotion);reduced.addEventListener('change',e=>{$('motion').checked=e.matches;applyMotion()});
+function applyPalette(key,light){const palettes={defending:['#253e4f','#385b72','#233b50'],guardIntent:['#253e4f','#385b72','#233b50'],listening:['#173e42','#326b68','#163f43'],hurt:['#633f33','#83533d','#49362e'],defeat:['#343749','#494c66','#2b3043'],victory:['#3b5034','#6a7d41','#344b32'],offline:['#183f37','#427f55','#1d493c']};const p=palettes[key]??['#183f37','#427f55','#1d493c'];app.style.setProperty('--screen-base',p[0]);app.style.setProperty('--screen-center',p[1]);app.style.setProperty('--screen-edge',p[2]);app.style.setProperty('--light',key==='defeat'?'#a3a8c8':key==='offline'?states.idle.color:light)}
+function shake(){cancelHardwareMotion();if($('motion').checked||reduced.matches)return;const frames=[{transform:'none'},{transform:'translateX(-3px) rotate(-1deg)',offset:.2},{transform:'translateX(3px) rotate(1deg)',offset:.4},{transform:'translateX(-3px) rotate(-1deg)',offset:.6},{transform:'translateX(3px) rotate(1deg)',offset:.8},{transform:'none'}];document.querySelectorAll('.hardware').forEach(e=>{if(typeof e.animate==='function')hardwareAnimations.push(e.animate(frames,{duration:450,easing:'ease-out'}))})}
+function setState(key,fromSequence=false,testEnergy=null){if(!states[key])return;clearTimeout(reactionTimer);cancelHardwareMotion();const base=states[key],s={...base,energy:testEnergy===null?base.energy:testEnergy},visualKey=s.visual??key;$('demo-energy').value=testEnergy===null?'auto':String(testEnergy);app.className='app state-'+visualKey;applyMotion();applyPalette(visualKey==='dodgeFailed'?'hurt':visualKey,s.color);$('state').value=key;$('state-name').textContent=s.name;$('voice-text').textContent=s.text;$('voice-heading').textContent=key==='listening'?'演示状态说明 · 非伙伴播报':'伙伴对主人说 · 文案示意';$('hp-fill').style.width=(s.hp/14*100)+'%';document.querySelector('.track').setAttribute('aria-label',key==='offline'?'生命值尚未核实':'生命值'+s.hp+'，上限14');document.querySelector('.buddy').setAttribute('aria-label','伙伴'+s.name+'的漫画表情'+(visualKey==='dodgeSuccess'?'，同一伙伴三张同尺寸虚影，中间整张脸左右往返':'')+(visualKey==='defending'||visualKey==='guardIntent'?'，小手举盾':''));const uncertain=key==='offline';const energy=Math.max(0,Math.min(5,s.energy));document.querySelectorAll('#energy-dots .energy-point').forEach((dot,i)=>dot.classList.toggle('on',!uncertain&&i<energy));$('energy-dots').setAttribute('aria-label',uncertain?'能量尚未核实':'能量'+energy+'点，上限5点');const [availability,ultText]=ultimateStatus(s,key);$('ultimate').setAttribute('aria-label',ultText);$('ult-detail').textContent=ultText;$('ultimate').dataset.availability=availability;app.classList.toggle('ultimate-ready',availability==='ready');app.dataset.state=key;document.querySelectorAll('.hardware').forEach(e=>e.dataset.state=key);if(visualKey==='hurt'||visualKey==='dodgeFailed'){app.classList.add('impact-active');if($('auto-shake').checked)shake();if(!$('motion').checked&&!reduced.matches)reactionTimer=setTimeout(settleImpact,900);}refreshFace(visualKey);if(!fromSequence)$('sequence-note').textContent='独立状态预设；切换状态不是执行真实战斗。数值仅用于画面和文案核对。'}
+function stop(){clearTimeout(reactionTimer);cancelHardwareMotion();app.classList.remove('shake','impact-active');timers.forEach(clearTimeout);timers=[];$('sequence').disabled=false}
+$('demo-energy').addEventListener('change',()=>{const value=$('demo-energy').value;stop();setState('idle',false,value==='auto'?null:Number(value))});
+$('state').addEventListener('change',()=>{stop();setState($('state').value)});$('stop').addEventListener('click',()=>{stop();setState('idle');$('sequence-note').textContent='已停止并复位。未发送任何战斗指令。'});$('shake').addEventListener('click',shake);
+$('sequence').addEventListener('click',()=>{stop();$('sequence').disabled=true;$('sequence-note').textContent='演示：倾听 → 指令接受并等待 → 结算。倾听与等待时不提前表现命中；时间间隔仅为原型假设。';setState('listening',true);timers.push(setTimeout(()=>setState('accepted',true),1700));timers.push(setTimeout(()=>setState('attacking',true),3800));timers.push(setTimeout(()=>{$('sequence').disabled=false;$('sequence-note').textContent='演示结束。对手由预设结果代替，不是真实双机对战。'},5600))});setState('idle');
+})();
+</script>
+</body>
+</html>
