@@ -17,7 +17,7 @@ import { isActiveAction, isResponseAction } from './types.js';
  *
  * 不处理的两类：
  * - 唤出咒语：原文要回念给玩家听，交给 actions.ts 的 matchAction；
- * - 语义级错识别（「蓄力」被转成「幸运」）与疑问/否定：同音规则无从判断，由意图模型与
+ * - 语义级错识别（「蓄力」被转成「幸运」）与疑问/否定：同音规则无从判断，由命令路由模型与
  *   command.ts 的疑问、否定拦截兜底。调用方应先跑 command.ts 的拦截，再问这一层。
  */
 

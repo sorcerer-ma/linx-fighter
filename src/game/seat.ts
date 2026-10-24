@@ -6,7 +6,7 @@ import type { Side } from './types.js';
 /** 座位口令由房间座位决定，与设备无关：房主是红方，加入者是蓝方 */
 const SEAT_WORDS: Record<Side, string> = { player: '红方', enemy: '蓝方' };
 
-/** 这个座位的口令词；确认回复、引导语都要用到 */
+/** 这个座位的口令词；归属判定与自报座位的引导语都要用到 */
 export function seatWord(seat: Side): string {
   return SEAT_WORDS[seat];
 }
