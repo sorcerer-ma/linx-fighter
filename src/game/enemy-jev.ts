@@ -4,7 +4,8 @@
  * 与本地决策模型（enemy.ts）的分工：
  * - 合法选项由本地按行动点、大招次数先过滤，模型不会拿到做不到的选项；
  * - 模型只输出「选哪个 + 置信度」，不产出数值、不改对局状态；
- * - 超时、网络失败、低置信度、选项非法，一律退回本地决策模型，保证回合不卡住。
+ * - 超时、网络失败、返回值非法或选项越界，一律退回本地决策模型，保证回合不卡住；
+ * - 置信度与概率只记日志，不作为拒绝依据（JEV 的 confidence 通常只有 0.3–0.5）。
  *
  * 注意：接上这个实现后，同一局面不再保证复现（依赖模型返回），
  * 仿真对拍与单测仍使用注入的本地 AI，不依赖网络。
@@ -21,9 +22,6 @@ import type {
   ResponseMove,
   ResponseView,
 } from './types.js';
-
-/** 低于这个置信度就用本地决策，避免模型瞎猜 */
-export const ENEMY_CONFIDENCE_THRESHOLD = 0.6;
 
 /** OpenRouter 上的 JEV 决策模型 */
 export const DEFAULT_ENEMY_MODEL = 'typesafe/jev-1.13';
@@ -129,31 +127,13 @@ export function responseQuestion(view: ResponseView): { state: string; question:
   };
 }
 
-/** 解析 JEV 返回；export 出来给单测用。choice 必须合法、置信度必须够 */
-export function parseEnemyDecision(
-  payload: unknown,
-  legal: readonly string[],
-  threshold: number = ENEMY_CONFIDENCE_THRESHOLD,
-): string | null {
+/** 解析 JEV 返回；export 出来给单测用。choice 必须落在本地过滤后的合法选项内 */
+export function parseEnemyDecision(payload: unknown, legal: readonly string[]): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const answer = (payload as JevAnswer).answers?.move;
   if (typeof answer !== 'object' || answer === null) return null;
-
   const choice = answer.choice;
-  if (typeof choice !== 'string' || !legal.includes(choice)) return null;
-
-  const probabilities = answer.probabilities;
-  const probability =
-    typeof probabilities === 'object' && probabilities !== null
-      ? (probabilities as Record<string, unknown>)[choice]
-      : undefined;
-  const confidence =
-    typeof answer.confidence === 'number'
-      ? answer.confidence
-      : typeof probability === 'number'
-        ? probability
-        : 0;
-  return confidence >= threshold ? choice : null;
+  return typeof choice === 'string' && legal.includes(choice) ? choice : null;
 }
 
 export function createJevEnemyAI(options: JevEnemyOptions): BattleAI {

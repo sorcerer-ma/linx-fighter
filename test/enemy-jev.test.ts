@@ -100,14 +100,23 @@ describe('JEV 对手 AI：合法选项与题干', () => {
     assert.match(question.criteria.guard!, /减 2/);
   });
 
-  it('解析返回：只在合法选项内、置信度足够才生效', () => {
+  it('解析返回：只认本地过滤后的合法选项，置信度不作为拒绝条件', () => {
     assert.equal(parseEnemyDecision(decisionPayload('heavy', 0.8), ['light', 'heavy']), 'heavy');
+    assert.equal(parseEnemyDecision(decisionPayload('light', 0.3), ['light', 'heavy']), 'light');
     assert.equal(parseEnemyDecision(decisionPayload('ult', 0.99), ['light', 'heavy']), null);
-    assert.equal(parseEnemyDecision(decisionPayload('light', 0.59), ['light', 'heavy']), null);
-    assert.equal(parseEnemyDecision(decisionPayload('light'), ['light']), null);
+    assert.equal(parseEnemyDecision(decisionPayload('light'), ['light']), 'light');
     assert.equal(parseEnemyDecision({ answers: { move: { choice: 'light', probabilities: { light: 0.7 } } } }, ['light']), 'light');
-    assert.equal(parseEnemyDecision({ answers: { move: { choice: 'light', probabilities: 1 } } }, ['light']), null);
+    assert.equal(parseEnemyDecision({ answers: { move: { choice: 42 } } }, ['light']), null);
     assert.equal(parseEnemyDecision(null, ['light']), null);
+  });
+
+  it('低置信度但合法的选择仍然采纳', async () => {
+    const ai = createJevEnemyAI({
+      apiKey: 'sk-test',
+      logger,
+      fetchImpl: (async () => decision('heavy', 0.3)) as typeof fetch,
+    });
+    assert.equal(await ai.chooseAction(actionViewFixture({ ap: 3 })), 'heavy');
   });
 });
 
@@ -152,7 +161,7 @@ describe('JEV 对手 AI：调用与回退', () => {
     assert.equal(await ai.chooseResponse(responseViewFixture({ ap: 3 })), 'guard');
   });
 
-  it('低置信度、非法选项、非 2xx、网络异常都回退本地决策', async () => {
+  it('非法选项、非 2xx、网络异常都回退本地决策', async () => {
     const cases: Array<() => typeof fetch> = [
       () => (async () => decision('dodge', 0.3)) as typeof fetch,
       () => (async () => decision('ult', 0.99)) as typeof fetch,
