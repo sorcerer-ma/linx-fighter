@@ -86,15 +86,25 @@ export class GameService {
     const phraseRoom = roomCodeFromPhrase(phrase);
     if (phraseRoom) return this.joinRoom(sessionKey, phraseRoom);
 
-    // 已在房间里又开新局：先撤掉旧房间与旧对局，避免对手对着已失效的局面出招
     const existing = this.rooms.byPlayer(sessionKey);
-    if (existing) this.leaveRoom(existing, '重新开局');
+    const openRoom = options.mode === 'pvp' || wantsOpenRoom(phrase);
 
-    if (options.mode === 'pvp' || wantsOpenRoom(phrase)) {
+    if (openRoom) {
+      // 已经在等人时又喊一次「开房」：复用原房间号，别让玩家每说一次就换一个码
+      if (existing && existing.hostKey === sessionKey && existing.guestKey === null) {
+        return {
+          text: `${narrateWaitingRoom(existing.code)}。等对手进来再开打。`,
+          battle: this.store.get(pvpBattleKey(existing.code)) ?? null,
+        };
+      }
+      if (existing) this.leaveRoom(existing, '重新开局');
       // 从单人局切到联机时把旧对局清掉，避免退出房间后还对着过期局面出招
       this.store.delete(sessionKey);
       return this.startPvp(sessionKey);
     }
+
+    // 单人重新开局：撤掉仍在的房间，避免对手对着已失效的局面出招
+    if (existing) this.leaveRoom(existing, '重新开局');
 
     const battle = this.spawnSolo(options.opponent);
     this.store.set(sessionKey, battle);

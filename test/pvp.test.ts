@@ -59,6 +59,15 @@ describe('双人联机', () => {
     assert.ok(rooms.byPlayer(HOST));
   });
 
+  it('重复喊开房时复用同一个房间号', () => {
+    const { service } = setup();
+    const first = service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    const second = service.start(HOST, { mode: 'pvp' });
+    assert.match(second.text, new RegExp(`房间${code}`));
+    assert.equal(first.battle?.id, second.battle?.id);
+  });
+
   it('第二位玩家凭房间号加入，看到镜像视角的同一局', async () => {
     const { service } = setup();
     service.start(HOST, { mode: 'pvp' });
@@ -131,15 +140,22 @@ describe('双人联机', () => {
     assert.match(result.text, /四位数字/);
   });
 
-  it('房主重新开房会撤掉旧房间与旧对局', async () => {
+  it('房主开房后重开：等人时复用房间号，已开局则换新房间', async () => {
     const { service, rooms, store } = setup();
     service.start(HOST, { mode: 'pvp' });
-    const oldBattleId = store.get(`pvp:${findRoom(service, HOST)}`)!.id;
-    service.start(HOST, { mode: 'pvp' });
-    const newCode = findRoom(service, HOST);
+    const firstCode = findRoom(service, HOST);
+    const firstBattleId = store.get(`pvp:${firstCode}`)!.id;
 
+    service.start(HOST, { mode: 'pvp' });
+    assert.equal(findRoom(service, HOST), firstCode);
+    assert.equal(store.get(`pvp:${firstCode}`)!.id, firstBattleId);
+
+    service.start(GUEST, { room: firstCode });
+    service.start(HOST, { mode: 'pvp' });
+    // 已开局后重开：旧房撤掉、新局重开（房间号可能复用，不能按码判断）
+    const newCode = findRoom(service, HOST);
+    assert.notEqual(store.get(`pvp:${newCode}`)!.id, firstBattleId);
     assert.equal(rooms.size, 1);
-    assert.notEqual(store.get(`pvp:${newCode}`)!.id, oldBattleId);
   });
 
   it('房间过期后回到普通对局流程', async () => {
