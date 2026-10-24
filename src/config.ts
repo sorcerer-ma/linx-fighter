@@ -3,7 +3,11 @@
  * 这里只做取值解析与兜底，不包含业务判断。
  */
 
-import type { ChatReasoning } from './game/commandcode.js';
+import {
+  DEFAULT_CHAT_MODEL,
+  DEFAULT_DECISION_MODEL,
+  type ChatReasoning,
+} from './game/llm.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -20,20 +24,20 @@ export interface AppConfig {
   battleTtlMs: number;
   /** 是否暴露 /debug/* 调试端点，生产环境建议关闭 */
   enableDebugEndpoints: boolean;
-  /** Command Code API Key；为空时不启用命令路由与规则外问答，只用规则匹配 */
-  commandCodeApiKey?: string;
-  /** Provider 根地址；换代理、自建网关或换厂商时覆盖 */
-  commandCodeBaseUrl?: string;
-  /** 决策模型路径，默认 /systemone；OpenRouter 这类厂商用 /alpha/decisions */
-  commandCodeDecisionPath?: string;
+  /** 模型网关 API Key；为空时不启用命令路由与规则外问答，只用规则匹配 */
+  apiKey?: string;
+  /** 模型网关根地址；换代理、自建网关或换厂商时覆盖 */
+  baseUrl?: string;
+  /** 决策模型路径，默认 /systemone */
+  decisionPath?: string;
   /** 语言模型路径，默认 /chat/completions */
-  commandCodeChatPath?: string;
-  /** 决策模型名，默认 typesafe/jev（System One 接口） */
-  commandCodeDecisionModel: string;
-  /** 规则外问答模型名，默认 deepseek/deepseek-v4.1-flash */
-  commandCodeChatModel: string;
+  chatPath?: string;
+  /** 决策模型名，默认 typesafe/jev-1.14 */
+  decisionModel: string;
+  /** 规则外问答模型名，默认 deepseek/deepseek-v4-flash */
+  chatModel: string;
   /** 问答模型的推理开关；推理模型不关会只输出思考、正文为空 */
-  commandCodeChatReasoning?: ChatReasoning;
+  chatReasoning: ChatReasoning;
   /** 命令路由模型超时（毫秒），超时按没认出来处理 */
   routerTimeoutMs: number;
   /** 问答超时（毫秒），超时回固定话术 */
@@ -85,17 +89,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel,
     battleTtlMs: Math.max(60, parseInteger(env.BATTLE_TTL_SECONDS, 1800)) * 1000,
     enableDebugEndpoints: parseBoolean(env.ENABLE_DEBUG_ENDPOINTS, env.NODE_ENV !== 'production'),
-    commandCodeApiKey: env.COMMAND_CODE_API_KEY?.trim() || undefined,
-    commandCodeBaseUrl: env.COMMAND_CODE_BASE_URL?.trim() || undefined,
-    commandCodeDecisionPath: env.COMMAND_CODE_DECISION_PATH?.trim() || undefined,
-    commandCodeChatPath: env.COMMAND_CODE_CHAT_PATH?.trim() || undefined,
-    commandCodeDecisionModel: env.COMMAND_CODE_DECISION_MODEL?.trim() || 'typesafe/jev',
-    commandCodeChatModel: env.COMMAND_CODE_CHAT_MODEL?.trim() || 'deepseek/deepseek-v4.1-flash',
-    commandCodeChatReasoning: parseChatReasoning(env.COMMAND_CODE_CHAT_REASONING),
-    routerTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ROUTER_TIMEOUT_MS, 1500))),
-    chatTimeoutMs: Math.max(500, Math.min(8000, parseInteger(env.CHAT_TIMEOUT_MS, 3000))),
+    apiKey: env.API_KEY?.trim() || undefined,
+    baseUrl: env.BASE_URL?.trim() || undefined,
+    decisionPath: env.DECISION_PATH?.trim() || undefined,
+    chatPath: env.CHAT_PATH?.trim() || undefined,
+    decisionModel: env.DECISION_MODEL?.trim() || DEFAULT_DECISION_MODEL,
+    chatModel: env.CHAT_MODEL?.trim() || DEFAULT_CHAT_MODEL,
+    chatReasoning: parseChatReasoning(env.CHAT_REASONING) ?? 'off',
+    routerTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ROUTER_TIMEOUT_MS, 2000))),
+    chatTimeoutMs: Math.max(500, Math.min(8000, parseInteger(env.CHAT_TIMEOUT_MS, 6000))),
     enemyAi: (env.ENEMY_AI ?? '').trim().toLowerCase() === 'local' ? 'local' : 'jev',
-    enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 1200))),
+    enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 2000))),
     attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
   };

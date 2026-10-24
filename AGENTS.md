@@ -36,7 +36,7 @@ TypeScript 使用 ESM / NodeNext，相对导入带 `.js` 后缀。运行时与�
 | --- | --- |
 | 招式、别名、ASR 误识别、唤出词 | `src/game/types.ts`、`actions.ts` |
 | 数值与结算 | `src/game/rules.ts`、`engine.ts`、`rng.ts` |
-| AI、命令路由与规则外问答 | `src/game/enemy.ts`、`enemy-jev.ts`、`router.ts`、`commandcode.ts`、`chat.ts` |
+| AI、命令路由与规则外问答 | `src/game/enemy.ts`、`enemy-jev.ts`、`router.ts`、`llm.ts`、`chat.ts` |
 | 把一句原话读成命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 规则外问答） | `src/game/command.ts` 的 `readCommand`；查询、否定、歧义拦截也在里面 |
 | 开局、行动、房间切换与并发校验 | `src/game/service.ts`、`table.ts`、`serialize.ts` |
 | 双人视角与房间索引 | `src/game/pvp.ts`、`src/store/rooms.ts` |

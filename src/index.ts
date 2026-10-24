@@ -15,37 +15,37 @@ const logger = createLogger(config.logLevel);
 
 const store = new BattleStore({ ttlMs: config.battleTtlMs });
 const rooms = new RoomStore({ ttlMs: config.battleTtlMs });
-// 配了 Command Code Key 才启用模型层；没配时规则认不出就回「没听清」
-const router = config.commandCodeApiKey
+// 配了模型 Key 才启用模型层；没配时规则认不出就回「没听清」
+const router = config.apiKey
   ? createCommandRouter({
-      apiKey: config.commandCodeApiKey,
-      baseUrl: config.commandCodeBaseUrl,
-      decisionPath: config.commandCodeDecisionPath,
-      model: config.commandCodeDecisionModel,
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+      decisionPath: config.decisionPath,
+      model: config.decisionModel,
       timeoutMs: config.routerTimeoutMs,
       logger,
     })
   : undefined;
 // 对手决策同样走决策模型；失败/超时由 AI 自己回退本地模型
 const ai =
-  config.commandCodeApiKey && config.enemyAi === 'jev'
+  config.apiKey && config.enemyAi === 'jev'
     ? createJevEnemyAI({
-        apiKey: config.commandCodeApiKey,
-        baseUrl: config.commandCodeBaseUrl,
-        decisionPath: config.commandCodeDecisionPath,
-        model: config.commandCodeDecisionModel,
+        apiKey: config.apiKey,
+        baseUrl: config.baseUrl,
+        decisionPath: config.decisionPath,
+        model: config.decisionModel,
         timeoutMs: config.enemyTimeoutMs,
         logger,
       })
     : undefined;
 // 规则外的问题交给语言模型：只答闲聊与常识，不碰对局数值
-const chat = config.commandCodeApiKey
+const chat = config.apiKey
   ? createChatAnswerer({
-      apiKey: config.commandCodeApiKey,
-      baseUrl: config.commandCodeBaseUrl,
-      chatPath: config.commandCodeChatPath,
-      model: config.commandCodeChatModel,
-      reasoning: config.commandCodeChatReasoning,
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+      chatPath: config.chatPath,
+      model: config.chatModel,
+      reasoning: config.chatReasoning,
       timeoutMs: config.chatTimeoutMs,
       logger,
     })
@@ -71,9 +71,9 @@ const server = app.listen(config.port, config.host, () => {
     address: `http://${config.host}:${config.port}`,
     sse: '/mcp',
     debugEndpoints: config.enableDebugEndpoints,
-    routerModel: router ? config.commandCodeDecisionModel : 'disabled',
-    enemyAi: ai ? `jev(${config.commandCodeDecisionModel})` : 'local',
-    chatModel: chat ? config.commandCodeChatModel : 'disabled',
+    routerModel: router ? config.decisionModel : 'disabled',
+    enemyAi: ai ? `jev(${config.decisionModel})` : 'local',
+    chatModel: chat ? config.chatModel : 'disabled',
     attribution: config.attribution,
   });
 });

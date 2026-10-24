@@ -3,7 +3,7 @@
  *
  * 关键词表只做「快路径」——招式别名、同音误识别、唤出词、开局、加入房间、
  * 战况这些必须精确的指令就地判定；剩下拿不准的（口语改写、规则外的提问、
- * 语气词）连同当前阶段一起发给 Command Code 的 System One 决策接口，
+ * 语气词）连同当前阶段一起发给模型网关的 `/systemone` 决策接口，
  * 在「这个阶段能做什么」的选项里选一个。
  *
  * 约束（见 docs/engineering/command-routing.md 与 AGENTS.md）：
@@ -14,7 +14,7 @@
 
 import type { Logger } from '../log.js';
 import type { Command } from './command.js';
-import { askDecision, DEFAULT_DECISION_MODEL } from './commandcode.js';
+import { askDecision, DEFAULT_DECISION_MODEL } from './llm.js';
 
 /** 低于这个置信度就当没认出来，宁可让玩家重说一次 */
 export const ROUTER_CONFIDENCE_THRESHOLD = 0.6;
@@ -39,9 +39,9 @@ export interface CommandRouterOptions {
   apiKey: string;
   model?: string;
   timeoutMs?: number;
-  /** 默认官方地址，测试或代理时覆盖 */
+  /** 默认网关地址，测试或代理时覆盖 */
   baseUrl?: string;
-  /** 决策模型路径；换 Provider 时覆盖 */
+  /** 决策模型路径；换网关时覆盖 */
   decisionPath?: string;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
@@ -189,7 +189,7 @@ function questionFor(stage: RouterStage): { stage: string; instructions: string;
 
 export function createCommandRouter(options: CommandRouterOptions): CommandRouter {
   const model = options.model ?? DEFAULT_DECISION_MODEL;
-  const timeoutMs = options.timeoutMs ?? 1500;
+  const timeoutMs = options.timeoutMs ?? 2000;
 
   return {
     async resolve(text, stage) {
@@ -200,7 +200,7 @@ export function createCommandRouter(options: CommandRouterOptions): CommandRoute
         {
           apiKey: options.apiKey,
           baseUrl: options.baseUrl,
-        decisionPath: options.decisionPath,
+          decisionPath: options.decisionPath,
           timeoutMs,
           fetchImpl: options.fetchImpl,
           logger: options.logger,

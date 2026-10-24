@@ -46,7 +46,7 @@ describe('规则外问答：调用语言模型', () => {
   it('按系统提示与用户原话请求 chat/completions', async () => {
     let captured: { url: string; init: RequestInit } | undefined;
     const answerer = createChatAnswerer({
-      apiKey: 'cmd-test',
+      apiKey: 'test-key',
       fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
         captured = { url: String(url), init: init ?? {} };
         return completion('今天多云。');
@@ -56,11 +56,12 @@ describe('规则外问答：调用语言模型', () => {
 
     assert.equal(await answerer.answer('  今天天气怎么样？  '), '今天多云。');
     const seen = captured as unknown as { url: string; init: RequestInit };
-    assert.equal(seen.url, 'https://api.commandcode.ai/provider/v1/chat/completions');
+    assert.equal(seen.url, 'https://api.modelink.ai/v1/chat/completions');
     const headers = seen.init.headers as Record<string, string>;
-    assert.equal(headers.Authorization, 'Bearer cmd-test');
+    assert.equal(headers.Authorization, 'Bearer test-key');
     const body = JSON.parse(String(seen.init.body));
-    assert.equal(body.model, 'deepseek/deepseek-v4.1-flash');
+    assert.equal(body.model, 'deepseek/deepseek-v4-flash');
+    assert.deepEqual(body.thinking, { type: 'disabled' });
     assert.equal(body.messages[0].role, 'system');
     assert.match(body.messages[0].content, /第一人称/);
     assert.match(body.messages[0].content, /不能编造|绝不能编造|不许/);
@@ -74,9 +75,9 @@ describe('规则外问答：调用语言模型', () => {
     let url = '';
     let model = '';
     const answerer = createChatAnswerer({
-      apiKey: 'cmd-test',
+      apiKey: 'test-key',
       baseUrl: 'http://127.0.0.1:9999/provider/v1',
-      model: 'deepseek/deepseek-v4-flash',
+      model: 'deepseek/deepseek-v4.1-flash',
       fetchImpl: (async (seen: string, init: RequestInit) => {
         url = String(seen);
         model = JSON.parse(String(init.body)).model;
@@ -86,14 +87,14 @@ describe('规则外问答：调用语言模型', () => {
 
     assert.equal(await answerer.answer('在吗'), '好。');
     assert.equal(url, 'http://127.0.0.1:9999/provider/v1/chat/completions');
-    assert.equal(model, 'deepseek/deepseek-v4-flash');
+    assert.equal(model, 'deepseek/deepseek-v4.1-flash');
   });
 
   it('可以单独覆盖语言模型路径', async () => {
     let url = '';
     const answerer = createChatAnswerer({
-      apiKey: 'cmd-test',
-      baseUrl: 'https://openrouter.ai/api',
+      apiKey: 'test-key',
+      baseUrl: 'https://gateway.test/api',
       chatPath: '/v1/chat/completions',
       fetchImpl: (async (seen: string) => {
         url = String(seen);
@@ -102,14 +103,14 @@ describe('规则外问答：调用语言模型', () => {
     });
 
     assert.equal(await answerer.answer('在吗'), '不错。');
-    assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+    assert.equal(url, 'https://gateway.test/api/v1/chat/completions');
   });
 
   it('推理模型可以关掉思考，避免只回思考不回正文', async () => {
     let body = '';
     const answerer = createChatAnswerer({
-      apiKey: 'cmd-test',
-      baseUrl: 'https://openrouter.ai/api',
+      apiKey: 'test-key',
+      baseUrl: 'https://gateway.test/api',
       chatPath: '/v1/chat/completions',
       reasoning: 'off',
       fetchImpl: (async (_seen: string, init: RequestInit) => {
@@ -119,11 +120,27 @@ describe('规则外问答：调用语言模型', () => {
     });
 
     assert.equal(await answerer.answer('在吗'), '好。');
-    assert.deepEqual(JSON.parse(body).reasoning, { enabled: false });
+    assert.deepEqual(JSON.parse(body).thinking, { type: 'disabled' });
+  });
+
+  it('低推理档发送 reasoning_effort', async () => {
+    let body = '';
+    const answerer = createChatAnswerer({
+      apiKey: 'test-key',
+      reasoning: 'low',
+      fetchImpl: (async (_seen: string, init: RequestInit) => {
+        body = String(init.body);
+        return completion('好。');
+      }) as typeof fetch,
+    });
+
+    assert.equal(await answerer.answer('在吗'), '好。');
+    assert.equal(JSON.parse(body).reasoning_effort, 'low');
+    assert.equal(JSON.parse(body).thinking, undefined);
   });
 
   it('非 2xx、网络异常、空 choices 都返回 null', async () => {
-    const answerWith = (impl: typeof fetch) => createChatAnswerer({ apiKey: 'cmd-test', fetchImpl: impl, logger });
+    const answerWith = (impl: typeof fetch) => createChatAnswerer({ apiKey: 'test-key', fetchImpl: impl, logger });
 
     assert.equal(await answerWith((async () => jsonResponse({}, 500)) as typeof fetch).answer('在吗'), null);
     assert.equal(await answerWith((async () => jsonResponse({ choices: [] })) as typeof fetch).answer('在吗'), null);

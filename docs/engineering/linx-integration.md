@@ -12,7 +12,7 @@
 | SSH | `ssh linx-fighter-las`（`111.62.156.213:10653`，私钥登录） |
 | 应用服务 | `linx-fighter.service`，代码 `/opt/linx-fighter`，用户 `linx`，监听 `127.0.0.1:8000` |
 | 反向代理 | `nginx.service`，`/etc/nginx/conf.d/linx-fighter.conf`，80 → `127.0.0.1:8000` |
-| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`COMMAND_CODE_API_KEY`、`ADMIN_TOKEN` 等），不进仓库 |
+| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`API_KEY`、`ADMIN_TOKEN` 等），不进仓库 |
 | 监控页 | `http://111.62.156.213/admin`（只读看板，3 秒轮询；`ADMIN_TOKEN` 为空即公开） |
 
 常用操作：
@@ -64,36 +64,32 @@ curl http://127.0.0.1:8000/health
 
 > 平台文档中的示例地址是 `http://...:8000/sse`，说明允许明文 HTTP。有域名和证书时可以在这台机器上换成 HTTPS。
 
-### 1.1 模型层的出口与换厂商
+### 1.1 模型层的出口与换网关
 
-命令路由、对手决策和规则外问答都走同一个 Provider 客户端（`src/game/commandcode.ts`），根地址与两条路径都能用环境变量覆盖，默认仍是官方那三条。
+命令路由、对手决策和规则外问答都走同一个模型客户端（`src/game/llm.ts`），根地址、两条路径、模型名和推理开关都能用环境变量覆盖，默认指向 `https://api.modelink.ai/v1`。
 
-这台演示机实测过出口差异，选型时先量再定：
+开发机实测过两个兼容网关（同一 key、同一报文）：
 
-| 目标 | 成功 | 单次耗时 |
+| 目标 | 决策接口 | 语言模型 |
 | --- | --- | --- |
-| `api.commandcode.ai`（官方） | 2/5 | 3.7–6 s，一半超时 |
-| `openrouter.ai` | 5/5 | 0.9–1.7 s |
+| `api.qnaigc.com` | 1/3 成功，4.8–6.6 s；另外两次 502 busy | 2.1–3.3 s |
+| `api.modelink.ai` | 4/4 成功，0.7–1.1 s | 2.9–3.0 s |
 
-同一分钟、同一报文、同一个 Node 进程测的，TCP 握手都在 0.3 s 内，慢在等响应。语音场景 3 秒以上等于没有反应，所以演示环境当前指向 OpenRouter，Command Code 的配置与代码原样保留，那边出口恢复后改回三行环境变量即可。
+语音场景 3 秒以上等于没有反应，所以默认指向 modelink。qnaigc 的 decisions 通道在测试时段不稳定，保留为可切换的备用出口；两个网关的决策路径都是 `/systemone`、语言模型路径都是 `/chat/completions`。
 
-两套配置对照（都在 `/etc/linx-fighter.env`）：
+运行配置（`/etc/linx-fighter.env`）：
 
 ```bash
-# 官方
-COMMAND_CODE_BASE_URL=https://api.commandcode.ai/provider/v1
-COMMAND_CODE_DECISION_PATH=/systemone
-COMMAND_CODE_CHAT_PATH=/chat/completions
-COMMAND_CODE_DECISION_MODEL=typesafe/jev
-
-# OpenRouter（当前）
-COMMAND_CODE_BASE_URL=https://openrouter.ai/api
-COMMAND_CODE_DECISION_PATH=/alpha/decisions
-COMMAND_CODE_CHAT_PATH=/v1/chat/completions
-COMMAND_CODE_DECISION_MODEL=typesafe/jev-1.13
-COMMAND_CODE_CHAT_MODEL=qwen/qwen3.7-flash
-COMMAND_CODE_CHAT_REASONING=off
+BASE_URL=https://api.modelink.ai/v1
+API_KEY=...
+DECISION_PATH=/systemone
+CHAT_PATH=/chat/completions
+DECISION_MODEL=typesafe/jev-1.14
+CHAT_MODEL=deepseek/deepseek-v4-flash
+CHAT_REASONING=off
 ```
+
+换别的 OpenAI 兼容网关时改 `BASE_URL` 与两条路径；密钥只放运行环境，不进仓库。推理模型要 `CHAT_REASONING=off`（发 `thinking:{"type":"disabled"}`），否则 token 可能全花在思考上、正文为空。
 
 另外这台机器没有可用的 IPv6 出网，Node 默认会先试 IPv6，表现为请求在连接阶段快速失败（`fetch failed` / `ETIMEDOUT`，约 0.5 s）。`NODE_OPTIONS` 里的 `--dns-result-order=ipv4first` 不生效，必须写进 systemd 的命令行，并关掉 happy-eyeballs：
 
