@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createCommandRouter, parseRouteDecision, ROUTER_CONFIDENCE_THRESHOLD } from '../src/game/router.js';
 
-/** 构造一个 System One 决策响应 */
+/** 构造一个决策接口响应 */
 function decision(choice: string, confidence = 0.9): unknown {
   return { answers: { command: { choice, confidence } } };
 }
@@ -78,9 +78,12 @@ describe('命令路由客户端', () => {
     assert.deepEqual(command, { kind: 'turn', action: 'heavy' });
 
     const body = JSON.parse(bodies[0] ?? '{}') as {
+      model?: string;
       state?: { stage?: string; utterance?: string };
       questions?: { command?: { type?: string; criteria?: Record<string, string> } };
     };
+    // 默认决策模型必须带上，换模型时由配置覆盖
+    assert.equal(body.model, 'typesafe/jev-1.14');
     // 模型必须看得到原话，否则只能瞎猜
     assert.equal(body.state?.utterance, '上去揍他');
     assert.equal(body.state?.stage, '轮到玩家出招');
@@ -92,7 +95,7 @@ describe('命令路由客户端', () => {
     assert.ok(criteria.includes('status'));
   });
 
-  it('换厂商时可以改决策路径', async () => {
+  it('换网关时可以改决策路径', async () => {
     let url = '';
     const fetchImpl = (async (seen: string | URL | Request) => {
       url = String(seen);
@@ -102,11 +105,11 @@ describe('命令路由客户端', () => {
     const router = createCommandRouter({
       apiKey: 'k',
       fetchImpl,
-      baseUrl: 'https://openrouter.ai/api',
-      decisionPath: '/alpha/decisions',
+      baseUrl: 'https://gateway.test/api',
+      decisionPath: '/decisions',
     });
     assert.deepEqual(await router.resolve('打他', 'active'), { kind: 'turn', action: 'light' });
-    assert.equal(url, 'https://openrouter.ai/api/alpha/decisions');
+    assert.equal(url, 'https://gateway.test/api/decisions');
   });
 
   it('提问阶段的菜单里没有招式选项', async () => {

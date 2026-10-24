@@ -1,8 +1,8 @@
 /**
- * Command Code Provider 客户端：决策模型与语言模型共用一套鉴权和错误处理。
+ * 模型网关客户端：决策模型与语言模型共用一套鉴权和错误处理。
  *
- * 两类调用都走同一个 Provider：
- * - `/systemone`：JEV 决策模型，把「这句话对应哪一招 / 这一手怎么接」做成选择题，
+ * 两类调用都走同一个 OpenAI 兼容网关：
+ * - `/systemone`：决策模型，把「这句话对应哪一招 / 这一手怎么接」做成选择题，
  *   只回选择与概率，不产出数值；
  * - `/chat/completions`：语言模型，回一段能直接朗读的短话，用于规则外问答。
  *
@@ -12,22 +12,22 @@
 
 import type { Logger } from '../log.js';
 
-/** Provider 根地址；换代理或自建网关时由调用方覆盖 */
-export const COMMAND_CODE_BASE_URL = 'https://api.commandcode.ai/provider/v1';
+/** 默认网关根地址；换代理或自建网关时由调用方覆盖 */
+export const DEFAULT_BASE_URL = 'https://api.modelink.ai/v1';
 
-/** JEV 决策模型：低延迟，只需要选项与概率 */
-export const DEFAULT_DECISION_MODEL = 'typesafe/jev';
+/** 决策模型：低延迟，只需要选项与概率 */
+export const DEFAULT_DECISION_MODEL = 'typesafe/jev-1.14';
 
 /** 语音问答模型：回答要短，优先低延迟 */
-export const DEFAULT_CHAT_MODEL = 'deepseek/deepseek-v4.1-flash';
+export const DEFAULT_CHAT_MODEL = 'deepseek/deepseek-v4-flash';
 
-export interface CommandCodeOptions {
+export interface LlmOptions {
   apiKey: string;
-  /** 默认官方地址，测试或代理时覆盖 */
+  /** 默认网关地址，测试或代理时覆盖 */
   baseUrl?: string;
-  /** 决策模型路径；换 Provider 时覆盖（默认 /systemone） */
+  /** 决策模型路径；换网关时覆盖（默认 /systemone） */
   decisionPath?: string;
-  /** 语言模型路径；换 Provider 时覆盖（默认 /chat/completions） */
+  /** 语言模型路径；换网关时覆盖（默认 /chat/completions） */
   chatPath?: string;
   timeoutMs: number;
   /** 单测注入，生产用全局 fetch */
@@ -35,7 +35,7 @@ export interface CommandCodeOptions {
   logger?: Pick<Logger, 'warn' | 'debug'>;
 }
 
-/** System One 的一道选择题；每题一个键，回答按同一个键返回 */
+/** 决策接口的一道选择题；每题一个键，回答按同一个键返回 */
 export interface DecisionQuestion {
   type: 'choice';
   instructions: string;
@@ -65,10 +65,10 @@ export interface ChatInput {
   reasoning?: ChatReasoning;
 }
 
-/** 把推理开关翻成各厂商通用的 OpenRouter 写法 */
+/** 把推理开关翻成 Anthropic/OpenAI 标准的 thinking 参数 */
 function reasoningBody(reasoning: ChatReasoning | undefined): Record<string, unknown> {
-  if (reasoning === 'off') return { reasoning: { enabled: false } };
-  if (reasoning === 'low') return { reasoning: { effort: 'low' } };
+  if (reasoning === 'off') return { thinking: { type: 'disabled' } };
+  if (reasoning === 'low') return { reasoning_effort: 'low' };
   return {};
 }
 
@@ -88,8 +88,8 @@ function readUsage(payload: unknown): TokenUsage | undefined {
 }
 
 /** 发一个 JSON POST；任何失败都吞掉并返回 null，细节写日志 */
-async function post(options: CommandCodeOptions, path: string, body: unknown): Promise<unknown | null> {
-  const url = `${options.baseUrl ?? COMMAND_CODE_BASE_URL}${path}`;
+async function post(options: LlmOptions, path: string, body: unknown): Promise<unknown | null> {
+  const url = `${options.baseUrl ?? DEFAULT_BASE_URL}${path}`;
   const fetchImpl = options.fetchImpl ?? fetch;
   const startedAt = Date.now();
   try {
@@ -124,7 +124,7 @@ async function post(options: CommandCodeOptions, path: string, body: unknown): P
 
 /** 问决策模型一件事；返回原始响应，解析留给调用方 */
 export async function askDecision(
-  options: CommandCodeOptions,
+  options: LlmOptions,
   input: DecisionInput,
 ): Promise<unknown | null> {
   return post(options, options.decisionPath ?? '/systemone', {
@@ -135,10 +135,7 @@ export async function askDecision(
 }
 
 /** 让语言模型答一句；返回原始内容，清洗与截断在 chat.ts 里做 */
-export async function askChat(
-  options: CommandCodeOptions,
-  input: ChatInput,
-): Promise<string | null> {
+export async function askChat(options: LlmOptions, input: ChatInput): Promise<string | null> {
   const payload = await post(options, options.chatPath ?? '/chat/completions', {
     model: input.model ?? DEFAULT_CHAT_MODEL,
     messages: input.messages,

@@ -10,17 +10,17 @@ describe('配置解析', () => {
       logLevel: 'info',
       battleTtlMs: 1_800_000,
       enableDebugEndpoints: true,
-      commandCodeApiKey: undefined,
-      commandCodeBaseUrl: undefined,
-      commandCodeDecisionPath: undefined,
-      commandCodeChatPath: undefined,
-      commandCodeChatReasoning: undefined,
-      commandCodeDecisionModel: 'typesafe/jev',
-      commandCodeChatModel: 'deepseek/deepseek-v4.1-flash',
-      routerTimeoutMs: 1500,
-      chatTimeoutMs: 3000,
+      apiKey: undefined,
+      baseUrl: undefined,
+      decisionPath: undefined,
+      chatPath: undefined,
+      chatReasoning: 'off',
+      decisionModel: 'typesafe/jev-1.14',
+      chatModel: 'deepseek/deepseek-v4-flash',
+      routerTimeoutMs: 2000,
+      chatTimeoutMs: 6000,
       enemyAi: 'jev',
-      enemyTimeoutMs: 1200,
+      enemyTimeoutMs: 2000,
       attribution: 'off',
       adminToken: undefined,
     });
@@ -67,32 +67,32 @@ describe('配置解析', () => {
   });
 
   it('模型配置：Key 去空白、模型与地址可覆盖、超时钳制', () => {
-    assert.equal(loadConfig({ COMMAND_CODE_API_KEY: '  cmd-test  ' }).commandCodeApiKey, 'cmd-test');
-    assert.equal(loadConfig({ COMMAND_CODE_API_KEY: '   ' }).commandCodeApiKey, undefined);
-    assert.equal(loadConfig({}).commandCodeApiKey, undefined);
-    assert.equal(loadConfig({ COMMAND_CODE_BASE_URL: ' http://127.0.0.1:9999/v1 ' }).commandCodeBaseUrl, 'http://127.0.0.1:9999/v1');
-    assert.equal(loadConfig({}).commandCodeBaseUrl, undefined);
+    assert.equal(loadConfig({ API_KEY: '  test-key  ' }).apiKey, 'test-key');
+    assert.equal(loadConfig({ API_KEY: '   ' }).apiKey, undefined);
+    assert.equal(loadConfig({}).apiKey, undefined);
+    assert.equal(loadConfig({ BASE_URL: ' http://127.0.0.1:9999/v1 ' }).baseUrl, 'http://127.0.0.1:9999/v1');
+    assert.equal(loadConfig({}).baseUrl, undefined);
     assert.equal(
-      loadConfig({ COMMAND_CODE_DECISION_PATH: ' /alpha/decisions ' }).commandCodeDecisionPath,
-      '/alpha/decisions',
+      loadConfig({ DECISION_PATH: ' /custom/decisions ' }).decisionPath,
+      '/custom/decisions',
     );
-    assert.equal(loadConfig({}).commandCodeDecisionPath, undefined);
-    assert.equal(loadConfig({ COMMAND_CODE_CHAT_PATH: '/v1/chat/completions' }).commandCodeChatPath, '/v1/chat/completions');
-    assert.equal(loadConfig({}).commandCodeChatPath, undefined);
-    assert.equal(loadConfig({ COMMAND_CODE_CHAT_REASONING: ' OFF ' }).commandCodeChatReasoning, 'off');
-    assert.equal(loadConfig({ COMMAND_CODE_CHAT_REASONING: 'low' }).commandCodeChatReasoning, 'low');
-    assert.equal(loadConfig({ COMMAND_CODE_CHAT_REASONING: 'high' }).commandCodeChatReasoning, undefined);
-    assert.equal(loadConfig({}).commandCodeChatReasoning, undefined);
-    assert.equal(loadConfig({ COMMAND_CODE_DECISION_MODEL: ' typesafe/jev-1.14.0 ' }).commandCodeDecisionModel, 'typesafe/jev-1.14.0');
-    assert.equal(loadConfig({}).commandCodeDecisionModel, 'typesafe/jev');
-    assert.equal(loadConfig({ COMMAND_CODE_CHAT_MODEL: ' deepseek/deepseek-v4-flash ' }).commandCodeChatModel, 'deepseek/deepseek-v4-flash');
-    assert.equal(loadConfig({}).commandCodeChatModel, 'deepseek/deepseek-v4.1-flash');
+    assert.equal(loadConfig({}).decisionPath, undefined);
+    assert.equal(loadConfig({ CHAT_PATH: '/custom/chat' }).chatPath, '/custom/chat');
+    assert.equal(loadConfig({}).chatPath, undefined);
+    assert.equal(loadConfig({ CHAT_REASONING: ' OFF ' }).chatReasoning, 'off');
+    assert.equal(loadConfig({ CHAT_REASONING: 'low' }).chatReasoning, 'low');
+    assert.equal(loadConfig({ CHAT_REASONING: 'high' }).chatReasoning, 'off');
+    assert.equal(loadConfig({}).chatReasoning, 'off');
+    assert.equal(loadConfig({ DECISION_MODEL: ' typesafe/jev-1.15 ' }).decisionModel, 'typesafe/jev-1.15');
+    assert.equal(loadConfig({}).decisionModel, 'typesafe/jev-1.14');
+    assert.equal(loadConfig({ CHAT_MODEL: ' deepseek/deepseek-v4.1-flash ' }).chatModel, 'deepseek/deepseek-v4.1-flash');
+    assert.equal(loadConfig({}).chatModel, 'deepseek/deepseek-v4-flash');
     assert.equal(loadConfig({ ROUTER_TIMEOUT_MS: '50' }).routerTimeoutMs, 200);
     assert.equal(loadConfig({ ROUTER_TIMEOUT_MS: '9000' }).routerTimeoutMs, 5000);
-    assert.equal(loadConfig({ ROUTER_TIMEOUT_MS: 'oops' }).routerTimeoutMs, 1500);
+    assert.equal(loadConfig({ ROUTER_TIMEOUT_MS: 'oops' }).routerTimeoutMs, 2000);
     assert.equal(loadConfig({ CHAT_TIMEOUT_MS: '100' }).chatTimeoutMs, 500);
     assert.equal(loadConfig({ CHAT_TIMEOUT_MS: '99999' }).chatTimeoutMs, 8000);
-    assert.equal(loadConfig({ CHAT_TIMEOUT_MS: 'oops' }).chatTimeoutMs, 3000);
+    assert.equal(loadConfig({ CHAT_TIMEOUT_MS: 'oops' }).chatTimeoutMs, 6000);
   });
 
   it('对手决策配置：开关归一化、超时钳制', () => {
@@ -102,7 +102,7 @@ describe('配置解析', () => {
     assert.equal(loadConfig({ ENEMY_AI: 'gpt' }).enemyAi, 'jev');
     assert.equal(loadConfig({ ENEMY_TIMEOUT_MS: '50' }).enemyTimeoutMs, 200);
     assert.equal(loadConfig({ ENEMY_TIMEOUT_MS: '99999' }).enemyTimeoutMs, 5000);
-    assert.equal(loadConfig({ ENEMY_TIMEOUT_MS: 'oops' }).enemyTimeoutMs, 1200);
+    assert.equal(loadConfig({ ENEMY_TIMEOUT_MS: 'oops' }).enemyTimeoutMs, 2000);
   });
 
   it('监听地址可覆盖且去空白', () => {

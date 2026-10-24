@@ -212,7 +212,6 @@ describe('JEV 对手 AI：调用与回退', () => {
     let captured: { url: string; init: RequestInit } | undefined;
     const ai = createJevEnemyAI({
       apiKey: 'sk-test',
-      model: 'typesafe/jev-1.13',
       logger,
       fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
         captured = { url: String(url), init: init ?? {} };
@@ -224,11 +223,11 @@ describe('JEV 对手 AI：调用与回退', () => {
     const view = actionViewFixture({ ap: 1 });
     assert.equal(await ai.chooseAction(view), 'light');
     const seen = captured as unknown as { url: string; init: RequestInit };
-    assert.equal(seen.url, 'https://api.commandcode.ai/provider/v1/systemone');
+    assert.equal(seen.url, 'https://api.modelink.ai/v1/systemone');
     const headers = seen.init.headers as Record<string, string>;
     assert.equal(headers.Authorization, 'Bearer sk-test');
     const body = JSON.parse(String(seen.init.body));
-    assert.equal(body.model, 'typesafe/jev-1.13');
+    assert.equal(body.model, 'typesafe/jev-1.14');
     assert.equal(body.state.kind, 'action');
     assert.match(body.state.situation, /第 1 轮/);
     assert.equal(body.questions.move.type, 'choice');

@@ -9,7 +9,7 @@
  */
 
 import type { Logger } from '../log.js';
-import { askChat, DEFAULT_CHAT_MODEL, type ChatReasoning } from './commandcode.js';
+import { askChat, DEFAULT_CHAT_MODEL, type ChatReasoning } from './llm.js';
 
 /** 和战斗播报同一套长度约束：一次最多两句、60 字 */
 const MAX_ANSWER_CHARS = 60;
@@ -31,11 +31,11 @@ export interface ChatAnswererOptions {
   apiKey: string;
   model?: string;
   timeoutMs?: number;
-  /** 默认官方地址，测试或代理时覆盖 */
+  /** 默认网关地址，测试或代理时覆盖 */
   baseUrl?: string;
-  /** 语言模型路径；换 Provider 时覆盖 */
+  /** 语言模型路径；换网关时覆盖 */
   chatPath?: string;
-  /** 推理开关：推理模型开思考会只输出思考、不回正文 */
+  /** 推理开关，默认关；推理模型开思考会只输出思考、不回正文 */
   reasoning?: ChatReasoning;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
@@ -89,7 +89,8 @@ export function sanitizeChatAnswer(raw: unknown): string | null {
 
 export function createChatAnswerer(options: ChatAnswererOptions): ChatAnswerer {
   const model = options.model ?? DEFAULT_CHAT_MODEL;
-  const timeoutMs = options.timeoutMs ?? 3000;
+  const timeoutMs = options.timeoutMs ?? 6000;
+  const reasoning = options.reasoning ?? 'off';
 
   return {
     async answer(question) {
@@ -110,7 +111,7 @@ export function createChatAnswerer(options: ChatAnswererOptions): ChatAnswerer {
           ],
           temperature: 0.6,
           maxTokens: 120,
-          reasoning: options.reasoning,
+          reasoning,
         },
       );
       return sanitizeChatAnswer(content);

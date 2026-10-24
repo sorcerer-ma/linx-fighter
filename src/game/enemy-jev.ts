@@ -12,7 +12,7 @@
  */
 
 import type { Logger } from '../log.js';
-import { askDecision, DEFAULT_DECISION_MODEL } from './commandcode.js';
+import { askDecision, DEFAULT_DECISION_MODEL } from './llm.js';
 import { ENEMY_AI } from './enemy.js';
 import { ATTACKS, CRIT_BONUS, RESPONSES, RULES } from './rules.js';
 import type {
@@ -26,7 +26,7 @@ import type {
   TurnRecord,
 } from './types.js';
 
-/** Command Code 上的 JEV 决策模型 */
+/** 决策模型（JEV 系列） */
 export const DEFAULT_ENEMY_MODEL = DEFAULT_DECISION_MODEL;
 
 const MOVE_LABELS: Record<AttackMove, string> = {
@@ -54,9 +54,9 @@ export interface JevEnemyOptions {
   model?: string;
   /** 单次决策超时；超时立刻回退本地，避免拖住整次工具调用 */
   timeoutMs?: number;
-  /** 默认官方地址，测试或代理时覆盖 */
+  /** 默认网关地址，测试或代理时覆盖 */
   baseUrl?: string;
-  /** 决策模型路径；换 Provider 时覆盖 */
+  /** 决策模型路径；换网关时覆盖 */
   decisionPath?: string;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
@@ -207,7 +207,7 @@ export function parseEnemyDecision(payload: unknown, legal: readonly string[]): 
 
 export function createJevEnemyAI(options: JevEnemyOptions): BattleAI {
   const model = options.model ?? DEFAULT_ENEMY_MODEL;
-  const timeoutMs = options.timeoutMs ?? 1200;
+  const timeoutMs = options.timeoutMs ?? 2000;
   const fallback = options.fallback ?? ENEMY_AI;
 
   async function ask(
