@@ -21,3 +21,9 @@ it('明显胜负、待应对和闪避矛盾拒绝；不声称完整语义验证'
  assert.equal(checkReply('对手普攻，我躲开了。','对手攻过来，我轻巧地避开了！',dodged),true);
  assert.equal(checkReply('对手普攻，我躲开了。','对手攻过来，我没能躲开。',dodged),false);
 });
+
+it('征求指挥保留主动下一步，不能省略玩家所需的行动提示',()=>{
+ const active=presentation('status',null);active.facts.next='act';
+ assert.equal(checkReply('该我出招。','我该怎么做？',active),true);
+ assert.equal(checkReply('该我出招。','真痛快！',active),false);
+});
