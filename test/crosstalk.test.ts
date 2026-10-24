@@ -181,8 +181,12 @@ const playerPhrases = [
   '我要对对手强攻',
   '轮到我了，普攻',
   '我还有14点生命值，普攻',
+  '我还有14点生命值普攻',
+  '我还有14点生命值，攻击',
   '第3轮了，普攻',
+  '第3轮了，攻击',
   '我能量已经满了，普攻',
+  '我能量已经满了，防御',
   '战况如何',
   '怎么玩',
   '双人怎么玩',
@@ -311,6 +315,23 @@ describe('回灌识别', () => {
     // 回合提示里的招式词是播报的一部分，不能被当成独立指令
     assert.equal(readCommand('轮到我们了，大招').kind, 'echo');
     assert.equal(matchEchoRule('轮到你出招'), 'turn-hint');
+  });
+
+  it('数值后面的招式不带标点或换了别名，也照样进命令解析', () => {
+    // 评论复现：ASR 不给逗号、或者玩家说的是「攻击」这类别名时，数值片段会把它一起吞掉
+    for (const [text, action] of [
+      ['我还有14点生命值普攻', 'light'],
+      ['我还有14点生命值，攻击', 'light'],
+      ['第3轮了，攻击', 'light'],
+      ['我能量已经满了，防御', 'guard'],
+    ] as const) {
+      assert.equal(looksLikeAssistantEcho(text), false, `真指令被误判成回灌：${text}`);
+      expectTurn(text, action);
+    }
+    // 数值后面还跟着别的描述、或播报在解释不能出手时，照旧算回灌
+    assert.equal(matchEchoRule('我只有3点能量，大招要4点。'), 'ap-short');
+    assert.equal(matchEchoRule('第1轮，我14点生命值、3点能量，对手18点生命值、3点能量'), 'hp-report');
+    assert.equal(matchEchoRule('我能量已经满了，不用再蓄力，直接出招。'), 'ap-full');
   });
 
   it('真人把对手当主语叙述时判回灌：那不是替我出招', () => {
@@ -512,8 +533,14 @@ describe('串音落地到对局', () => {
   });
 
   it('轮到我了、报完生命值再补的招式，在刚开局的单人局里真的出得去', async () => {
-    // 评论复现：这两句被判成回灌，刚开局轮到玩家时只回「嗯。」或空串，能量和回合都不动
-    for (const text of ['轮到我了，普攻', '我还有14点生命值，普攻']) {
+    // 评论复现：这几句被判成回灌，刚开局轮到玩家时只回「嗯。」或空串，能量和回合都不动。
+    // 没有逗号、或者玩家说的是「攻击」这类别名，也必须真的出手。
+    for (const text of [
+      '轮到我了，普攻',
+      '我还有14点生命值，普攻',
+      '我还有14点生命值普攻',
+      '我还有14点生命值，攻击',
+    ]) {
       const { service } = setup();
       const started = await service.start(SOLO);
       const before = started.battle;
@@ -527,23 +554,27 @@ describe('串音落地到对局', () => {
   });
 
   it('点名对手的明确招式照旧执行，一句话里两种招式仍然拦下', async () => {
-    // 评论复现：这两句原先都读不对——明确的一手被剥掉，两招并存时又漏判成强攻
-    const first = setup();
-    const started = await first.service.start(SOLO);
-    const before = started.battle;
-    assert.ok(before);
-    const heavyHit = await first.service.say(SOLO, '我要对对手强攻。');
-    assert.match(heavyHit.text, /^我强攻/);
-    assert.equal(heavyHit.battle?.history.length, 1);
-    assert.equal(heavyHit.battle?.player.ap, before.player.ap - 2);
+    // 评论复现：这些话原先都读不对——明确的一手被剥掉，两招并存时又漏判成强攻
+    for (const text of ['我要对对手强攻。', '我要朝着对手强攻。', '我要冲着对手强攻。']) {
+      const { service } = setup();
+      const started = await service.start(SOLO);
+      const before = started.battle;
+      assert.ok(before);
+      const heavyHit = await service.say(SOLO, text);
+      assert.match(heavyHit.text, /^我强攻/, text);
+      assert.equal(heavyHit.battle?.history.length, 1, text);
+      assert.equal(heavyHit.battle?.player.ap, before.player.ap - 2, text);
+    }
 
-    const second = setup();
-    const fresh = await second.service.start(SOLO);
-    assert.ok(fresh.battle);
-    const blocked = await second.service.say(SOLO, '我要对对手普攻，还是强攻');
-    assert.match(blocked.text, /两种招式/);
-    // 歧义句既不耗资源也不推进对局，只让玩家重说
-    assert.deepEqual(blocked.battle, fresh.battle);
+    for (const text of ['我要对对手普攻，还是强攻', '我要朝着对手用普攻，还是强攻', '我要对 对手普攻，还是强攻']) {
+      const { service } = setup();
+      const fresh = await service.start(SOLO);
+      assert.ok(fresh.battle);
+      const blocked = await service.say(SOLO, text);
+      assert.match(blocked.text, /两种招式/, text);
+      // 歧义句既不耗资源也不推进对局，只让玩家重说
+      assert.deepEqual(blocked.battle, fresh.battle, text);
+    }
   });
 });
 

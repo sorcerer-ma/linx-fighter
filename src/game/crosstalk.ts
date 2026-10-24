@@ -1,3 +1,4 @@
+import { ACTIONS } from './actions.js';
 import { narrateEcho } from './narrator.js';
 
 /**
@@ -112,29 +113,73 @@ const SELF_ACTION = /我.{0,6}(格挡|挡|闪避|躲|承受|硬扛|硬抗|扛)/;
 const SOFT_RULES = new Set(['opponent-narration', 'legacy-attack']);
 
 /**
- * 数字与回合类的片段：玩家自己也这么报数，后面接着一句明确招式时那是在下指令。
- * 真机踩过：「我还有14点生命值，普攻」被判成回灌，只回一声「嗯」，普攻没出去。
+ * 数值类的片段：玩家自己也这么报数，后面紧跟着一手明确招式时那是在下指令。
+ * 真机踩过「我还有14点生命值，普攻」被判成回灌，只回一声「嗯」，普攻没出去。
  * 只放行这几条；结算结果、待应对、结局与说明这类播报独有的结构仍旧一律算回灌。
+ * 「只有N点能量，X要N点」不放行：那是拒绝出手的播报，放行会把提示当成玩家指令。
  */
-const FRAGMENT_RULES = new Set(['hp-report', 'ap-charge', 'ap-short', 'ap-full', 'round-line']);
+const FRAGMENT_RULES = new Set(['hp-report', 'ap-charge', 'ap-full', 'round-line']);
+
+/** 玩家自报数值的片段，与播报同形 */
+const FRAGMENT_MARKS = [
+  new RegExp(`${NUM}点生命值`),
+  new RegExp(`第${NUM}轮`),
+  /能量(?:已经)?满了/,
+  new RegExp(`能量涨到${NUM}`),
+];
+
+/** 子句分隔：标点与空白都算，ASR 经常不给标点 */
+const CLAUSE_SPLIT = /[，,。．.!！?？、；;：:\s]+/;
 
 /**
- * 播报念的招式名：单个子句里只剩这一手时，只可能是玩家在下指令。
- * 只收七个标准招式名，「出招」「攻击」这类泛称会撞上播报的「直接出招」，不能进表。
+ * 招式说法：从招式表取多字别名（「攻击」「防御」也是玩家常说的）。
+ * 单字别名太宽，会撞上播报里的常用字；「出招」「出手」剔掉——播报里「直接出招」「该我出招」就在边上。
  */
-const ACTION_WORDS = ['普攻', '强攻', '大招', '蓄力', '格挡', '闪避', '承受'];
+const ACTION_ALIASES = [
+  ...new Set(
+    Object.values(ACTIONS)
+      .flatMap((action) => action.aliases)
+      .filter((alias) => alias.length >= 2 && /^[\u4e00-\u9fa5]+$/.test(alias))
+      .filter((alias) => alias !== '出招' && alias !== '出手'),
+  ),
+];
 
-/** 招式前面常带的语气、主语与时间词：「那就普攻吧」剥掉后仍是普攻 */
-const ACTION_PREFIX = /^(?:我|你|咱|那|就|先|再|直接|马上|赶紧|立刻|用|出|放|来|使|给我|帮我|咱们)+/;
+/** 招式说法前面常带的语气、主语、时间词与动词：「那就先出普攻吧」 */
+const ACTION_LEAD = /^(?:我|你|咱|那|就|也|都|先|再|直接|马上|赶紧|立刻|用|出|放|来|使|要|想|还是|给我|帮我|咱们)+/;
 
-/** 招式后面常带的语气词 */
+/** 招式说法后面常带的语气词 */
 const ACTION_SUFFIX = /(?:吧|了|啊|呀|哦|呗|嘛|哈|呢)+$/;
 
-/** 这句话里有没有一句独立的招式指令（「我还有14点生命值，普攻」里的「普攻」） */
-function hasStandaloneAction(raw: string): boolean {
-  return raw.split(/[，,。．.!！?？、；;：:\s]+/).some((clause) => {
-    const word = clause.trim().replace(ACTION_SUFFIX, '').replace(ACTION_PREFIX, '');
-    return ACTION_WORDS.includes(word);
+/** 这个子句里是不是只剩一手明确的招式（「普攻」「那就攻击吧」） */
+function isActionClause(clause: string): boolean {
+  const word = clause.trim().replace(ACTION_SUFFIX, '').replace(ACTION_LEAD, '');
+  return ACTION_ALIASES.includes(word);
+}
+
+/** 这个子句里数值片段之后还剩什么（没有片段返回 null） */
+function restAfterFragment(clause: string): string | null {
+  let end = -1;
+  for (const mark of FRAGMENT_MARKS) {
+    const hit = clause.match(mark);
+    if (hit?.index !== undefined && hit.index + hit[0].length > end) end = hit.index + hit[0].length;
+  }
+  return end < 0 ? null : clause.slice(end);
+}
+
+/**
+ * 数值片段后面紧跟一句明确招式：玩家先报自己的状态、再补一手，这是在指挥我。
+ * ASR 给了逗号两块就分成两段（「14点生命值，攻击」），没给标点就粘在同一段（「14点生命值普攻」）。
+ */
+function hasActionAfterNumber(raw: string): boolean {
+  const clauses = raw.split(CLAUSE_SPLIT).map((clause) => clause.trim()).filter(Boolean);
+  return clauses.some((clause, index) => {
+    const rest = restAfterFragment(clause);
+    if (rest === null) return false;
+    if (isActionClause(rest)) return true;
+    // 数值后面还跟着别的描述，那是播报；只剩语气词才看向下一段
+    if (rest.replace(ACTION_SUFFIX, '').replace(ACTION_LEAD, '') !== '') return false;
+    const next = clauses[index + 1];
+    return next !== undefined && isActionClause(next);
   });
 }
 
@@ -179,7 +224,7 @@ export function matchEchoRule(text: string): string | null {
   if (!normalized) return null;
   if (SELF_INTENT.test(normalized)) return null;
   // 玩家在句子里明确补了一句招式：数值类的片段给指令让路，别只回一声「嗯」
-  const directed = hasStandaloneAction(text);
+  const directed = hasActionAfterNumber(text);
   const rule = ECHO_RULES.find(
     (item) => !(directed && FRAGMENT_RULES.has(item.name)) && item.pattern.test(normalized),
   );
