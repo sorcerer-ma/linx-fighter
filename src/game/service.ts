@@ -1,5 +1,6 @@
 import type { Logger } from '../log.js';
 import type { BattleStore } from '../store/battles.js';
+import { EchoStore } from '../store/echoes.js';
 import type { Room, RoomStore } from '../store/rooms.js';
 import { matchAction, type ActionMatch } from './actions.js';
 import { advanceBattle, createBattle, resolveTurn } from './engine.js';
@@ -7,6 +8,7 @@ import type { IntentResolver, IntentStage } from './intent.js';
 import {
   narrateAutoStart,
   narrateBattleStart,
+  narrateCatchUp,
   narrateChant,
   narrateEnded,
   narrateHelp,
@@ -23,7 +25,15 @@ import {
   narrateUnknownAction,
   narrateWaitingRoom,
 } from './narrator.js';
-import { canonicalize, normalizeRoomCode, pvpBattleKey, roomCodeFromPhrase, viewAs, wantsOpenRoom } from './pvp.js';
+import {
+  canonicalize,
+  mirrorEvents,
+  normalizeRoomCode,
+  pvpBattleKey,
+  roomCodeFromPhrase,
+  viewAs,
+  wantsOpenRoom,
+} from './pvp.js';
 import { battleState, type BattleState } from './state.js';
 import type { Battle, BattleAI, BattleEvent, Side } from './types.js';
 import { classifyUtterance } from './utterance.js';
@@ -62,6 +72,8 @@ export interface GameServiceDeps {
   intent?: IntentResolver;
   /** 对手 AI；不传则用内置的本地决策模型（JEV 决策模型从 index 注入） */
   ai?: BattleAI;
+  /** 双人联机的补账消息；不传则新建一个跟对局同样过期的 */
+  echo?: EchoStore;
 }
 
 /**
@@ -79,6 +91,7 @@ export class GameService {
   private readonly random: () => number;
   private readonly intent?: IntentResolver;
   private readonly ai?: BattleAI;
+  private readonly echo: EchoStore;
 
   constructor(deps: GameServiceDeps) {
     this.store = deps.store;
@@ -88,6 +101,7 @@ export class GameService {
     this.random = deps.random ?? Math.random;
     this.intent = deps.intent;
     this.ai = deps.ai;
+    this.echo = deps.echo ?? new EchoStore({ now: this.now });
   }
 
   /** 开一局：单人、开双人房，或凭房间号加入 */
@@ -354,14 +368,15 @@ export class GameService {
       return { text: narrateRoomMissing(live.code), battle: canonical };
     }
 
+    const catchUp = this.drainCatchUp(sessionKey);
     const view = viewAs(canonical, side);
     const match = matchAction(rawAction) ?? (await this.resolveWithIntent(rawAction, view, 'player'));
     if (!match) {
       this.logger.debug('双人招式无法识别', { sessionKey, room: live.code, rawAction });
-      return { text: narrateUnknownAction(view), battle: view };
+      return { text: `${catchUp}${narrateUnknownAction(view)}`, battle: view };
     }
     if (live.guestKey === null) {
-      return { text: narrateWaitingRoom(live.code), battle: view };
+      return { text: `${catchUp}${narrateWaitingRoom(live.code)}`, battle: view };
     }
 
     const result = await resolveTurn(view, match.id, this.now(), { ai: this.ai });
@@ -375,7 +390,7 @@ export class GameService {
         action: match.id,
         reason: result.rejection.reason,
       });
-      return { text: narrateRejection(view, result.rejection), battle: view };
+      return { text: `${catchUp}${narrateRejection(view, result.rejection)}`, battle: view };
     }
 
     this.store.set(pvpBattleKey(live.code), canonicalize(result.battle, side, canonical));
@@ -392,9 +407,12 @@ export class GameService {
       next: result.battle.pending ? `${result.battle.pending.actor} 待应对` : result.battle.active,
     });
 
+    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口
+    if (!result.battle.pending) this.recordCatchUp(live, side, result.battle, result.events);
+
     const chantLine = match.chant ? narrateChant(match.chant) : '';
     return {
-      text: `${chantLine}${this.pvpTurnText(result.battle, result.events)}`,
+      text: `${catchUp}${chantLine}${this.pvpTurnText(result.battle, result.events)}`,
       battle: result.battle,
     };
   }
@@ -410,13 +428,14 @@ export class GameService {
     const live = this.rooms.get(room.code) ?? room;
     const side = this.sideOf(live, sessionKey) ?? 'player';
     const view = viewAs(canonical, side);
+    const catchUp = this.drainCatchUp(sessionKey);
     if (live.guestKey === null) {
       return {
-        text: `${narrateWaitingRoom(live.code)}。${narrateStatus(view)}`,
+        text: `${catchUp}${narrateWaitingRoom(live.code)}。${narrateStatus(view)}`,
         battle: view,
       };
     }
-    return { text: `${narrateStatus(view)}`, battle: view };
+    return { text: `${catchUp}${narrateStatus(view)}`, battle: view };
   }
 
   /** 规则没认出来时，交给 JEV 模型归一化；不在自己的回合就不打扰模型 */
@@ -445,6 +464,29 @@ export class GameService {
     return `${narration.replace(/。$/, '')}，${narrateTurnHint(battle)}。`;
   }
 
+  /** 取走这位玩家错过的结算；没有就给空串，拼在播报最前面 */
+  private drainCatchUp(sessionKey: string): string {
+    const lines = this.echo.take(sessionKey);
+    return lines.length > 0 ? narrateCatchUp(lines) : '';
+  }
+
+  /**
+   * 把这一手的结算记给不在场的另一方。
+   *
+   * 双人局里出招方的结算只回给本人：对方要等到自己的回合才应招，在那之前
+   * 出手方听不到结果，只能先攒着，等他下次开口补一句。只有这一轮真正结算完
+   * （没有待应对）才记——刚出招锁定攻击时对方还没应，记了就是复述。
+   */
+  private recordCatchUp(room: Room, actor: Side, view: Battle, events: BattleEvent[]): void {
+    const waitingKey = actor === 'player' ? room.guestKey : room.hostKey;
+    if (!waitingKey) return;
+    // 出招方的视角里自己永远是 player，镜像一次就是那位等着的玩家
+    const missed = mirrorEvents(events).filter(
+      (event) => event.type !== 'round-start' && event.type !== 'end',
+    );
+    this.echo.push(waitingKey, narrateTurn(viewAs(view, 'enemy'), missed));
+  }
+
   /** 房主/加入者对应的视角；不在房间返回 null */
   private sideOf(room: Room, sessionKey: string): Side | null {
     if (room.hostKey === sessionKey) return 'player';
@@ -456,6 +498,9 @@ export class GameService {
   private leaveRoom(room: Room, reason: string): void {
     this.store.delete(pvpBattleKey(room.code));
     this.rooms.remove(room.code);
+    // 换局了，上一局没补完的结果不能补到新对局里
+    this.echo.clear(room.hostKey);
+    if (room.guestKey) this.echo.clear(room.guestKey);
     this.logger.info('房间关闭', { room: room.code, reason });
   }
 

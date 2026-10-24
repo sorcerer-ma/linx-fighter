@@ -5,6 +5,7 @@ import { createIntentResolver } from './game/intent.js';
 import { createApp } from './http/app.js';
 import { createLogger } from './log.js';
 import { BattleStore } from './store/battles.js';
+import { EchoStore } from './store/echoes.js';
 import { RoomStore } from './store/rooms.js';
 import { SERVER_NAME, SERVER_VERSION } from './mcp/server.js';
 
@@ -32,7 +33,9 @@ const ai =
         logger,
       })
     : undefined;
-const service = new GameService({ store, rooms, logger, intent, ai });
+// 补账消息跟对局一起过期：玩家一直不开口，错过的结算也没必要再念
+const echoes = new EchoStore({ ttlMs: config.battleTtlMs });
+const service = new GameService({ store, rooms, logger, intent, ai, echo: echoes });
 const app = createApp({ config, logger, store, rooms, service });
 
 const server = app.listen(config.port, config.host, () => {

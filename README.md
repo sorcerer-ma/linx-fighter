@@ -12,7 +12,7 @@
 
 另带一个本地沙箱（[`sandbox/`](sandbox/README.md)）：在浏览器里模拟灵犀设备的输入与播报，可开多个窗口互相对战，也可以用命令行或脚本让 Agent 自己把整局打完——不依赖控制台与实体硬件，Agent 能在真实链路上自主模拟、自主回归。
 
-已知局限：双人局里 A 出招、B 应对之后，结果在 B 的回合结算，A 的播报会停在「等对手应对」；网页靠局面面板能立刻看到，无屏的硬件要等 A 下次开口（说战况或出新招）才知道这一手的结果。
+双人局的补账播报：A 出招后，B 的应对在 B 自己的回合结算，A 当场听不到这一手的结果。平台没有服务端主动播报能力，服务端就等 A 下一次开口时补上——播报最前面会多一句「刚才那一手。你一记强攻，对手格挡，掉3点气血，剩15。」，再播当前这一回合。补过一次不重复，换局即清；网页端另有局面面板，随时能看到结果。
 
 ## 一次语音出招是怎么走完的
 
@@ -185,7 +185,7 @@ flowchart LR
 
 [![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
 
-`node:test` + 内置覆盖率，不引入额外测试框架。当前 **208 个用例**，行覆盖 **99.2%**、分支覆盖 **94.1%**、函数覆盖 **98.3%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
+`node:test` + 内置覆盖率，不引入额外测试框架。当前 **221 个用例**，行覆盖 **99.0%**、分支覆盖 **94.2%**、函数覆盖 **98.8%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
@@ -197,13 +197,14 @@ flowchart LR
 | `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
 | `test/utterance.test.ts` | 原话分类：招式 / 战况 / 玩法 / 开局 / 认不出，以及各条边界说法 |
 | `test/state.test.ts` | 局面快照字段、等对手标记、中文标签、视角镜像、胜负折算与幂等 |
-| `test/pvp.test.ts` | 建房/加入、视角镜像、双人出招与应对、房间校验、超时 |
+| `test/pvp.test.ts` | 建房/加入、视角镜像、双人出招与应对、房间校验、超时、结算事件镜像 |
 | `test/rooms.test.ts` | 房间号生成与复用、加入/满员/重复加入、玩家索引、过期清理 |
-| `test/service.test.ts` | 开局 / 出招 / 战况 / 说明、单人 AI 先手、错误文案、双人分流 |
+| `test/service.test.ts` | 开局 / 出招 / 战况 / 说明、单人 AI 先手、错误文案、双人分流、补账播报 |
 | `test/simulation.test.ts` | MT19937 复现 + 2000 局镜像快速对拍 |
 | `test/config.test.ts` | 环境变量解析、默认值与非法值回退 |
 | `test/context.test.ts` | 请求头到身份、对局键、头缺失时的兜底 |
 | `test/store.test.ts` | 内存存储读写、TTL 过期、容量上限 |
+| `test/echoes.test.ts` | 补账消息：取走即清空、按序攒着、互不影响、过期与清理 |
 | `test/log.test.ts` | 级别过滤、单行 JSON 输出、stderr 分流 |
 | `test/tools.test.ts` | 工具注册与业务异常转 `isError` |
 | `test/http.test.ts` | 路由、健康检查、SSE 握手、调试接口（含双人房）、404 与非法 JSON |
@@ -280,6 +281,7 @@ src/
   store/
     battles.ts        对局存储（内存 + TTL）
     rooms.ts          房间存储与玩家索引
+    echoes.ts         双人补账：出手方错过的结算，等他下次开口再念
 sandbox/
   server.ts           沙箱服务：静态页 + /api/say 透传 + 状态流代理
   cli.ts              命令行说一句 / 看局面 / 列工具

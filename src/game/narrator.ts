@@ -220,3 +220,12 @@ export function narrateHelp(): string {
     '念唤出指令也能出招，说「开始游戏」开局、说「战况如何」查状态',
   ].join('。') + '。';
 }
+
+/**
+ * 补账播报：把玩家不在场时错过的结算补念一遍。
+ * 双人局里另一方的应对在对方回合结算，出手方听不到，只能等他下次开口时补上。
+ */
+export function narrateCatchUp(lines: string[]): string {
+  // 结构上一个人最多错过两次结算；真攒多了也只补最近两段，播报太长反而听不清
+  return `刚才那一手。${lines.slice(-2).map(sentence).join('。')}。`;
+}

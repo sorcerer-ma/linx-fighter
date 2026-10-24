@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createBattle } from '../src/game/engine.js';
 import type { IntentResolver, IntentStage } from '../src/game/intent.js';
+import { pvpBattleKey } from '../src/game/pvp.js';
 import { GameService, type GameServiceDeps } from '../src/game/service.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
@@ -339,5 +340,91 @@ describe('统一入口与局面快照', () => {
   it('不在任何对局里时快照为 null', () => {
     const { service } = setup();
     assert.equal(service.snapshot(KEY), null);
+  });
+});
+
+describe('双人补账播报', () => {
+  const KEY_B = 'device-b#agent-1';
+
+  it('对手应完的那一手，等出手方下次开口补上，且只补一次', async () => {
+    const { service } = setup();
+    const opened = await service.say(KEY, '开房间');
+    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `加入房间${code}`);
+
+    const attack = await service.say(KEY, '强攻');
+    assert.match(attack.text, /已出手/);
+
+    // 对手应招时出手方不在场：这一声只念给应对方
+    const response = await service.say(KEY_B, '格挡');
+    assert.match(response.text, /格挡/);
+    assert.doesNotMatch(response.text, /刚才那一手/);
+
+    const catchUp = await service.say(KEY, '战况如何');
+    assert.match(catchUp.text, /^刚才那一手。/);
+    assert.match(catchUp.text, /你一记强攻，对手格挡，掉3点气血，剩15/);
+    assert.match(catchUp.text, /第1轮/);
+
+    // 补过一次就不再重复
+    const again = await service.say(KEY, '战况如何');
+    assert.doesNotMatch(again.text, /刚才那一手/);
+  });
+
+  it('对手蓄力也补在他自己的下一句话里', async () => {
+    const { service } = setup();
+    const opened = await service.say(KEY, '开房间');
+    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `加入房间${code}`);
+
+    await service.say(KEY, '蓄力');
+    const guestTurn = await service.say(KEY_B, '普攻');
+    assert.match(guestTurn.text, /^刚才那一手。对手凝神蓄力，真气涨到4。/);
+    assert.match(guestTurn.text, /一记普攻已出手/);
+  });
+
+  it('换局后不把上一局的结果补到新对局里', async () => {
+    const { service } = setup();
+    const opened = await service.say(KEY, '开房间');
+    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `加入房间${code}`);
+    await service.say(KEY, '强攻');
+    await service.say(KEY_B, '格挡');
+
+    // 房主改开单人局：房间被撤，欠着的那一条也要跟着清掉
+    const restarted = await service.say(KEY, '来一局');
+    assert.equal(restarted.battle?.mode, 'solo');
+    const status = await service.say(KEY, '战况如何');
+    assert.doesNotMatch(status.text, /刚才那一手/);
+  });
+
+  it('终局也把最后那一手交代清楚', async () => {
+    const { service, store } = setup();
+    const opened = await service.say(KEY, '开房间');
+    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `加入房间${code}`);
+
+    // 把房主气血摆到 1：访客这一手直接收尾
+    const key = pvpBattleKey(code);
+    const canonical = store.get(key);
+    assert.ok(canonical);
+    store.set(key, { ...canonical, player: { ...canonical.player, hp: 1 } });
+
+    await service.say(KEY, '蓄力'); // 房主先手，蓄力后轮到访客
+    await service.say(KEY_B, '普攻');
+    const finisher = await service.say(KEY, '承受');
+    assert.match(finisher.text, /这一局输了/);
+
+    const catchUp = await service.say(KEY_B, '战况如何');
+    assert.match(catchUp.text, /^刚才那一手。/);
+    assert.match(catchUp.text, /你一记普攻，对手硬扛，掉\d+点，剩0/);
+    assert.match(catchUp.text, /你赢了/);
+  });
+
+  it('单人局的播报里不出现补账', async () => {
+    const { service } = setup();
+    await service.start(KEY);
+    await service.act(KEY, '普攻');
+    const status = await service.say(KEY, '战况如何');
+    assert.doesNotMatch(status.text, /刚才那一手/);
   });
 });

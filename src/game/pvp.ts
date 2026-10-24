@@ -1,4 +1,4 @@
-import { otherSide, type Battle, type Side } from './types.js';
+import { otherSide, type Battle, type BattleEvent, type Side } from './types.js';
 
 /** 房间号长度：四位数字，语音里好念也好记 */
 export const ROOM_CODE_LENGTH = 4;
@@ -28,6 +28,31 @@ export function wantsOpenRoom(text: string): boolean {
 export function roomCodeFromPhrase(text: string): string | null {
   if (!/(房间|加入|进房)/.test(text)) return null;
   return normalizeRoomCode(text);
+}
+
+/**
+ * 把某一方视角的结算事件镜像到另一方。
+ * 事件里的 side 是「谁做的」，换视角时只翻 side，伤害与掉血这些结果不动；
+ * 逐轮增益（round-start）是对局共有的，不带视角，原样留着。
+ */
+export function mirrorEvents(events: BattleEvent[]): BattleEvent[] {
+  return events.map((event) => {
+    switch (event.type) {
+      case 'charge':
+      case 'attack':
+      case 'pending':
+        return { ...event, side: otherSide(event.side) };
+      case 'end':
+        return { ...event, winner: otherSide(event.winner) };
+      case 'round-start':
+        return event;
+      default: {
+        // 新增事件类型时这里会编译报错，提醒补上换视角规则
+        const exhaustive: never = event;
+        return exhaustive;
+      }
+    }
+  });
 }
 
 /**

@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { GameService } from '../src/game/service.js';
-import { normalizeRoomCode } from '../src/game/pvp.js';
+import { mirrorEvents, normalizeRoomCode } from '../src/game/pvp.js';
 import { battleKey } from '../src/mcp/context.js';
 import { registerGameTools } from '../src/mcp/tools.js';
 import type { IntentResolver } from '../src/game/intent.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
 import { RoomStore } from '../src/store/rooms.js';
+import type { BattleEvent } from '../src/game/types.js';
 
 const HOST = 'device-a#agent-1';
 const GUEST = 'device-b#agent-2';
@@ -378,5 +379,45 @@ describe('语音原话兜底开房与加入', () => {
     const { service } = setup();
     const result = await service.start(HOST, { text: '开始游戏' });
     assert.equal(result.battle?.mode, 'solo');
+  });
+});
+
+describe('结算事件镜像', () => {
+  it('换视角只翻「谁做的」，伤害与掉血按原样', () => {
+    const events: BattleEvent[] = [
+      { type: 'round-start', round: 3, bonus: 4 },
+      {
+        type: 'attack',
+        round: 3,
+        side: 'enemy',
+        move: 'heavy',
+        response: 'guard',
+        dodged: false,
+        crit: true,
+        guarded: true,
+        forced: false,
+        damage: 5,
+        targetHp: 13,
+      },
+      { type: 'end', round: 3, winner: 'enemy' },
+    ];
+
+    assert.deepEqual(mirrorEvents(events), [
+      { type: 'round-start', round: 3, bonus: 4 },
+      {
+        type: 'attack',
+        round: 3,
+        side: 'player',
+        move: 'heavy',
+        response: 'guard',
+        dodged: false,
+        crit: true,
+        guarded: true,
+        forced: false,
+        damage: 5,
+        targetHp: 13,
+      },
+      { type: 'end', round: 3, winner: 'player' },
+    ]);
   });
 });

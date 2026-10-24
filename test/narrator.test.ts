@@ -4,6 +4,7 @@ import { createBattle } from '../src/game/engine.js';
 import {
   narrateAutoStart,
   narrateBattleStart,
+  narrateCatchUp,
   narrateChant,
   narrateEnded,
   narrateHelp,
@@ -236,5 +237,17 @@ describe('提示与房间播报', () => {
     assert.match(narrateRoomMissing('1234'), /没找到房间1234/);
     assert.match(narrateRoomFull('1234'), /已经满员/);
     assert.match(narrateRoomInvalid(), /四位数字/);
+  });
+});
+
+describe('补账播报', () => {
+  it('把错过的结算串成一段，补一次就够', () => {
+    const text = narrateCatchUp(['你一记强攻，对手格挡，掉5点气血，剩13。']);
+    assert.equal(text, '刚才那一手。你一记强攻，对手格挡，掉5点气血，剩13。');
+  });
+
+  it('攒多了只补最近两段，不把播报拖长', () => {
+    const text = narrateCatchUp(['第一手。', '第二手。', '第三手。']);
+    assert.equal(text, '刚才那一手。第二手。第三手。');
   });
 });
