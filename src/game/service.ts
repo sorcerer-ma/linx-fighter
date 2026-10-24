@@ -27,16 +27,11 @@ import {
   narrateUnknownAction,
   narrateWaitingRoom,
 } from './narrator.js';
-import {
-  canonicalize,
-  mirrorEvents,
-  normalizeRoomCode,
-  pvpBattleKey,
-  viewAs,
-} from './pvp.js';
+import { mirrorEvents, normalizeRoomCode, pvpBattleKey, viewAs } from './pvp.js';
 import { BattleTransactions, type BattleTx } from './serialize.js';
 import { battleState, type BattleState } from './state.js';
-import type { Battle, BattleAI, BattleEvent, Side } from './types.js';
+import { dropRoom, tableFor, type Table, type TableDeps } from './table.js';
+import { otherSide, type Battle, type BattleAI, type BattleEvent, type Side } from './types.js';
 
 /** 一次工具调用的结果：可直接朗读的文本 + 当前玩家视角的最新对局状态 */
 export interface ServiceResult {
@@ -94,8 +89,8 @@ export interface GameServiceDeps {
  * 双人联机时，服务端按房主持有唯一一份基准对局，另一位玩家看到的是镜像视角；
  * 两人共用同一份气血、行动点与胜负，不依赖平台侧模型同步状态。
  *
- * 意图模型与对手决策都是异步的，所以对局状态的修改按对局串行排队；
- * 模型返回后还要确认还是同一局、同一个座位，对不上就丢弃这次结果（见 drifted*）。
+ * 单人局与双人局共用一条出招流水线（见 playOnTable），差别只在「桌子」上：
+ * 存在哪个键、坐哪一边、要不要等对手、补账记给谁。
  */
 export class GameService {
   private readonly store: BattleStore;
@@ -108,6 +103,8 @@ export class GameService {
   private readonly echo: EchoStore;
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
+  /** 桌子要用到的存储，构造一张桌子的入口参数 */
+  private readonly tables: TableDeps;
 
   constructor(deps: GameServiceDeps) {
     this.store = deps.store;
@@ -119,6 +116,7 @@ export class GameService {
     this.ai = deps.ai;
     this.echo = deps.echo ?? new EchoStore({ now: this.now });
     this.battles = new BattleTransactions(deps.store, deps.logger);
+    this.tables = { store: deps.store, rooms: deps.rooms, echo: this.echo, logger: deps.logger };
   }
 
   /**
@@ -140,13 +138,23 @@ export class GameService {
   }
 
   /** 查看当前战况 */
+  /** 查看当前战况：等待中的房间先把房间号说一遍 */
   status(sessionKey: string, options: SayOptions = {}): ServiceResult {
-    const room = this.rooms.byPlayer(sessionKey);
-    if (room) return this.statusPvp(sessionKey, room, options);
+    const table = tableFor(this.tables, sessionKey);
+    const battle = table.battle();
+    if (!battle) {
+      // 房间还在但基准对局没了：这间房已经废了
+      if (table.room) {
+        this.rooms.remove(table.room);
+        return { text: narrateRoomMissing(table.room), battle: null };
+      }
+      return { text: narrateNoBattle(), battle: null };
+    }
 
-    const battle = this.store.get(sessionKey) ?? null;
-    if (!battle) return { text: narrateNoBattle(), battle: null };
-    return { text: narrateStatus(battle), battle };
+    const view = table.view(sessionKey) ?? battle;
+    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
+    const head = table.waiting() ? `${narrateWaitingRoom(table.room ?? '')}。` : '';
+    return { text: `${catchUp}${head}${narrateStatus(view)}`, battle: view };
   }
 
   /** 玩法说明，用于玩家不知道说什么的场景 */
@@ -196,16 +204,148 @@ export class GameService {
     }
   }
 
-  /** 招式入口：在房间里就走双人局，否则走单人局 */
+  /** 招式入口：这一手落到哪张桌上，就在哪张桌上结算 */
   private play(
     sessionKey: string,
     direct: TurnIntent | null,
     raw: string,
     options: SayOptions,
   ): Promise<ServiceResult> {
-    const room = this.rooms.byPlayer(sessionKey);
-    if (room) return this.playPvp(sessionKey, room.code, direct, raw, options);
-    return this.playSolo(sessionKey, direct, raw, options);
+    // 先按当前所在的桌子取锁；进门之后再确认一次桌子没换
+    const queued = tableFor(this.tables, sessionKey);
+    return this.battles.run(queued.key, (tx) =>
+      this.playOnTable(sessionKey, queued, tx, direct, raw, options),
+    );
+  }
+
+  /**
+   * 一张桌子上的完整一手：认招、结算、写回、播报。
+   *
+   * 单人局与双人局只在桌子上不同，流水线只写这一遍：先确认排到队时还坐在原位，
+   * 结算前确认局面没被换走，写回时再由事务兜底一次，对不上就作废重说。
+   */
+  private async playOnTable(
+    sessionKey: string,
+    queued: Table,
+    tx: BattleTx,
+    direct: TurnIntent | null,
+    raw: string,
+    options: SayOptions,
+  ): Promise<ServiceResult> {
+    const table = tableFor(this.tables, sessionKey);
+    if (table.key !== tx.key) {
+      // 排队期间换桌或撤房：这一手不落到别的桌子上
+      this.logger.debug('排到队时已经换桌', { sessionKey, from: queued.key, to: table.key });
+      return queued.room
+        ? { text: narrateRoomMissing(queued.room), battle: null }
+        : { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+    }
+
+    const seat = table.seat(sessionKey);
+    if (!seat) return { text: narrateRoomMissing(table.room ?? ''), battle: null };
+
+    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
+    let canonical = tx.load();
+    let prefix = '';
+
+    if (!canonical) {
+      // 房间里没有基准对局：这间房已经废了
+      if (table.room) {
+        this.rooms.remove(table.room);
+        this.logger.warn('房间对局已过期', { sessionKey, room: table.room });
+        return { text: `${catchUp}${narrateRoomMissing(table.room)}`, battle: null };
+      }
+      // 单人局：认不出招式就不自动开局，避免随便一句话就开一局
+      if (!direct) {
+        this.logger.debug('招式无法识别', { sessionKey, raw });
+        return { text: `${catchUp}${narrateUnknownAction(null)}`, battle: null };
+      }
+      const spawned = await this.spawnSolo();
+      // 等对手先手的这段时间里玩家可能已经进了房间：这一手不另开
+      if (this.rooms.byPlayer(sessionKey)) {
+        return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+      }
+      if (!tx.commit(spawned)) {
+        return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+      }
+      canonical = spawned;
+      prefix = narrateAutoStart(spawned);
+      this.logger.info('对局自动开始', {
+        sessionKey,
+        battleId: spawned.id,
+        enemy: spawned.enemy.name,
+        firstMover: spawned.firstMover,
+      });
+    }
+
+    const view = viewAs(canonical, seat);
+    if (view.phase !== 'battle') {
+      return { text: `${catchUp}${prefix}${narrateEnded(view)}`, battle: view };
+    }
+
+    const match = direct ?? (await this.resolveWithIntent(raw, view, 'player'));
+    if (!match) {
+      this.logger.debug('招式无法识别', { sessionKey, room: table.room, raw });
+      return { text: `${catchUp}${prefix}${narrateUnknownAction(view)}`, battle: view };
+    }
+
+    // 还在等对手进来：这一手不结算，先把房间号再说一遍
+    if (table.waiting()) {
+      return { text: `${catchUp}${prefix}${narrateWaitingRoom(table.room ?? '')}`, battle: view };
+    }
+
+    // 模型回复期间局面可能已经变了：不是刚才那一局就丢弃这次识别
+    if (!tx.alive()) {
+      this.logger.info('局面已变，丢弃这次识别', {
+        sessionKey,
+        room: table.room,
+        battleId: canonical.id,
+        action: match.action,
+      });
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+    }
+
+    const result = await resolveTurn(view, match.action, this.now(), { ai: this.ai });
+    if (result.rejection) {
+      this.logger.debug('操作不合法', {
+        sessionKey,
+        room: table.room,
+        battleId: view.id,
+        round: view.round,
+        seat,
+        action: match.action,
+        reason: result.rejection.reason,
+      });
+      return { text: `${catchUp}${prefix}${narrateRejection(result.battle, result.rejection)}`, battle: result.battle };
+    }
+
+    // 结算自己也 await 过对手决策：座位或对局变了就作废，别把旧快照盖回新局
+    const written = table.canonical(result.battle, seat, canonical);
+    if (!table.stillHere(sessionKey, seat) || !tx.commit(written)) {
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+    }
+    if (table.room) this.rooms.touch(table.room);
+
+    this.logger.info('玩家出招', {
+      sessionKey,
+      room: table.room,
+      battleId: written.id,
+      round: written.round,
+      seat,
+      action: match.action,
+      chant: match.chant,
+      phase: written.phase,
+      next: written.pending ? `${written.pending.actor} 待应对` : written.active,
+    });
+
+    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口
+    if (!written.pending) this.recordCatchUp(table, seat, written, result.events);
+
+    const chantLine = match.chant ? narrateChant(match.chant) : '';
+    const body = table.room
+      ? this.pvpTurnText(result.battle, result.events)
+      : narrateTurn(result.battle, result.events);
+    return { text: `${catchUp}${prefix}${chantLine}${body}`, battle: result.battle };
   }
 
   /**
@@ -231,18 +371,14 @@ export class GameService {
    * 这里按房间成员判断坐在哪一边，和出招时的视角保持一致。
    */
   snapshot(sessionKey: string): SnapshotResult | null {
-    const room = this.rooms.byPlayer(sessionKey);
-    if (room) {
-      const canonical = this.store.get(pvpBattleKey(room.code));
-      if (!canonical) return null;
-      const side = this.sideOf(room, sessionKey) ?? 'player';
-      const waiting = room.guestKey === null;
-      return { room: room.code, state: battleState(canonical, { room: room.code, side, waiting }) };
-    }
-
-    const battle = this.store.get(sessionKey);
-    if (!battle) return null;
-    return { room: null, state: battleState(battle, { room: null, side: 'player' }) };
+    const table = tableFor(this.tables, sessionKey);
+    const battle = table.battle();
+    const seat = table.seat(sessionKey);
+    if (!battle || !seat) return null;
+    return {
+      room: table.room,
+      state: battleState(battle, { room: table.room, side: seat, waiting: table.waiting() }),
+    };
   }
 
   /** 单人开局：与出招共用同一把钥匙，对手先手时不会有人插进来读改写 */
@@ -253,13 +389,13 @@ export class GameService {
   private async startSoloLocked(sessionKey: string, opponent?: string): Promise<ServiceResult> {
     // 单人重新开局：撤掉仍在的房间，避免对手对着已失效的局面出招
     const existing = this.rooms.byPlayer(sessionKey);
-    if (existing) this.leaveRoom(existing, '重新开局');
+    if (existing) dropRoom(this.tables, existing, '重新开局');
 
     const battle = await this.spawnSolo(opponent);
 
     // 等对手先手的这段时间里玩家可能已经进了房间：以房间为准，不再另开一局
     const room = this.rooms.byPlayer(sessionKey);
-    if (room) return this.statusPvp(sessionKey, room, {});
+    if (room) return this.status(sessionKey);
 
     this.store.set(sessionKey, battle);
     this.logger.info('对局开始', {
@@ -289,106 +425,10 @@ export class GameService {
         battle: this.store.get(pvpBattleKey(existing.code)) ?? null,
       };
     }
-    if (existing) this.leaveRoom(existing, '重新开局');
+    if (existing) dropRoom(this.tables, existing, '重新开局');
     // 从单人局切到联机时把旧对局清掉，避免退出房间后还对着过期局面出招
     this.store.delete(sessionKey);
     return this.startPvp(sessionKey);
-  }
-
-  /** 单人出招：按玩家串行，模型返回时不会覆盖已经重开的新局 */
-  private playSolo(
-    sessionKey: string,
-    direct: TurnIntent | null,
-    raw: string,
-    options: SayOptions,
-  ): Promise<ServiceResult> {
-    return this.battles.run(sessionKey, (tx) =>
-      this.playSoloLocked(sessionKey, tx, direct, raw, options),
-    );
-  }
-
-  private async playSoloLocked(
-    sessionKey: string,
-    tx: BattleTx,
-    direct: TurnIntent | null,
-    raw: string,
-    options: SayOptions,
-  ): Promise<ServiceResult> {
-    let current = tx.load();
-
-    // 没有对局又认不出招式：不自动开局，避免随便一句话就开一局
-    if (!direct && !current) {
-      this.logger.debug('招式无法识别', { sessionKey, raw });
-      return { text: narrateUnknownAction(null), battle: null };
-    }
-
-    let prefix = '';
-
-    // 没有对局时先顺手开一局，首句「攻击」也能玩；上一局已结束则提示重开
-    if (!current) {
-      const spawned = await this.spawnSolo();
-      // 等对手先手的这段时间里玩家可能已经进了房间：这一手不另开
-      if (this.rooms.byPlayer(sessionKey)) {
-        return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
-      }
-      current = spawned;
-      if (!tx.commit(current)) {
-        return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
-      }
-      prefix = narrateAutoStart(current);
-      this.logger.info('对局自动开始', {
-        sessionKey,
-        battleId: current.id,
-        enemy: current.enemy.name,
-        firstMover: current.firstMover,
-      });
-    }
-
-    if (current.phase !== 'battle') {
-      return { text: narrateEnded(current), battle: current };
-    }
-
-    const match = direct ?? (await this.resolveWithIntent(raw, current, 'player'));
-    if (!match) {
-      this.logger.debug('招式无法识别', { sessionKey, raw });
-      return { text: `${prefix}${narrateUnknownAction(current)}`, battle: current };
-    }
-
-    // 模型回复期间玩家可能重开、换房：不是刚才那一局就丢弃这次识别，绝不写回旧快照
-    if (!tx.alive()) {
-      this.logger.info('局面已变，丢弃这次识别', { sessionKey, battleId: current.id, action: match.action });
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
-    }
-
-    const result = await resolveTurn(current, match.action, this.now(), { ai: this.ai });
-    if (result.rejection) {
-      this.logger.debug('操作不合法', {
-        sessionKey,
-        battleId: current.id,
-        round: current.round,
-        action: match.action,
-        reason: result.rejection.reason,
-      });
-      return { text: `${prefix}${narrateRejection(result.battle, result.rejection)}`, battle: result.battle };
-    }
-
-    // 结算里也要等对手决策：写回交给事务，对不上就作废
-    if (!tx.commit(result.battle)) {
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
-    }
-    this.logger.info('玩家操作', {
-      sessionKey,
-      battleId: result.battle.id,
-      round: result.battle.round,
-      action: match.action,
-      chant: match.chant,
-    });
-
-    const chantLine = match.chant ? narrateChant(match.chant) : '';
-    return {
-      text: `${prefix}${chantLine}${narrateTurn(result.battle, result.events)}`,
-      battle: result.battle,
-    };
   }
 
   /** 开双人房：先建基准对局，再等第二位玩家凭房间号加入 */
@@ -468,7 +508,7 @@ export class GameService {
     }
 
     // 座位先占上，再撤旧房：撤房失败也不会出现一个人同时在两间房里
-    if (current && current.code !== code) this.leaveRoom(current, '换房');
+    if (current && current.code !== code) dropRoom(this.tables, current, '换房');
 
     const view = viewAs(canonical, 'enemy');
     this.store.delete(sessionKey);
@@ -485,132 +525,6 @@ export class GameService {
       ? `${narrateRoomJoined(code)}。${narrateBattleStart(view)}`
       : `${narrateRoomJoined(code)}。${narrateStatus(view)}`;
     return { text: opening, battle: view };
-  }
-
-  /** 双人出招：同一房间的请求排队处理，两次结算不会交错写回基准对局 */
-  private playPvp(
-    sessionKey: string,
-    roomCode: string,
-    direct: TurnIntent | null,
-    raw: string,
-    options: SayOptions,
-  ): Promise<ServiceResult> {
-    return this.battles.run(pvpBattleKey(roomCode), (tx) =>
-      this.playPvpLocked(sessionKey, roomCode, tx, direct, raw, options),
-    );
-  }
-
-  private async playPvpLocked(
-    sessionKey: string,
-    roomCode: string,
-    tx: BattleTx,
-    direct: TurnIntent | null,
-    raw: string,
-    options: SayOptions,
-  ): Promise<ServiceResult> {
-    // 排队期间房间可能已经被撤掉（对手换房、房主重开），进队列后重新确认座位
-    const live = this.rooms.get(roomCode);
-    const side = live ? this.sideOf(live, sessionKey) : null;
-    if (!live || !side) {
-      this.logger.debug('双人房间已失效', { sessionKey, room: roomCode });
-      return { text: narrateRoomMissing(roomCode), battle: null };
-    }
-
-    const canonical = tx.load();
-    if (!canonical) {
-      this.rooms.remove(live.code);
-      this.logger.warn('房间对局已过期', { sessionKey, room: live.code });
-      return { text: narrateRoomMissing(live.code), battle: null };
-    }
-
-    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
-    const view = viewAs(canonical, side);
-
-    const match = direct ?? (await this.resolveWithIntent(raw, view, 'player'));
-    if (!match) {
-      this.logger.debug('双人招式无法识别', { sessionKey, room: live.code, raw });
-      return { text: `${catchUp}${narrateUnknownAction(view)}`, battle: view };
-    }
-    if (live.guestKey === null) {
-      return { text: `${catchUp}${narrateWaitingRoom(live.code)}`, battle: view };
-    }
-
-    // 模型回复期间对手可能已经应招、房主可能重开：不是同一局就不结算
-    if (!tx.alive()) {
-      this.logger.info('双人局面已变，丢弃这次识别', {
-        sessionKey,
-        room: live.code,
-        battleId: canonical.id,
-        action: match.action,
-      });
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
-    }
-
-    const result = await resolveTurn(view, match.action, this.now(), { ai: this.ai });
-    if (result.rejection) {
-      this.logger.debug('双人操作不合法', {
-        sessionKey,
-        room: live.code,
-        battleId: view.id,
-        round: view.round,
-        side,
-        action: match.action,
-        reason: result.rejection.reason,
-      });
-      return { text: `${catchUp}${narrateRejection(view, result.rejection)}`, battle: view };
-    }
-
-    // 结算自己也 await 过对手决策：座位或对局变了就作废，别把旧快照盖回新局
-    const settled = this.rooms.get(live.code);
-    if (
-      !settled ||
-      this.sideOf(settled, sessionKey) !== side ||
-      !tx.commit(canonicalize(result.battle, side, canonical))
-    ) {
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
-    }
-    this.rooms.touch(settled.code);
-    this.logger.info('双人操作', {
-      sessionKey,
-      room: settled.code,
-      battleId: view.id,
-      round: result.battle.round,
-      side,
-      action: match.action,
-      chant: match.chant,
-      phase: result.battle.phase,
-      next: result.battle.pending ? `${result.battle.pending.actor} 待应对` : result.battle.active,
-    });
-
-    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口
-    if (!result.battle.pending) this.recordCatchUp(settled, side, result.battle, result.events);
-
-    const chantLine = match.chant ? narrateChant(match.chant) : '';
-    return {
-      text: `${catchUp}${chantLine}${this.pvpTurnText(result.battle, result.events)}`,
-      battle: result.battle,
-    };
-  }
-
-  /** 双人战况：房主等待加入时额外提示，其余按视角播报 */
-  private statusPvp(sessionKey: string, room: Room, options: SayOptions): ServiceResult {
-    const canonical = this.store.get(pvpBattleKey(room.code));
-    if (!canonical) {
-      this.rooms.remove(room.code);
-      return { text: narrateRoomMissing(room.code), battle: null };
-    }
-
-    const live = this.rooms.get(room.code) ?? room;
-    const side = this.sideOf(live, sessionKey) ?? 'player';
-    const view = viewAs(canonical, side);
-    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
-    if (live.guestKey === null) {
-      return {
-        text: `${catchUp}${narrateWaitingRoom(live.code)}。${narrateStatus(view)}`,
-        battle: view,
-      };
-    }
-    return { text: `${catchUp}${narrateStatus(view)}`, battle: view };
   }
 
   /** 规则没认出来时，交给 JEV 模型归一化；不在自己的回合就不打扰模型 */
@@ -657,47 +571,19 @@ export class GameService {
    * 出手方听不到结果，只能先攒着，等他下次开口补一句。只有这一轮真正结算完
    * （没有待应对）才记——刚出招锁定攻击时对方还没应，记了就是复述。
    */
-  private recordCatchUp(room: Room, actor: Side, view: Battle, events: BattleEvent[]): void {
-    const waitingKey = actor === 'player' ? room.guestKey : room.hostKey;
+  private recordCatchUp(table: Table, seat: Side, base: Battle, events: BattleEvent[]): void {
+    const waitingKey = table.echoTo(seat);
     if (!waitingKey) return;
-    // 出招方的视角里自己永远是 player，镜像一次就是那位等着的玩家
+    // 出招方的视角里自己永远是 player，翻到另一方就是那位等着的玩家
     const missed = mirrorEvents(events).filter(
       (event) => event.type !== 'round-start' && event.type !== 'end',
     );
-    this.echo.push(waitingKey, narrateTurn(viewAs(view, 'enemy'), missed));
-  }
-
-  /** 房主/加入者对应的视角；不在房间返回 null */
-  private sideOf(room: Room, sessionKey: string): Side | null {
-    if (room.hostKey === sessionKey) return 'player';
-    if (room.guestKey === sessionKey) return 'enemy';
-    return null;
-  }
-
-  /**
-   * 撤掉房间与对应基准对局。
-   *
-   * 换房、重开都走这里：对局与补账一起清掉，旧房里的对手会收到「没找到房间」，
-   * 不会对着已经作废的局面继续等响应。
-   */
-  private leaveRoom(room: Room, reason: string): void {
-    this.store.delete(pvpBattleKey(room.code));
-    this.rooms.remove(room.code);
-    // 换局了，上一局没补完的结果不能补到新对局里
-    this.echo.clear(room.hostKey);
-    if (room.guestKey) this.echo.clear(room.guestKey);
-    this.logger.info('房间关闭', { room: room.code, reason });
+    this.echo.push(waitingKey, narrateTurn(viewAs(base, otherSide(seat)), missed));
   }
 
   /** 当前玩家视角的最新局面：房间里按座位镜像，单人是自己的对局 */
   private viewFor(sessionKey: string): Battle | null {
-    const room = this.rooms.byPlayer(sessionKey);
-    if (room) {
-      const canonical = this.store.get(pvpBattleKey(room.code));
-      const side = this.sideOf(room, sessionKey);
-      return canonical && side ? viewAs(canonical, side) : null;
-    }
-    return this.store.get(sessionKey) ?? null;
+    return tableFor(this.tables, sessionKey).view(sessionKey);
   }
 
   /** 创建单人局；对手先手时先推进它第一个主动阶段，避免玩家对着空局面出招 */
