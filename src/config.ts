@@ -17,7 +17,7 @@ export interface AppConfig {
   enableDebugEndpoints: boolean;
   /** OpenRouter API Key；为空时不启用意图模型，只用规则匹配 */
   openrouterApiKey?: string;
-  /** 意图模型名，默认 google/gemma-4-26b-a4b-it */
+  /** 意图模型名，默认 typesafe/jev-1.13（JEV 决策接口） */
   openrouterModel: string;
   /** 意图模型超时（毫秒），超时按没认出来处理 */
   intentTimeoutMs: number;
@@ -47,7 +47,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     battleTtlMs: Math.max(60, parseInteger(env.BATTLE_TTL_SECONDS, 1800)) * 1000,
     enableDebugEndpoints: parseBoolean(env.ENABLE_DEBUG_ENDPOINTS, env.NODE_ENV !== 'production'),
     openrouterApiKey: env.OPENROUTER_API_KEY?.trim() || undefined,
-    openrouterModel: env.OPENROUTER_MODEL?.trim() || 'google/gemma-4-26b-a4b-it',
-    intentTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.INTENT_TIMEOUT_MS, 2000))),
+    openrouterModel: env.OPENROUTER_MODEL?.trim() || 'typesafe/jev-1.13',
+    intentTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.INTENT_TIMEOUT_MS, 1500))),
   };
 }

@@ -22,7 +22,7 @@
 
 - **完整回合制玩法**：普攻 / 强攻 / 大招 / 蓄力 / 格挡 / 闪避 / 承受；真气上限 5、主动阶段回气、第 3 轮起伤害加成、先手 14 血 / 后手 18 血、大招一局一次。
 - **语音即操作，不止认关键词**：口语别名（强攻 / 猛攻 / 抡、格挡 / 防御、承受 / 硬抗）、句中夹杂（「我要公鸡你」）、ASR 同音误识别（「公鸡」「工击」→ 普攻，「墙攻」「抢攻」→ 强攻，「大召」→ 大招）；每招另有中二唤出指令（「共鸣斩破军」「天倾共此声」），念出来会被回念一句。
-- **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；配了 OpenRouter Key 时再叠一层 JEV 意图模型，把「给我狠狠来一下」这类自由说法归一化成招式，规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。
+- **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；配了 OpenRouter Key 时再叠一层 JEV 意图模型（decisions 接口，把「这句话对应哪一招」做成阶段内选择题），把「给我狠狠来一下」这类自由说法归一化成招式，规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。
 - **AI 对手**：按「能斩杀优先、保大招、血线安全时攒气、否则先避免致死再最小期望伤害」做效用打分，不掷随机数；单人随时能开局。策略见 [docs/ai-enemy.md](docs/ai-enemy.md)。
 - **双人联机**：说「联机」「开房间」得到 4 位房间号，对手说「加入房间1234」即可开打；平台模型没把这些词转成参数时，服务端也会从玩家原话里兜底识别。对局键仍是 `deviceId#agentId`，每个玩家看到自己的视角，服务端做镜像。
 - **没有对局也能直接开口**：首句「普攻」自动开局，降低演示与试玩门槛。
@@ -148,22 +148,22 @@ flowchart LR
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error`，日志为单行 JSON |
 | `BATTLE_TTL_SECONDS` | `1800` | 对局与房间的空闲过期时间 |
 | `ENABLE_DEBUG_ENDPOINTS` | 非生产环境开启 | 是否暴露 `/debug/*` |
-| `OPENROUTER_API_KEY` | 空 | 配置后启用 JEV 意图模型；为空只用规则匹配 |
-| `OPENROUTER_MODEL` | `google/gemma-4-26b-a4b-it` | 意图模型名 |
-| `INTENT_TIMEOUT_MS` | `2000` | 意图模型超时，超时按没认出来处理 |
+| `OPENROUTER_API_KEY` | 空 | 配置后启用 JEV 意图模型（OpenRouter decisions 接口）；为空只用规则匹配 |
+| `OPENROUTER_MODEL` | `typesafe/jev-1.13` | JEV 决策模型名 |
+| `INTENT_TIMEOUT_MS` | `1500` | 意图模型超时，超时按没认出来处理 |
 
 ## 测试与质量
 
 [![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
 
-`node:test` + 内置覆盖率，不引入额外测试框架。当前 **161 个用例**，行覆盖 **98.9%**、分支覆盖 **94.5%**、函数覆盖 **99.0%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
+`node:test` + 内置覆盖率，不引入额外测试框架。当前 **165 个用例**，行覆盖 **99.0%**、分支覆盖 **94.7%**、函数覆盖 **99.0%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
 | `test/actions.test.ts` | 七招表、精确与包含匹配、ASR 误识别、唤出指令唯一性、空输入 |
 | `test/engine.test.ts` | 初始化与先手、伤害/暴击/格挡/闪避、强制承受、真气与大招限制、轮次加成、胜负、纯函数与 seed 复现、双人 pending |
 | `test/enemy.test.ts` | AI 主动/应对决策、斩杀优先、保大招、血线攒气、致死规避 |
-| `test/intent.test.ts` | 意图模型解析、置信度阈值、阶段校验、OpenRouter 调用与失败回退 |
+| `test/intent.test.ts` | JEV decisions 返回解析、置信度阈值、阶段校验、请求体与失败回退 |
 | `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
 | `test/pvp.test.ts` | 建房/加入、视角镜像、双人出招与应对、房间校验、超时 |
 | `test/rooms.test.ts` | 房间号生成与复用、加入/满员/重复加入、玩家索引、过期清理 |
