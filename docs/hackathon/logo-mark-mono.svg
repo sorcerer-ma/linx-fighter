@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" color="#15171B" role="img" aria-label="共鸣：闻声对决，单色标记">
+  <title>共鸣：闻声对决 标记</title>
+  <g fill="none" stroke="currentColor" stroke-width="22" stroke-linecap="butt">
+      <path d="M 110.60 133.74 A 176 176 0 0 1 110.60 378.26"/>
+      <path d="M 148.01 97.62 A 228 228 0 0 1 148.01 414.38"/>
+      <path d="M 401.40 133.74 A 176 176 0 0 0 401.40 378.26"/>
+      <path d="M 363.99 97.62 A 228 228 0 0 0 363.99 414.38"/>
+  </g>
+  <path d="M256 200 L312 256 L256 312 L200 256 Z" fill="currentColor"/>
+</svg>
