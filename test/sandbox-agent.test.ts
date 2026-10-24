@@ -33,6 +33,7 @@ it('表达适配器只发非流式chat请求，无游戏工具；仅使用本地
  assert.equal(requests[0]?.url,'https://opencode.ai/inference/openai/v1/chat/completions');
  assert.equal(requests[0]?.body.model,'deepseek-v4.1-flash-free');assert.equal(requests[0]?.body.stream,false);assert.ok(!('tools' in requests[0]!.body));
  assert.equal(requests[0]?.body.messages[0].role,'system');
+ assert.ok(!requests[0]?.body.messages[0].content.includes('只从服务端renderings'));
 });
 it('表达HTTP失败或无有效内容明确失败，不将推理过程当回复',async()=>{
  for(const response of [new Response('unavailable',{status:503}),new Response(JSON.stringify({choices:[{message:{reasoning_content:'不能当作最终回复'}}]}),{status:200})]){
@@ -40,15 +41,16 @@ it('表达HTTP失败或无有效内容明确失败，不将推理过程当回复
   await assert.rejects(model.rewrite('人设','真实结果'));
  }
 });
-it('表达必须匹配完整候选，颠倒归属/胜负/下一步即使数字相同也回原文',async()=>{
+it('允许候选外的整句改写，颠倒归属/胜负/终局下一步则回原文',async()=>{
  const {presentation}=await import('../src/game/presentation.js');
  const facts=presentation('turn',null,{renderings:['我受伤5点，对手获胜。','我掉5点生命值，对手赢了。']});
- for(const candidate of ['我掉5点生命值，对手赢了。','对手受伤5点，我获胜。','我受伤5点，对手获胜。该我出招。']){
+ facts.facts.phase='defeat';facts.facts.next='ended';
+ for(const candidate of ['我挨了5点伤害，对手获胜了。','对手受伤5点，我获胜。','我受伤5点，对手获胜。该我出招。']){
   let calls=0;
   const agent=new SandboxAgent('test',{async rewrite(){return candidate}});
   const result=await agent.run('强攻',{async callTool(){calls++;return {text:facts.renderings[0]!,isError:false,presentation:facts}}});
   assert.equal(calls,1);
-  assert.equal(result.text,facts.renderings.includes(candidate)?candidate:facts.renderings[0]);
+  assert.equal(result.text,candidate==='我挨了5点伤害，对手获胜了。'?candidate:facts.renderings[0]);
  }
 });
 it('表达失败回已有工具原文；未知结果及无事实不调用模型',async()=>{

@@ -1,3 +1,4 @@
+import { checkReply } from './reply-check.js';
 import { OpenAiReplyModel } from './reply-model.js';
 import type { Presentation } from '../../src/game/presentation.js';
 import { readFileSync } from 'node:fs';
@@ -23,14 +24,13 @@ export class SandboxAgent {
     const original = {tool:'game_say',...result,sourceText:result.text};
     const facts = result.presentation;
     if (!this.model || result.isError || !facts || facts.certainty !== 'confirmed'
-      || !Array.isArray(facts.renderings) || facts.renderings.length < 2) {
+      || !['turn','status'].includes(facts.kind)) {
       return {...original,rewriteStatus:'original'};
     }
     try {
       const candidate=await this.model.rewrite(this.prompt,result.text,facts);
-      // Exact membership protects the whole statement, not just its numerals:
-      // ownership, success/failure, winner, next step and protected catch-up text.
-      if (!facts.renderings.includes(candidate)) return {...original,rewriteStatus:'fallback-invalid'};
+      // Heuristic checks detect common errors; they cannot prove all semantics.
+      if (!checkReply(result.text,candidate,facts)) return {...original,rewriteStatus:'fallback-invalid'};
       return {...original,text:candidate,rewriteStatus:candidate===result.text?'original':'rewritten'};
     } catch (error) {
       const expressionError=error instanceof Error && /^表达模型请求失败：HTTP \d+$/.test(error.message) ? error.message : '表达模型不可用';

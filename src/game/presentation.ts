@@ -1,8 +1,8 @@
 import type { Battle, BattleEvent } from './types.js';
 
 /** Additive MCP presentation contract. Facts are built from authoritative state,
- * never recovered by parsing narration. Only server-authored full replies may be
- * selected by the expression model in the first implementation. */
+ * never recovered by parsing narration. Renderings remain optional reference
+ * phrasing for compatibility; they are not a whitelist for expression. */
 export interface Presentation {
   version: 1;
   kind: 'status' | 'turn' | 'rejected' | 'other' | 'error';
