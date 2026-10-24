@@ -1,3 +1,4 @@
+import { createConversation } from './conversation.js';
 import { createListeningSession } from './listening.js';
 import { companionView, newSettlement, renderCompanion, opponentDetails } from './companion.js';
 
@@ -19,7 +20,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var DEVICE_RE = /^web-[A-Za-z0-9_-]{1,16}$/;
   var STORE_PLAYER = 'linx.sandbox.playerId';
   var MIC_NO_HTTPS = '当前页面不是 HTTPS，浏览器不给麦克风，用文字输入继续';
-  var REPLY_LIMIT = 2; // 播报只留最近两条，不做聊天记录
   var TTS_RATE = 1.05;
 
   // 连接状态点：灰=连接中、绿=已连接、红=断开（点本身不显示文字）
@@ -58,8 +58,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var config = null;
   var source = null;
   var busy = false; // 正在等 /api/say
-  var replies = []; // [{ text, tone }]，最多 REPLY_LIMIT 条
-  var lastReply = '';
+  var conversation = createConversation($('conversation-scroll'), el.replies, $('conversation-latest'));
 
   var activeUtterance = null;
   var connected = false;
@@ -122,24 +121,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   /* ---------------- 播报区 ---------------- */
 
-  function pushReply(text, tone) {
-    var value = String(text == null ? '' : text).trim();
-    if (!value) return;
-    replies.push({ text: value, tone: tone || 'normal' });
-    if (replies.length > REPLY_LIMIT) replies = replies.slice(replies.length - REPLY_LIMIT);
-    lastReply = value;
-    renderReplies();
-  }
-
-  function renderReplies() {
-    var nodes = replies.map(function (item, index) {
-      var li = document.createElement('li');
-      li.textContent = item.text;
-      li.dataset.tone = item.tone;
-      li.dataset.fresh = index === replies.length - 1 ? 'true' : 'false';
-      return li;
-    });
-    el.replies.replaceChildren.apply(el.replies, nodes);
+  function pushReply(text, tone, role = 'system') {
+    conversation.append(role, text, tone);
   }
 
   /* ---------------- 连接状态 ---------------- */
@@ -228,7 +211,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     var value = String(text == null ? '' : text).trim();
     if (!value || busy) return;
     busy = true;
-    el.transcript.textContent = '已发送：' + value;
+    conversation.append('player', value);
+    el.transcript.textContent = '玩家 · 已发送：' + value;
     el.micStatus.textContent = '等待伙伴回复';
     listener.pause();
     closeComposer();
@@ -247,7 +231,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
         if (!data) throw new Error('bad response');
         unconfirmed = data.ok === false;
         if (data.state) applyBattle(data.state.battle === undefined ? null : data.state.battle);
-        pushReply(data.reply, data.ok === false ? 'warn' : 'normal');
+        const systemReply = data.ok === false || data.isError === true;
+        pushReply(data.reply, systemReply ? 'warn' : 'normal', systemReply ? 'system' : 'partner');
         speak(data.reply);
       })
       .catch(function () {
@@ -349,12 +334,12 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
     utter.rate = TTS_RATE;
     utter.onstart = function () {
-      if (activeUtterance === utter) el.replies.setAttribute('aria-label', '伙伴回复，正在朗读');
+      if (activeUtterance === utter) el.replies.setAttribute('aria-label', '对话记录，伙伴正在朗读');
     };
     function finish() {
       if (activeUtterance !== utter) return;
       activeUtterance = null;
-      el.replies.setAttribute('aria-label', '最近伙伴回复');
+      el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
       if (!busy) listener.resume();
     }
     utter.onend = utter.onerror = finish;
@@ -364,7 +349,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   function stopSpeaking() {
     activeUtterance = null;
-    el.replies.setAttribute('aria-label', '最近伙伴回复');
+    el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
     if (canSpeak()) window.speechSynthesis.cancel();
   }
 
@@ -383,7 +368,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       render();
     },
     onText: function (text, final) {
-      el.transcript.textContent = (final ? '已识别：' : '识别中：') + text;
+      el.transcript.textContent = (final ? '玩家 · 已识别：' : '玩家 · 识别中：') + text;
     },
     onFinal: function (text) { say(text); },
     onError: function (code) {

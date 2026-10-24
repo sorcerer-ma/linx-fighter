@@ -67,9 +67,11 @@
             <p class="alert" id="alert" hidden></p>
           </div>
 
-        <section class="speech-panel" aria-label="语音交流，设备外文字"><p id="transcript" class="transcript" aria-live="polite">尚未识别指令</p>
-        <!-- 最近伙伴回复：不做聊天记录 -->
-        <ul class="replies" id="replies" aria-live="polite" aria-label="最近播报"></ul></section>
+        <section class="speech-panel" aria-label="语音交流，设备外文字"><p id="transcript" class="transcript" aria-live="polite">玩家 · 尚未识别指令</p>
+        <div id="conversation-scroll" class="conversation-scroll" tabindex="0" role="region" aria-label="对话记录，可滚动">
+          <ul class="replies" id="replies" role="log" aria-live="polite" aria-relevant="additions" aria-label="玩家、伙伴与系统的对话记录"></ul>
+        </div>
+        <button id="conversation-latest" class="conversation-latest" type="button" aria-controls="conversation-scroll" hidden>回到最新</button></section>
       </main>
 
       <details class="opponent-debug"><summary>对手状态 · 只读调试</summary><p id="opponent-debug" aria-live="polite">尚无对局</p></details>
