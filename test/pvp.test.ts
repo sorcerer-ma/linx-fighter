@@ -8,6 +8,7 @@ import { registerGameTools } from '../src/mcp/tools.js';
 import type { IntentResolver } from '../src/game/intent.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
+import { EchoStore } from '../src/store/echoes.js';
 import { RoomStore } from '../src/store/rooms.js';
 import type { BattleEvent } from '../src/game/types.js';
 
@@ -578,6 +579,28 @@ describe('房间与席位的边界', () => {
     const negated = await service.say(GUEST, '不要闪避');
     assert.match(negated.text, /没打出去/);
     assert.equal(store.get(key), armed);
+  });
+
+  it('加入者带着上一局的补账换房，补账不能跟到新房里', async () => {
+    const echo = new EchoStore({ ttlMs: 60_000 });
+    const { service, rooms } = setup({ echo });
+    await service.start(HOST, { mode: 'pvp' });
+    const oldCode = findRoom(service, HOST);
+    await service.start(GUEST, { room: oldCode });
+
+    // 蓄力没有待响应，轮到加入者时给他留下一条「对手凝神蓄力」的补账
+    await service.say(HOST, '蓄力');
+    assert.equal(echo.size, 1);
+
+    await service.start(OTHER, { mode: 'pvp' });
+    const newCode = findRoom(service, OTHER);
+    const moved = await service.say(GUEST, `加入房间${newCode}`);
+    assert.equal(rooms.byPlayer(GUEST)?.code, newCode);
+    assert.match(moved.text, /房间/);
+    // 换房时旧房的补账要跟着清掉，不能把上一局的结算念到新房对手身上
+    assert.equal(echo.size, 0);
+    const later = await service.say(GUEST, '战况如何');
+    assert.doesNotMatch(later.text, /刚才那一手/);
   });
 
   it('房主拿自己的房间号不会把自己登记成加入者', async () => {

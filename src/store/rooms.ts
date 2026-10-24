@@ -9,7 +9,7 @@ export interface Room {
   updatedAt: number;
 }
 
-/** 认领席位的结果：校验不过时什么都不改，旧房只交出来，不在这里撤 */
+/** 认领席位的结果：校验不过时什么都不改；成功时按旧房离开前的快照交出来，撤房与清补账由调用方做 */
 export type ClaimResult =
   | { ok: true; room: Room; previous: Room | null }
   | { ok: false; reason: 'missing' | 'full' | 'host' };
@@ -68,12 +68,15 @@ export class RoomStore {
     if (room.guestKey !== null && room.guestKey !== key) return { ok: false, reason: 'full' };
 
     const previous = this.byPlayer(key) ?? null;
+    const leaving = previous && previous.code !== code ? { ...previous } : null;
     room.guestKey = key;
     room.updatedAt = this.now();
     this.playerToRoom.set(key, room.code);
-    // 旧房不再记着这位玩家：即使调用方一时没撤，旧房也不会挂着一个已经离开的人
+    // 旧房不再记着这位玩家：即使调用方一时没撤，旧房也不会挂着一个已经离开的人。
+    // 交出去的是摘掉之前的快照——调用方要按旧房原来的成员清双方补账，
+    // 用摘过的旧房会漏掉离开者的那一份。
     if (previous && previous.code !== code && previous.guestKey === key) previous.guestKey = null;
-    return { ok: true, room, previous: previous && previous.code !== code ? previous : null };
+    return { ok: true, room, previous: leaving };
   }
 
   /** 按对局键找当前所在房间，已过期视为不在房间 */
