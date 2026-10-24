@@ -39,7 +39,7 @@
 | `docs/design-references.md` | 同类设计案例（读招、资源、节奏、先手补偿）与改进建议（改规则前参考） |
 | `sandbox/README.md` | 本地沙箱的启动、身份、接口契约与 Agent 用法 |
 
-`docs/xrobot-dev-spec/` 是平台官方文档的整份拷贝（含大量图片）：**只读、按需单篇读**，不要编辑，也不要整目录检索图片。常用：`mcp/software-mcp.md`（请求头、`structuredContent`）、`mcp/hardware-mcp.md`（设备侧 JSON-RPC）、`guide/agent-config.md`（智能体配置）。
+`docs/xrobot-dev-spec/` 是平台官方文档的整份拷贝（含大量图片，约 51MB）：**不入库**（已列入 `.gitignore`），只在本地按需查阅，新环境需要时从 [linx.qiniu.com/docs/xrobot](https://linx.qiniu.com/docs/xrobot/) 同步。**只读、按需单篇读**，不要编辑，也不要整目录检索图片。常用：`mcp/software-mcp.md`（请求头、`structuredContent`）、`mcp/hardware-mcp.md`（设备侧 JSON-RPC）、`guide/agent-config.md`（智能体配置）。
 
 ## 技术栈与命令
 

@@ -349,7 +349,7 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | [docs/linx-integration.md](docs/linx-integration.md) | 平台接入、提示词、排障 |
 | [AGENTS.md](AGENTS.md) | 给 AI 协作者的仓库规范 |
 
-`docs/xrobot-dev-spec/` 是灵犀平台官方开发文档的整份拷贝，只读、按需单篇查阅。
+`docs/xrobot-dev-spec/` 是灵犀平台官方开发文档的整份拷贝（含大量图片）：**不入库**、只读、按需单篇查阅。新克隆的仓库没有这份拷贝，需要时从 [linx.qiniu.com/docs/xrobot](https://linx.qiniu.com/docs/xrobot/) 同步到本地。
 
 ## 目录结构
 
