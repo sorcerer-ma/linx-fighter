@@ -1,3 +1,4 @@
+import { presentation, type Presentation } from './presentation.js';
 import type { AttributionMode } from '../config.js';
 import type { Logger } from '../log.js';
 import type { BattleStore } from '../store/battles.js';
@@ -41,6 +42,7 @@ import { otherSide, type Battle, type BattleAI, type BattleEvent, type Side } fr
 
 /** 一次工具调用的结果：可直接朗读的文本 + 当前玩家视角的最新对局状态 */
 export interface ServiceResult {
+  presentation?: Presentation;
   text: string;
   battle: Battle | null;
 }
@@ -195,7 +197,8 @@ export class GameService {
     const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
     const waiting = table.waiting();
     const head = waiting ? `${narrateWaitingRoom(table.room ?? '')}。` : '';
-    return { text: `${catchUp}${head}${narrateStatus(view, { waiting })}`, battle: view };
+    return { text: `${catchUp}${head}${narrateStatus(view, { waiting })}`, battle: view,
+      presentation: presentation('status', view, {waiting,renderings:[`${catchUp}${head}${narrateStatus(view,{waiting,expressive:true})}`]}) };
   }
 
   /** 玩法说明，用于玩家不知道说什么的场景 */
@@ -415,7 +418,7 @@ export class GameService {
         action: match.action,
         reason: result.rejection.reason,
       });
-      return { text: `${catchUp}${prefix}${narrateRejection(result.battle, result.rejection)}`, battle: result.battle };
+      return { text: `${catchUp}${prefix}${narrateRejection(result.battle, result.rejection)}`, battle: result.battle, presentation:presentation('rejected',result.battle,{rejection:result.rejection.reason}) };
     }
 
     // 结算自己也 await 过对手决策：座位或对局变了就作废，别把旧快照盖回新局
@@ -442,7 +445,8 @@ export class GameService {
 
     const chantLine = match.chant ? narrateChant(match.chant) : '';
     const body = narrateTurn(result.battle, result.events);
-    return { text: `${catchUp}${prefix}${chantLine}${body}`, battle: result.battle };
+    return { text: `${catchUp}${prefix}${chantLine}${body}`, battle: result.battle,
+      presentation:presentation('turn',result.battle,{events:result.events,renderings:[`${catchUp}${prefix}${chantLine}${narrateTurn(result.battle,result.events,{expressive:true})}`]}) };
   }
 
   /**
