@@ -16,6 +16,7 @@ const USAGE = `灵犀沙箱命令行
 
 选项：
   --device <id>   玩家身份，默认 web-cli；双人模拟时用 web-p1 / web-p2
+  --voice        模拟无屏硬件：保留补账播报（页面默认有屏，不补账）
   --json          打印原始 JSON（调试用）
 `;
 
@@ -24,6 +25,9 @@ interface ParsedArgs {
   positionals: string[];
   flags: Record<string, string | true>;
 }
+
+/** 纯开关，不吃后面的参数（否则 `--voice "强攻"` 会把原话当成它的值） */
+const BOOLEAN_FLAGS = new Set(['json', 'voice', 'verbose', 'help']);
 
 function parseArgs(argv: string[]): ParsedArgs {
   const [command = '', ...rest] = argv;
@@ -38,7 +42,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
     const name = arg.slice(2);
     const next = rest[index + 1];
-    if (next !== undefined && !next.startsWith('--')) {
+    if (!BOOLEAN_FLAGS.has(name) && next !== undefined && !next.startsWith('--')) {
       flags[name] = next;
       index += 1;
     } else {
@@ -84,11 +88,13 @@ async function main(argv: string[]): Promise<number> {
   const config = loadSandboxConfig();
   // CLI 只要结果，不要服务端的每请求日志
   const logger = createLogger('error');
+  const display = flags.voice === true ? 'voice' : config.display;
   const client = new SandboxClient({
     upstream: config.upstream,
     agentId: config.agentId,
     timeoutMs: config.timeoutMs,
     logger,
+    display,
   });
   const deviceId = flagText(flags, 'device') ?? 'web-cli';
   const asJson = flags.json === true;
@@ -108,6 +114,7 @@ async function main(argv: string[]): Promise<number> {
 
     console.log(`玩家 ${deviceId}：${text}`);
     console.log(`播报：${result.reply}`);
+    if (display === 'voice') console.log('（模拟无屏硬件：补账播报开启）');
     console.log(`局面：${describeState(result.state)}`);
     if (!result.ok) console.error(`（上游：${config.upstream}）`);
     return result.ok ? 0 : 1;

@@ -86,6 +86,7 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
       eventsUrl: eventsUrlFor(req, config),
       agentId: config.agentId,
       defaultDeviceId: `web-${randomSuffix()}`,
+      display: config.display,
       voice: { lang: 'zh-CN' },
     });
   });
@@ -198,6 +199,7 @@ export function startSandbox(config: SandboxConfig, logger = createLogger(config
     agentId: config.agentId,
     timeoutMs: config.timeoutMs,
     logger,
+    display: config.display,
   });
   const app = createSandboxServer({ config, client });
 
@@ -212,6 +214,7 @@ export function startSandbox(config: SandboxConfig, logger = createLogger(config
       lan: lanUrls(config.port, scheme),
       upstream: config.upstream,
       agentId: config.agentId,
+      display: config.display,
       hint: '多开窗口：?player=1 / ?player=2',
     });
   });

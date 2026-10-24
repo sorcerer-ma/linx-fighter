@@ -69,6 +69,7 @@ pnpm sandbox        # 终端 2：沙箱，0.0.0.0:8100
 pnpm sandbox:say --device web-p1 "开房间"
 pnpm sandbox:say --device web-p2 "加入房间1234"
 pnpm sandbox:say --device web-p1 "强攻"
+pnpm sandbox:say --device hw-1 --voice "强攻"   # 模拟无屏硬件：播报会补上错过的结算
 
 # 只看局面（JSON）
 pnpm sandbox:state --device web-p1
@@ -235,6 +236,7 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 | `SANDBOX_HOST` | `0.0.0.0` | 沙箱监听地址 |
 | `SANDBOX_UPSTREAM` | `http://127.0.0.1:8000` | 游戏服务地址（MCP 与状态都走它） |
 | `SANDBOX_AGENT_ID` | `linx-sandbox` | 冒充的智能体 ID，进 `X-Linx-Agent-Id` |
+| `SANDBOX_DISPLAY` | `screen` | 冒充的载体形态，进 `X-Linx-Display`；`voice` 表示无屏硬件，保留补账播报 |
 | `SANDBOX_EVENTS_URL` | 自动推导 | 强制指定页面用的状态流地址 |
 | `SANDBOX_TLS_CERT` / `SANDBOX_TLS_KEY` | 空 | 配了就用 HTTPS 起服务（手机原生语音需要安全上下文） |
 | `LOG_LEVEL` | `info` | 沙箱自己的日志级别 |

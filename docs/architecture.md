@@ -132,6 +132,14 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 不选另外两条路的原因：改演示话术治不了真机；改成双方声明后统一结算，会改动玩法与平台交互节奏，演示前不值得。
 
+### 17. 载体能力用请求头协商，补账按需关闭
+
+补账播报解决的是「没有屏幕」的终端：它听不到对方应招的结果，只能等他下次开口补一句。有屏客户端（沙箱网页、将来的手机页）随时能画出双方气血、真气与大招，再念一遍「刚才那一手」就是重复信息。
+
+做法：能力走请求头，不走工具入参。`X-Linx-Display: voice | screen`，缺省 `voice`——平台与硬件不会声明这个头，保持既有体验；沙箱页面由 `SANDBOX_DISPLAY=screen`（默认）声明自己是屏幕。`src/mcp/context.ts` 把它解析进 `DeviceContext.display`，`src/mcp/tools.ts` 翻译成 `SayOptions{catchUp}` 传给 `GameService`。
+
+细节：`catchUp: false` 时补账仍然被 `EchoStore.take()` 取走，只是不拼进文本——避免队列越攒越长，也避免客户端换回语音终端时突然念一堆旧账。工具入参保持「只有玩家原话」，不把载体差异交回平台侧模型判断。
+
 ## 扩展指引
 
 - **加招式**：在 `types.ts` 的 `ActionId` 加枚举，在 `actions.ts` 加 `ActionMeta`（含中文名、口语别名、ASR 误识别与唤出指令），工具参数无需改动；数值加到 `rules.ts`，结算逻辑在 `engine.ts`，并补 `test/actions.test.ts` 与仿真对拍。

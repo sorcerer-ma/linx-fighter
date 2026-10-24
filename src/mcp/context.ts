@@ -10,21 +10,30 @@ import type { IncomingHttpHeaders } from 'node:http';
  *
  * 同一台设备 + 同一个智能体共享一局对局，所以对局归属键不包含会话 ID，
  * 玩家断线重连、换一轮对话，进行中的对局都不会丢。
+ *
+ * - X-Linx-Display：载体有没有屏幕（`screen` / `voice`），决定要不要补账播报。
+ *   平台不会带这个头，默认按语音终端处理；沙箱页面自己带 `screen`。
  */
 export const HEADER_DEVICE_ID = 'x-linx-device-id';
 export const HEADER_AGENT_ID = 'x-linx-agent-id';
 export const HEADER_SESSION_ID = 'x-linx-session-id';
+export const HEADER_DISPLAY = 'x-linx-display';
+
+/** 载体形态：有屏客户端能自己看到局面，无屏终端只能靠下一次播报补上 */
+export type DisplayMode = 'voice' | 'screen';
 
 export interface DeviceContext {
   deviceId: string;
   agentId: string;
   sessionId: string;
+  /** 默认 voice：平台与硬件不会声明，保持「补账播报」的原有体验 */
+  display: DisplayMode;
   /** 兜底标识：既没有设备头也没有会话头时（例如本地手工调试），用连接级 id 区分 */
   anonymousId: string;
 }
 
 export function createDeviceContext(anonymousId: string): DeviceContext {
-  return { deviceId: '', agentId: '', sessionId: '', anonymousId };
+  return { deviceId: '', agentId: '', sessionId: '', display: 'voice', anonymousId };
 }
 
 function readHeader(headers: IncomingHttpHeaders, name: string): string {
@@ -55,10 +64,13 @@ export function applyRequestContext(
   const deviceId = readHeader(headers, HEADER_DEVICE_ID) || readQuery(query, 'device');
   const agentId = readHeader(headers, HEADER_AGENT_ID) || readQuery(query, 'agent');
   const sessionId = readHeader(headers, HEADER_SESSION_ID) || readQuery(query, 'session');
+  const display = readHeader(headers, HEADER_DISPLAY) || readQuery(query, 'display');
 
   if (deviceId) ctx.deviceId = deviceId;
   if (agentId) ctx.agentId = agentId;
   if (sessionId) ctx.sessionId = sessionId;
+  // 认不出的一律当语音终端，宁可多补一句，也不要让硬件静音
+  if (display === 'screen' || display === 'voice') ctx.display = display;
 }
 
 /** 对局归属键：同设备同智能体共享一局 */

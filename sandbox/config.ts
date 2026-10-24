@@ -25,12 +25,21 @@ export interface SandboxConfig {
   /** 单次 MCP 请求超时：意图模型与对手决策都在服务端，要留够余量 */
   timeoutMs: number;
   logLevel: LogLevel;
+  /**
+   * 沙箱冒充的载体形态：screen=有屏页面（不补账播报），voice=模拟无屏硬件（保留补账）。
+   * 进 X-Linx-Display 请求头。
+   */
+  display: 'voice' | 'screen';
   tls?: SandboxTls;
   /** 静态页目录 */
   publicDir: string;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
+function parseDisplay(raw: string | undefined): 'voice' | 'screen' {
+  return raw?.trim().toLowerCase() === 'voice' ? 'voice' : 'screen';
+}
 
 function parseInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -53,6 +62,7 @@ export function loadSandboxConfig(env: NodeJS.ProcessEnv = process.env): Sandbox
     eventsUrl: env.SANDBOX_EVENTS_URL?.trim() || undefined,
     timeoutMs: Math.max(1000, Math.min(30_000, parseInteger(env.SANDBOX_MCP_TIMEOUT_MS, 10_000))),
     logLevel,
+    display: parseDisplay(env.SANDBOX_DISPLAY),
     tls: cert && key ? { cert, key } : undefined,
     publicDir: resolve(dirname(fileURLToPath(import.meta.url)), 'public'),
   };

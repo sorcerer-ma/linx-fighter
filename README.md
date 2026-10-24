@@ -12,7 +12,7 @@
 
 另带一个本地沙箱（[`sandbox/`](sandbox/README.md)）：在浏览器里模拟灵犀设备的输入与播报，可开多个窗口互相对战，也可以用命令行或脚本让 Agent 自己把整局打完——不依赖控制台与实体硬件，Agent 能在真实链路上自主模拟、自主回归。
 
-双人局的补账播报：A 出招后，B 的应对在 B 自己的回合结算，A 当场听不到这一手的结果。平台没有服务端主动播报能力，服务端就等 A 下一次开口时补上——播报最前面会多一句「刚才那一手。你一记强攻，对手格挡，掉3点气血，剩15。」，再播当前这一回合。补过一次不重复，换局即清；网页端另有局面面板，随时能看到结果。
+双人局的补账播报：A 出招后，B 的应对在 B 自己的回合结算，A 当场听不到这一手的结果。平台没有服务端主动播报能力，服务端就等 A 下一次开口时补上——播报最前面会多一句「刚才那一手。你一记强攻，对手格挡，掉3点气血，剩15。」，再播当前这一回合。补过一次不重复，换局即清。这是给没有屏幕的终端准备的：客户端带 `X-Linx-Display: screen`（沙箱页面就是这样）就不念补账，自己去画局面。
 
 ## 一次语音出招是怎么走完的
 
@@ -65,7 +65,7 @@ pnpm validate      # 规则对拍：8 种策略 × 组合 2000 局，共 256,000
 pnpm build         # 编译到 dist/
 pnpm start         # 运行编译产物
 pnpm sandbox       # 启动沙箱页面（需先起游戏服务）
-pnpm sandbox:say   # 命令行说一句：pnpm sandbox:say --device web-a "强攻"
+pnpm sandbox:say   # 命令行说一句：pnpm sandbox:say --device web-a "强攻"（加 --voice 模拟无屏硬件）
 pnpm sandbox:state # 打印某个设备看到的局面快照
 pnpm sandbox:selfplay --rounds 3  # 两个脚本身份自动打完 3 局，顺带校验视角镜像
 ```
@@ -115,6 +115,7 @@ open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开
 | `X-Linx-Device-Id` | 设备 ID，对局归属的主要依据 |
 | `X-Linx-Agent-Id` | 智能体 ID，同一设备换智能体就是另一局 |
 | `X-Linx-Session-Id` | 会话 ID，每轮对话刷新 |
+| `X-Linx-Display` | 载体有没有屏幕：`voice`（默认，无屏终端）或 `screen`（有屏客户端）。`screen` 关掉补账播报，局面由客户端自己展示 |
 
 ### 返回
 
@@ -246,6 +247,7 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | [docs/architecture.md](docs/architecture.md) | 请求链路、分层职责、已定设计决策 |
 | [docs/game-design.md](docs/game-design.md) | v0.2 规则、数值、AI、双人联机与验证 |
 | [docs/ai-enemy.md](docs/ai-enemy.md) | AI 决策模型、权重与自博弈结果 |
+| [docs/design-references.md](docs/design-references.md) | 同类设计案例：读招、资源、节奏与先手补偿 |
 | [sandbox/README.md](sandbox/README.md) | 本地沙箱：多窗口模拟、Agent 脚本驱动、接口契约、手机语音 |
 | [docs/linx-integration.md](docs/linx-integration.md) | 平台接入、提示词、排障 |
 | [AGENTS.md](AGENTS.md) | 给 AI 协作者的仓库规范 |

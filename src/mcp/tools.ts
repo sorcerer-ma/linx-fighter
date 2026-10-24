@@ -59,6 +59,9 @@ const sayInput = {
 export function registerGameTools(server: McpServer, deps: ToolDependencies): void {
   const { service, logger, ctx } = deps;
 
+  // 有屏客户端自己能看到局面，不需要补账播报；无屏终端（平台默认）保留
+  const speakOptions = () => ({ catchUp: ctx.display !== 'screen' });
+
   // 统一包装：异常不外抛，转成玩家能听懂的一句失败播报，同时记日志
   const invoke = async (
     tool: string,
@@ -108,7 +111,8 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         '玩家说完话就调用它，把原话一字不改地放进 text，不要自己判断这是开局、出招还是提问。服务端会识别招式与同音误识别、战况、玩法、开局、开房间与加入房间，并返回一句可以直接朗读的播报。不确定该用哪个工具时，永远用这个。',
       inputSchema: sayInput,
     },
-    async ({ text }) => invoke('game_say', { text }, () => service.say(battleKey(ctx), text)),
+    async ({ text }) =>
+      invoke('game_say', { text }, () => service.say(battleKey(ctx), text, speakOptions())),
   );
 
   server.registerTool(
@@ -133,7 +137,8 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         '执行玩家这一手的招式或应对。轮到玩家主动时可以用普攻、强攻、大招、蓄力；对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。玩家说「开房间」「联机」「加入房间1234」也原样传进 action，服务端会按联机处理。操作不合法时不会推进回合，返回里会说明原因并给可选说法。',
       inputSchema: actionInput,
     },
-    async ({ action }) => invoke('game_action', { action }, () => service.act(battleKey(ctx), action)),
+    async ({ action }) =>
+      invoke('game_action', { action }, () => service.act(battleKey(ctx), action, speakOptions())),
   );
 
   server.registerTool(
@@ -144,7 +149,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         '查看当前对局双方的气血、真气和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我还剩多少血」时调用。',
       inputSchema: {},
     },
-    async () => invoke('game_status', {}, () => service.status(battleKey(ctx))),
+    async () => invoke('game_status', {}, () => service.status(battleKey(ctx), speakOptions())),
   );
 
   server.registerTool(

@@ -331,6 +331,7 @@ function debugBattleKey(req: Request): string {
     deviceId: asText(req.query.device) || 'debug-device',
     agentId: asText(req.query.agent) || 'debug-agent',
     sessionId: '',
+    display: 'voice',
     anonymousId: 'debug',
   };
   return battleKey(ctx);

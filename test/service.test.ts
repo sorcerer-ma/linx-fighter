@@ -420,6 +420,24 @@ describe('双人补账播报', () => {
     assert.match(catchUp.text, /你赢了/);
   });
 
+  it('有屏客户端取走补账但不念出来，下次也不会再补', async () => {
+    const { service } = setup();
+    const opened = await service.say(KEY, '开房间');
+    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `加入房间${code}`);
+    await service.say(KEY, '强攻');
+    await service.say(KEY_B, '格挡');
+
+    // 网页自己能画局面，不需要把错过的结算念一遍
+    const silent = await service.say(KEY, '战况如何', { catchUp: false });
+    assert.doesNotMatch(silent.text, /刚才那一手/);
+    assert.match(silent.text, /第1轮/);
+
+    // 队列已经被取走，换回语音终端也不会补旧账
+    const voice = await service.say(KEY, '战况如何');
+    assert.doesNotMatch(voice.text, /刚才那一手/);
+  });
+
   it('单人局的播报里不出现补账', async () => {
     const { service } = setup();
     await service.start(KEY);

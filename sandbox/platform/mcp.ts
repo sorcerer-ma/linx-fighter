@@ -43,6 +43,9 @@ export class UpstreamError extends Error {
   }
 }
 
+/** 载体形态：页面有屏，自己看得到局面；脚本模拟硬件时用 voice（保留补账播报） */
+export type McpDisplay = 'voice' | 'screen';
+
 export interface McpClientOptions {
   upstream: string;
   deviceId: string;
@@ -50,6 +53,8 @@ export interface McpClientOptions {
   sessionId: string;
   timeoutMs: number;
   logger: Logger;
+  /** 默认 screen：沙箱的主用途是有屏的页面 */
+  display?: McpDisplay;
 }
 
 interface JsonRpcMessage {
@@ -194,6 +199,7 @@ export class LinxMcpClient {
           'X-Linx-Device-Id': this.options.deviceId,
           'X-Linx-Agent-Id': this.options.agentId,
           'X-Linx-Session-Id': this.options.sessionId,
+          'X-Linx-Display': this.options.display ?? 'screen',
         },
         body: JSON.stringify(body),
         signal: controller.signal,

@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { GameService } from '../src/game/service.js';
 import { mirrorEvents, normalizeRoomCode } from '../src/game/pvp.js';
-import { battleKey } from '../src/mcp/context.js';
+import { battleKey, type DeviceContext } from '../src/mcp/context.js';
 import { registerGameTools } from '../src/mcp/tools.js';
 import type { IntentResolver } from '../src/game/intent.js';
 import { createLogger } from '../src/log.js';
@@ -14,6 +14,23 @@ import type { BattleEvent } from '../src/game/types.js';
 const HOST = 'device-a#agent-1';
 const GUEST = 'device-b#agent-2';
 const OTHER = 'device-c#agent-3';
+
+/** 按设备上下文注册一套工具处理器：测试里用它模拟两种不同载体 */
+function toolset(service: GameService, ctx: DeviceContext) {
+  type Handler = (input: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+  const handlers = new Map<string, Handler>();
+  const server = {
+    registerTool(name: string, _definition: unknown, handler: Handler) {
+      handlers.set(name, handler);
+    },
+  } as unknown as McpServer;
+  registerGameTools(server, { service, logger: createLogger('error'), ctx });
+  return async (tool: string, input: Record<string, unknown> = {}): Promise<string> => {
+    const text = (await handlers.get(tool)!(input)).content[0]?.text;
+    assert.ok(text);
+    return text;
+  };
+}
 
 function setup(overrides: Partial<ConstructorParameters<typeof GameService>[0]> = {}) {
   let now = 1_000_000;
@@ -284,7 +301,13 @@ describe('双人联机', () => {
         handlers.set(name, handler);
       },
     } as unknown as McpServer;
-    const ctx = { deviceId: 'device-a', agentId: 'agent-1', sessionId: 's-1', anonymousId: 'anon-1' };
+    const ctx = {
+      deviceId: 'device-a',
+      agentId: 'agent-1',
+      sessionId: 's-1',
+      display: 'voice' as const,
+      anonymousId: 'anon-1',
+    };
     registerGameTools(server, { service, logger: createLogger('error'), ctx });
 
     const start = handlers.get('game_start')!;
@@ -298,6 +321,45 @@ describe('双人联机', () => {
     const joined = await handlers.get('game_start')!({ room: findRoom(service, HOST) });
     assert.match(joined.content[0]!.text, /进了房间/);
     assert.equal(rooms.size, 1);
+  });
+});
+
+describe('载体形态下的补账播报', () => {
+  it('有屏客户端不念补账，语音终端照旧补上', async () => {
+    const { service } = setup();
+    const hostCtx: DeviceContext = {
+      deviceId: 'device-a',
+      agentId: 'agent-1',
+      sessionId: 's-host',
+      display: 'screen',
+      anonymousId: 'a',
+    };
+    const guestCtx: DeviceContext = {
+      deviceId: 'device-b',
+      agentId: 'agent-2',
+      sessionId: 's-guest',
+      display: 'voice',
+      anonymousId: 'b',
+    };
+    const host = toolset(service, hostCtx);
+    const guest = toolset(service, guestCtx);
+
+    const opened = await host('game_say', { text: '开房间' });
+    const code = /房间(\d{4})/.exec(opened)?.[1]!;
+    await guest('game_say', { text: `加入房间${code}` });
+
+    // 房主出招、访客应招：欠房主一条补账
+    await host('game_say', { text: '强攻' });
+    await guest('game_say', { text: '格挡' });
+    const hostStatus = await host('game_say', { text: '战况如何' });
+    assert.doesNotMatch(hostStatus, /刚才那一手/);
+    assert.match(hostStatus, /第1轮/);
+
+    // 访客攻击、房主应招：欠访客的那条，语音终端必须补
+    await guest('game_say', { text: '强攻' });
+    await host('game_say', { text: '格挡' });
+    const guestStatus = await guest('game_say', { text: '战况如何' });
+    assert.match(guestStatus, /^刚才那一手。/);
   });
 });
 

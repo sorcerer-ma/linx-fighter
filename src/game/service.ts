@@ -61,6 +61,17 @@ export interface StartOptions {
   text?: string;
 }
 
+/**
+ * 播报选项：由调用方按载体能力决定。
+ *
+ * 补账播报是给「没有屏幕」的终端准备的：对方应招的结果当下播给他，他听不到，
+ * 只能攒着等他下次开口补一句。有屏客户端（网页）随时能看到局面，不需要再听一遍。
+ */
+export interface SayOptions {
+  /** 默认 true，保持硬件端的原有体验；有屏客户端传 false */
+  catchUp?: boolean;
+}
+
 export interface GameServiceDeps {
   store: BattleStore;
   rooms: RoomStore;
@@ -149,9 +160,9 @@ export class GameService {
   }
 
   /** 执行一次玩家出招或应对 */
-  async act(sessionKey: string, rawAction: string): Promise<ServiceResult> {
+  async act(sessionKey: string, rawAction: string, options: SayOptions = {}): Promise<ServiceResult> {
     const room = this.rooms.byPlayer(sessionKey);
-    if (room) return this.actPvp(sessionKey, room, rawAction);
+    if (room) return this.actPvp(sessionKey, room, rawAction, options);
 
     // 平台模型可能把「开房间」「加入房间1234」原话直接传进 action，这里兜底成联机操作
     const phraseRoom = roomCodeFromPhrase(rawAction);
@@ -223,9 +234,9 @@ export class GameService {
   }
 
   /** 查看当前战况 */
-  status(sessionKey: string): ServiceResult {
+  status(sessionKey: string, options: SayOptions = {}): ServiceResult {
     const room = this.rooms.byPlayer(sessionKey);
-    if (room) return this.statusPvp(sessionKey, room);
+    if (room) return this.statusPvp(sessionKey, room, options);
 
     const battle = this.store.get(sessionKey) ?? null;
     if (!battle) return { text: narrateNoBattle(), battle: null };
@@ -244,16 +255,16 @@ export class GameService {
    * 招式（含同音误识别）交给 act，查战况问玩法直接回，剩下的一律交给 act 兜底，
    * 由它处理开房、加入房间、自动开局与「没听清」。
    */
-  async say(sessionKey: string, text: string): Promise<ServiceResult> {
+  async say(sessionKey: string, text: string, options: SayOptions = {}): Promise<ServiceResult> {
     switch (classifyUtterance(text)) {
       case 'status':
-        return this.status(sessionKey);
+        return this.status(sessionKey, options);
       case 'help':
         return this.help();
       case 'start':
         return this.start(sessionKey, { text });
       default:
-        return this.act(sessionKey, text);
+        return this.act(sessionKey, text, options);
     }
   }
 
@@ -353,7 +364,12 @@ export class GameService {
   }
 
   /** 双人出招：按对局键判断视角，结算后写回基准对局 */
-  private async actPvp(sessionKey: string, room: Room, rawAction: string): Promise<ServiceResult> {
+  private async actPvp(
+    sessionKey: string,
+    room: Room,
+    rawAction: string,
+    options: SayOptions,
+  ): Promise<ServiceResult> {
     const canonical = this.store.get(pvpBattleKey(room.code));
     if (!canonical) {
       this.rooms.remove(room.code);
@@ -368,7 +384,7 @@ export class GameService {
       return { text: narrateRoomMissing(live.code), battle: canonical };
     }
 
-    const catchUp = this.drainCatchUp(sessionKey);
+    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
     const view = viewAs(canonical, side);
     const match = matchAction(rawAction) ?? (await this.resolveWithIntent(rawAction, view, 'player'));
     if (!match) {
@@ -418,7 +434,7 @@ export class GameService {
   }
 
   /** 双人战况：房主等待加入时额外提示，其余按视角播报 */
-  private statusPvp(sessionKey: string, room: Room): ServiceResult {
+  private statusPvp(sessionKey: string, room: Room, options: SayOptions): ServiceResult {
     const canonical = this.store.get(pvpBattleKey(room.code));
     if (!canonical) {
       this.rooms.remove(room.code);
@@ -428,7 +444,7 @@ export class GameService {
     const live = this.rooms.get(room.code) ?? room;
     const side = this.sideOf(live, sessionKey) ?? 'player';
     const view = viewAs(canonical, side);
-    const catchUp = this.drainCatchUp(sessionKey);
+    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
     if (live.guestKey === null) {
       return {
         text: `${catchUp}${narrateWaitingRoom(live.code)}。${narrateStatus(view)}`,
@@ -464,10 +480,15 @@ export class GameService {
     return `${narration.replace(/。$/, '')}，${narrateTurnHint(battle)}。`;
   }
 
-  /** 取走这位玩家错过的结算；没有就给空串，拼在播报最前面 */
-  private drainCatchUp(sessionKey: string): string {
+  /**
+   * 取走这位玩家错过的结算；没有就给空串，拼在播报最前面。
+   *
+   * 有屏客户端照样取走（避免队列越攒越长、下次换回语音终端时补一堆旧账），
+   * 只是不拼进播报——它自己能从局面里看到。
+   */
+  private drainCatchUp(sessionKey: string, want: boolean): string {
     const lines = this.echo.take(sessionKey);
-    return lines.length > 0 ? narrateCatchUp(lines) : '';
+    return want && lines.length > 0 ? narrateCatchUp(lines) : '';
   }
 
   /**

@@ -5,7 +5,13 @@ import { applyRequestContext, battleKey, createDeviceContext } from '../src/mcp/
 describe('设备上下文', () => {
   it('默认上下文没有身份，按匿名连接归属', () => {
     const ctx = createDeviceContext('conn-1');
-    assert.deepEqual(ctx, { deviceId: '', agentId: '', sessionId: '', anonymousId: 'conn-1' });
+    assert.deepEqual(ctx, {
+      deviceId: '',
+      agentId: '',
+      sessionId: '',
+      display: 'voice',
+      anonymousId: 'conn-1',
+    });
     assert.equal(battleKey(ctx), 'anon:conn-1');
   });
 
@@ -40,5 +46,17 @@ describe('设备上下文', () => {
     const ctx = createDeviceContext('conn-5');
     applyRequestContext(ctx, { 'x-linx-device-id': 'dev-4' });
     assert.equal(battleKey(ctx), 'dev-4#default');
+  });
+
+  it('X-Linx-Display 决定载体形态，认不出的值不动上一次的结果', () => {
+    const ctx = createDeviceContext('conn-6');
+    applyRequestContext(ctx, { 'x-linx-display': 'screen' });
+    assert.equal(ctx.display, 'screen');
+
+    applyRequestContext(ctx, { 'x-linx-display': 'tv' });
+    assert.equal(ctx.display, 'screen');
+
+    applyRequestContext(ctx, {}, { display: 'voice' });
+    assert.equal(ctx.display, 'voice');
   });
 });

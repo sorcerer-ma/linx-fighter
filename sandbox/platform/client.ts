@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BattleState } from '../../src/game/state.js';
 import type { Logger } from '../../src/log.js';
-import { LinxMcpClient, UpstreamError, type McpTrace, type ToolInfo } from './mcp.js';
+import { LinxMcpClient, UpstreamError, type McpDisplay, type McpTrace, type ToolInfo } from './mcp.js';
 
 /**
  * 沙箱对游戏服务的全部依赖都收在这里：
@@ -17,6 +17,8 @@ export interface SandboxClientOptions {
   agentId: string;
   timeoutMs: number;
   logger: Logger;
+  /** 页面是 screen（不补账），脚本模拟硬件时传 voice */
+  display?: McpDisplay;
 }
 
 /** 状态接口与 SSE 共用的局面载荷 */
@@ -53,6 +55,7 @@ export class SandboxClient {
       sessionId,
       timeoutMs: this.options.timeoutMs,
       logger: this.options.logger,
+      display: this.options.display,
     });
 
     const base = { tool: 'game_say', deviceId, agentId: this.options.agentId, sessionId };
@@ -121,6 +124,7 @@ export class SandboxClient {
       sessionId: `s-${randomUUID().slice(0, 8)}`,
       timeoutMs: this.options.timeoutMs,
       logger: this.options.logger,
+      display: this.options.display,
     });
     await mcp.initialize();
     return mcp.listTools();
