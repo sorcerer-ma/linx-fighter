@@ -311,7 +311,7 @@ export function createApp(deps: AppDependencies): express.Express {
   return app;
 }
 
-/** 状态流与 /state 共用的快照结构，字段与 sandbox/README.md 的契约一致 */
+/** 状态流与 /state 共用的快照结构，字段与 docs/testing/sandbox.md 的契约一致 */
 function snapshotBody(
   service: GameService,
   ctx: DeviceContext,

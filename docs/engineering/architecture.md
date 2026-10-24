@@ -82,7 +82,7 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 ### 7. AI 是决策模型，不是随机权重
 
-对手按「能斩杀优先、保大招、血线安全时攒气、否则先避免致死再最小期望伤害」做效用打分（`docs/ai-enemy.md`）。它不掷随机数，所有随机性只来自引擎，因此 AI 变化不会破坏对拍。
+对手按「能斩杀优先、保大招、血线安全时攒气、否则先避免致死再最小期望伤害」做效用打分（`docs/game/ai-enemy.md`）。它不掷随机数，所有随机性只来自引擎，因此 AI 变化不会破坏对拍。
 
 ### 8. 认不出招式不消耗回合
 
@@ -155,7 +155,7 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 ## 扩展指引
 
 - **加招式**：在 `types.ts` 的 `ActionId` 加枚举，在 `actions.ts` 加 `ActionMeta`（含中文名、口语别名、ASR 误识别与唤出指令），工具参数无需改动；数值加到 `rules.ts`，结算逻辑在 `engine.ts`，并补 `test/actions.test.ts` 与仿真对拍。
-- **调数值**：只改 `src/game/rules.ts`，同步 `docs/game-design.md` 与 `test/fixtures/v02-validation.json`（跑 `pnpm validate` 会告诉你哪项漂了）。
+- **调数值**：只改 `src/game/rules.ts`，同步 `docs/game/game-design.md` 与 `test/fixtures/v02-validation.json`（跑 `pnpm validate` 会告诉你哪项漂了）。
 - **加属性**（如护甲、连击数）：加在 `Fighter`，同步 `narrator.ts` 的播报、`engine.ts` 的初始值，并确认 `pvp.swapSides` 仍然成立。
 - **换存储**：实现与 `BattleStore` 相同的 `get` / `set` / `delete` / `sweep` / `size`，在 `index.ts` 替换构造即可。
 - **多实例部署**：除了换 Redis 存储，还要注意 SSE 连接与 POST 必须落到同一实例（会话粘滞），否则 POST 找不到本地 transport。若做无状态部署，需要把会话注册表也放进共享存储。
