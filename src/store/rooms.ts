@@ -91,6 +91,23 @@ export class RoomStore {
     return room;
   }
 
+  /**
+   * 只读枚举所有未过期的房间，给后台监控页用；不给副本，调用方只读。
+   *
+   * 和 `get` 一样顺手清掉过期房间，枚举到的就是此刻仍然有效的房间。
+   */
+  list(): Room[] {
+    const rooms: Room[] = [];
+    for (const [code, room] of this.rooms) {
+      if (this.isExpired(room)) {
+        this.remove(code);
+        continue;
+      }
+      rooms.push(room);
+    }
+    return rooms;
+  }
+
   get(code: string): Room | undefined {
     const room = this.rooms.get(code);
     if (!room) return undefined;

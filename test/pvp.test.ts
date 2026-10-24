@@ -381,7 +381,8 @@ describe('双人联机的模型路由兜底', () => {
     // 房主先出招，随后轮到对手应对；房主此时再说话只会拿到查询类选项
     await service.say(HOST, '普攻');
     const hostAgain = await service.say(HOST, '我稳如泰山');
-    assert.match(hostAgain.text, /已经出招了/);
+    // 双人房里这句多半是对方设备的原话：只回最短事实，避免长提示再被收一遍
+    assert.equal(hostAgain.text, '这一手等对手应对。');
     assert.deepEqual(calls, [{ text: '我稳如泰山', stage: 'waiting' }]);
 
     const guestBlock = await service.say(GUEST, '我稳如泰山');

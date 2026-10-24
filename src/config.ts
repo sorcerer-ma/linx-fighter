@@ -5,6 +5,9 @@
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+/** 座位归属策略：off 保持原行为；strict 时双人房按座位口令过滤原话 */
+export type AttributionMode = 'off' | 'strict';
+
 export interface AppConfig {
   /** HTTP 监听端口，默认 8000 */
   port: number;
@@ -31,9 +34,20 @@ export interface AppConfig {
   enemyAi: 'jev' | 'local';
   /** 对手单次决策超时（毫秒），超时回退本地 */
   enemyTimeoutMs: number;
+  /** 座位归属策略：双人房里按座位口令把指令算到对的机器上，默认 off */
+  attribution: AttributionMode;
+  /**
+   * 后台监控页口令；为空时 /admin 公开可见（演示现场方便围观）。
+   * 配置后访问必须带 ?token= 或 Authorization: Bearer。
+   */
+  adminToken?: string;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
+function parseAttributionMode(raw: string | undefined): AttributionMode {
+  return (raw ?? '').trim().toLowerCase() === 'strict' ? 'strict' : 'off';
+}
 
 function parseInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -64,5 +78,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     chatTimeoutMs: Math.max(500, Math.min(8000, parseInteger(env.CHAT_TIMEOUT_MS, 3000))),
     enemyAi: (env.ENEMY_AI ?? '').trim().toLowerCase() === 'local' ? 'local' : 'jev',
     enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 1200))),
+    attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
+    adminToken: env.ADMIN_TOKEN?.trim() || undefined,
   };
 }

@@ -136,6 +136,9 @@ function turnHint(battle: Battle): string {
  *
  * 补账只复述已经发生的结算，不再说「该谁出招」——那句话在补账时已经过时，
  * 当前这一回合的下一步会由本次回复给出。
+ *
+ * 单人局没有屏幕看血条：每回合都把这边的生命值与能量顺口报出来，
+ * 玩家不用为了看状态专门问一次「战况」。
  */
 export function narrateTurn(battle: Battle, events: BattleEvent[], options: { hint?: boolean } = {}): string {
   const lines: string[] = [];
@@ -164,9 +167,10 @@ export function narrateTurn(battle: Battle, events: BattleEvent[], options: { hi
   if (lines.length === 0) return narrateStatus(battle);
 
   const shown = lines.slice(0, 2);
+  const soloState = battle.mode === 'solo' ? `我${battle.player.hp}点生命值、${battle.player.ap}点能量` : '';
   // 局面还在继续：没有待应对时补一句该谁出手，玩家不必再问
   if (options.hint !== false && !battle.pending && !locked) {
-    const hint = turnHint(battle);
+    const hint = soloState ? `${soloState}，${turnHint(battle)}` : turnHint(battle);
     const second = shown[1];
     if (second === undefined) {
       shown.push(hint);
@@ -176,6 +180,10 @@ export function narrateTurn(battle: Battle, events: BattleEvent[], options: { hi
       // 两句都放不下时保留结算事实，宁可少一句提示
       if (merged.length <= 60) shown[1] = merged;
     }
+  } else if (soloState && options.hint !== false) {
+    // 该我应对时状态并进问句，避免多出一句：「我9点生命值、2点能量，对手强攻还没结算…」
+    const last = shown.length - 1;
+    shown[last] = `${soloState}，${shown[last]}`;
   }
   return joinLines(shown);
 }
@@ -275,9 +283,44 @@ export function narrateStaleAction(): string {
 }
 
 /** 认不出招式：不消耗回合，只提示当前阶段能说什么 */
+/**
+ * 串音回灌：这句话不是冲我说的（多半是伙伴自己的播报又被装置收了一遍）。
+ * 只回一个字表示「听见了」，不复读、不推进对局、不扣资源。
+ */
+export function narrateEcho(): string {
+  return '嗯。';
+}
+
+/**
+ * 双人联机：这一声不是本轮该本机说的。
+ *
+ * 两台设备靠近时，另一方的指令会被本机收走；长提示会被装置再收一遍、再回灌，
+ * 所以这里只给一句最短的事实，不催、不复述。
+ */
+export function narrateOtherDeviceTurn(): string {
+  return '还没轮到我出招。';
+}
+
+/** 双人联机：本机已经出招、正等对手应对；同样只回一句最短事实 */
+export function narrateOtherDeviceWaiting(): string {
+  return '这一手等对手应对。';
+}
+
+/**
+ * 严格模式的座位口令：只报了口令、没说招式。
+ * 这里唯一的用处是自报座位，让两台机器旁边的玩家听出是哪台在应答。
+ */
+export function narrateSeatListening(seatWord: string): string {
+  return `${seatWord}这边，我在听，说招式就行。`;
+}
+
 export function narrateUnknownAction(battle: Battle | null): string {
   if (battle?.pending && battle.mode === 'pvp' && battle.pending.actor === 'player') {
-    return '我已经出招了，这一手等对手应对。';
+    return narrateOtherDeviceWaiting();
+  }
+  // 双人房里轮到对手出招：这句话多半不是本机玩家说的，别再用长提示回灌回去
+  if (battle?.mode === 'pvp' && battle.phase === 'battle' && !battle.pending && battle.active !== 'player') {
+    return narrateOtherDeviceTurn();
   }
   if (battle?.pending) {
     return `没听清这一手，我还没应对。可以说${responseActionLabels().join('、')}。`;
@@ -301,12 +344,12 @@ export function narrateRejection(battle: Battle, rejection: TurnRejection): stri
     case 'ended':
       return narrateEnded(battle);
     case 'waiting-opponent':
-      return '我已经出招了，这一手等对手应对。';
+      // 双人联机里这句多半来自对方设备：只回最短事实，别把长提示再送进对方麦克风
+      return battle.mode === 'pvp' ? narrateOtherDeviceWaiting() : '我已经出招了，这一手等对手应对。';
     case 'wrong-stage':
       if (battle.pending) return '对手这一手还没结算，我只能格挡、闪避或承受。';
-      return battle.active === 'player'
-        ? '该我出招了，可以说普攻、强攻、大招或蓄力。'
-        : '还没轮到我出招，等对手先动。';
+      if (battle.active === 'player') return '该我出招了，可以说普攻、强攻、大招或蓄力。';
+      return battle.mode === 'pvp' ? narrateOtherDeviceTurn() : '还没轮到我出招，等对手先动。';
     case 'insufficient-ap': {
       const label = actionLabel(rejection.action);
       const cost = apCostOf(rejection.action);

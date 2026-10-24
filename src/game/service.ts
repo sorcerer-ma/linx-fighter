@@ -1,9 +1,12 @@
+import type { AttributionMode } from '../config.js';
 import type { Logger } from '../log.js';
 import type { BattleStore } from '../store/battles.js';
 import { EchoStore } from '../store/echoes.js';
 import type { Room, RoomStore } from '../store/rooms.js';
+import { matchSpokenAction, type SpokenMatch, type SpokenStage } from './asr.js';
 import type { ChatAnswerer } from './chat.js';
 import { readCommand, type Command, type RefuseReason, type TurnIntent } from './command.js';
+import { echoAck, matchEchoRule } from './crosstalk.js';
 import { advanceBattle, createBattle, resolveTurn } from './engine.js';
 import {
   narrateActionBlocked,
@@ -30,6 +33,7 @@ import {
 } from './narrator.js';
 import { mirrorEvents, normalizeRoomCode, pvpBattleKey, viewAs } from './pvp.js';
 import type { CommandRouter, RouterStage } from './router.js';
+import { screenSeat } from './seat.js';
 import { BattleTransactions, type BattleTx } from './serialize.js';
 import { battleState, type BattleState } from './state.js';
 import { dropRoom, tableFor, type Table, type TableDeps } from './table.js';
@@ -98,7 +102,19 @@ export interface GameServiceDeps {
   chat?: ChatAnswerer;
   /** 双人联机的补账消息；不传则新建一个跟对局同样过期的 */
   echo?: EchoStore;
+  /** 座位归属策略；不传按 off 走原行为 */
+  attribution?: AttributionMode;
+  /** 端侧同音纠错；不传用 asr.ts 的实现，传 null 关掉这一层 */
+  fuzzy?: SpokenMatcher | null;
 }
+
+/**
+ * 端侧同音纠错：模型路由要几百毫秒，先把「重机 / 可党 / 硬航」这类同音转写
+ * 在毫秒级还原成招式。只负责还原动作，不判断该不该出招。
+ */
+export type SpokenMatcher = (text: string, stage?: SpokenStage) => SpokenMatch | null;
+
+const DEFAULT_SPOKEN_MATCHER: SpokenMatcher = (text, stage) => matchSpokenAction(text, stage);
 
 /**
  * 游戏服务：MCP 工具只做参数解析，业务编排都在这里。
@@ -120,6 +136,8 @@ export class GameService {
   private readonly ai?: BattleAI;
   private readonly chat?: ChatAnswerer;
   private readonly echo: EchoStore;
+  private readonly attribution: AttributionMode;
+  private readonly fuzzy: SpokenMatcher | null;
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
   /** 桌子要用到的存储，构造一张桌子的入口参数 */
@@ -135,6 +153,8 @@ export class GameService {
     this.ai = deps.ai;
     this.chat = deps.chat;
     this.echo = deps.echo ?? new EchoStore({ now: this.now });
+    this.attribution = deps.attribution ?? 'off';
+    this.fuzzy = deps.fuzzy === undefined ? DEFAULT_SPOKEN_MATCHER : deps.fuzzy;
     this.battles = new BattleTransactions(deps.store, deps.logger);
     this.tables = { store: deps.store, rooms: deps.rooms, echo: this.echo, logger: deps.logger };
   }
@@ -209,7 +229,21 @@ export class GameService {
     options: SayOptions,
     routed?: RoutedHand,
   ): ServiceResult | Promise<ServiceResult> {
+    // 座位归属（ATTRIBUTION_MODE=strict）：不是冲本机说的、或只报了座位号，到这里就收住。
+    // 单人局没有房间也没有对方座位，seat 传 null 让它原样放行
+    const table = tableFor(this.tables, sessionKey);
+    const screened = screenSeat(this.attribution, table.room ? table.seat(sessionKey) : null, raw, command);
+    if (screened.kind === 'silent') return { text: '', battle: this.viewFor(sessionKey) };
+    if (screened.kind === 'say') return { text: screened.text, battle: this.viewFor(sessionKey) };
+    command = screened.command;
+    // 座位口令只是归属标签：摘掉之后的原话才是要理解的那句（「红方，开大」按「开大」认）
+    raw = screened.text;
+
     switch (command.kind) {
+      // 归属分支：疑似自家播报回灌，只回极短应答，不推进对局（判定规则见 crosstalk.ts）
+      case 'echo':
+        this.logger.info('疑似播报回灌', { sessionKey, chars: raw.length, rule: matchEchoRule(raw) });
+        return { text: echoAck(sessionKey, raw, this.now()), battle: this.viewFor(sessionKey) };
       case 'join-room':
         return this.joinRoom(sessionKey, command.code);
       case 'open-room':
@@ -618,6 +652,22 @@ export class GameService {
     const table = tableFor(this.tables, sessionKey);
     const routed: RoutedHand = { table, battleId: table.battle()?.id ?? null };
     const stage = routeStage(table.view(sessionKey), question);
+    // 端侧同音纠错排在模型前面：规则认不出时它只要几毫秒，
+    // 用不着为一个「轻机」等一次模型往返。
+    // 只在轮到自己出招的两个阶段猜：问句问的是意思，等待阶段那句话多半不是本机说的。
+    const spokenStage = spokenStageOf(stage);
+    const spoken = !spokenStage || !this.fuzzy ? null : this.fuzzy(raw, spokenStage);
+    if (spoken) {
+      this.logger.info('端侧同音纠错命中', {
+        sessionKey,
+        stage,
+        action: spoken.id,
+        via: spoken.via,
+        score: spoken.score,
+      });
+      // 判同音也只花几毫秒，仍按当时那一局核对，和模型回来的一手走同一条路
+      return this.play(sessionKey, { action: spoken.id }, raw, options, routed);
+    }
     let command: Command | null = null;
     if (this.router) {
       try {
@@ -706,6 +756,13 @@ export class GameService {
     if (battle.firstMover !== 'enemy') return battle;
     return (await advanceBattle(battle, this.now())).battle;
   }
+}
+
+/** 路由阶段 → 端侧同音纠错的阶段：只有轮到自己出招的两个阶段才猜招 */
+function spokenStageOf(stage: RouterStage): SpokenStage | undefined {
+  if (stage === 'active') return 'active';
+  if (stage === 'response') return 'response';
+  return undefined;
 }
 
 /** 当前视角所处的路由阶段：提问优先，其次看有没有对局、打没打完、等谁动 */

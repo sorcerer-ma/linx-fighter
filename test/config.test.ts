@@ -18,7 +18,21 @@ describe('配置解析', () => {
       chatTimeoutMs: 3000,
       enemyAi: 'jev',
       enemyTimeoutMs: 1200,
+      attribution: 'off',
+      adminToken: undefined,
     });
+  });
+
+  it('座位归属只认 strict，其余一律 off', () => {
+    assert.equal(loadConfig({ ATTRIBUTION_MODE: 'strict' }).attribution, 'strict');
+    assert.equal(loadConfig({ ATTRIBUTION_MODE: ' STRICT ' }).attribution, 'strict');
+    assert.equal(loadConfig({ ATTRIBUTION_MODE: 'on' }).attribution, 'off');
+    assert.equal(loadConfig({ ATTRIBUTION_MODE: '' }).attribution, 'off');
+  });
+
+  it('监控页口令去空白，空串等于公开', () => {
+    assert.equal(loadConfig({ ADMIN_TOKEN: '  s3cret ' }).adminToken, 's3cret');
+    assert.equal(loadConfig({ ADMIN_TOKEN: '   ' }).adminToken, undefined);
   });
 
   it('端口钳制在合法范围，非法值回退默认端口', () => {
