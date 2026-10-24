@@ -282,7 +282,7 @@ export function createApp(deps: AppDependencies): express.Express {
         res.status(400).json({ ok: false, error: '缺少 action 参数，例如 {"action":"攻击"}' });
         return;
       }
-      const result = await service.act(debugBattleKey(req), action);
+      const result = await service.say(debugBattleKey(req), action);
       res.json({ ok: true, text: result.text, battle: result.battle });
     });
 

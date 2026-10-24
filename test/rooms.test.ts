@@ -39,23 +39,41 @@ describe('房间存储', () => {
     assert.equal(rooms.create('host#2').code, '1001');
   });
 
-  it('加入房间区分不存在、已满与重复加入', () => {
+  it('加入房间区分不存在、已满与房主自己', () => {
     const rooms = store();
     const room = rooms.create('host#1');
 
-    assert.deepEqual(rooms.join('9999', 'guest#1'), { ok: false, reason: 'missing' });
-    assert.equal(rooms.join(room.code, 'guest#1').ok, true);
+    assert.deepEqual(rooms.claim('9999', 'guest#1'), { ok: false, reason: 'missing' });
+    assert.equal(rooms.claim(room.code, 'guest#1').ok, true);
     assert.equal(rooms.byPlayer('guest#1')?.code, room.code);
-    // 同一位加入者重复加入视为成功，换人则已满
-    assert.equal(rooms.join(room.code, 'guest#1').ok, true);
-    assert.deepEqual(rooms.join(room.code, 'guest#2'), { ok: false, reason: 'full' });
+    // 同一位加入者重复加入视为成功，换人则已满；房主自己拿号码不算加入者
+    assert.equal(rooms.claim(room.code, 'guest#1').ok, true);
+    assert.deepEqual(rooms.claim(room.code, 'guest#2'), { ok: false, reason: 'full' });
+    assert.deepEqual(rooms.claim(room.code, 'host#1'), { ok: false, reason: 'host' });
+    assert.equal(rooms.get(room.code)?.guestKey, 'guest#1');
+  });
+
+  it('换房时把旧房交出来，旧房不再记着这位玩家', () => {
+    const rooms = store();
+    const first = rooms.create('host#1');
+    const second = rooms.create('host#2');
+    rooms.claim(first.code, 'guest#1');
+
+    const moved = rooms.claim(second.code, 'guest#1');
+    assert.equal(moved.ok, true);
+    assert.ok(moved.ok);
+    // 旧房只交出来，连不连着那局对局一起撤，由调用方决定
+    assert.equal(moved.previous?.code, first.code);
+    assert.equal(rooms.byPlayer('guest#1')?.code, second.code);
+    assert.equal(rooms.get(first.code)?.guestKey, null);
+    assert.equal(rooms.get(first.code)?.hostKey, 'host#1');
   });
 
   it('超时后房间失效，反向索引一并清掉', () => {
     let now = 1_000_000;
     const rooms = store({ now: () => now });
     const room = rooms.create('host#1');
-    rooms.join(room.code, 'guest#1');
+    rooms.claim(room.code, 'guest#1');
 
     now += 60_001;
     assert.equal(rooms.get(room.code), undefined);
@@ -68,7 +86,7 @@ describe('房间存储', () => {
     let now = 1_000_000;
     const rooms = store({ now: () => now });
     const room = rooms.create('host#1');
-    rooms.join(room.code, 'guest#1');
+    rooms.claim(room.code, 'guest#1');
 
     // 续期后不会被清理
     now += 50_000;

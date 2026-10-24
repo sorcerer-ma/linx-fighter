@@ -174,14 +174,16 @@ flowchart TB
   Web["沙箱页面 / 手机<br/>语音或文字输入 · 只读局面"] -- "POST /api/say" --> Sandbox["本地沙箱<br/>MCP 客户端 + 静态页"]
   Sandbox -- "POST /mcp · game_say" --> Http
   Http["HTTP 外壳<br/>Express · 两套传输 · 身份提取"] --> Mcp["MCP 协议层<br/>5 个工具 · 设备上下文"]
-  Mcp --> Service["GameService<br/>单人 / 双人分流 · 读改写"]
-  Service --> Utterance["原话分类<br/>utterance.ts"]
+  Mcp --> Service["GameService<br/>按命令分派 · 一手一张桌子"]
+  Service --> Command["一句话读成命令<br/>command.ts"]
   Service --> Intent["JEV 意图模型<br/>intent.ts"]
   Service --> Engine["回合引擎（纯函数）<br/>engine.ts · rules.ts · rng.ts"]
   Engine --> Enemy["对手决策<br/>本地效用 / JEV"]
   Service --> Pvp["双人联机<br/>房间号 · 视角镜像"]
   Service --> Narrator["播报文案<br/>narrator.ts"]
-  Service --> Stores[("存储层<br/>对局 · 房间 · 补账<br/>内存 + TTL")]
+  Service --> Table["桌子<br/>table.ts<br/>存储键 · 座位 · 视角 · 等对手"]
+  Table --> Tx["对局事务<br/>serialize.ts<br/>排队 + 写回前校验"]
+  Tx --> Stores[("存储层<br/>对局 · 房间 · 补账<br/>内存 + TTL")]
   Http -.->|"只读局面：GET /state · GET /events（SSE）"| Web
   Http -.->|"GET /state"| Agent["Agent 脚本 / 调试"]
 ```
@@ -192,20 +194,21 @@ flowchart TB
 | --- | --- | --- | --- |
 | 接入层 | `src/http/app.ts` | 两套 MCP 传输、身份提取、`/state` 与 `/events` 旁路、健康检查、调试接口、错误兜底 | 不判断玩法 |
 | 协议层 | `src/mcp/server.ts`、`src/mcp/tools.ts` | 工具注册与参数校验、把异常转成 `isError` + 一句人话 | 不做业务分支 |
-| 编排层 | `src/game/service.ts` | 开局 / 出招 / 战况 / 说明，单人双人分流，读改写存储，补账播报 | 不算数值 |
+| 编排层 | `src/game/service.ts` | 开局 / 出招 / 战况 / 说明：按命令分派，把这一手交给所在的桌子结算，补账播报 | 不算数值 |
+| 桌子与事务 | `src/game/table.ts`、`serialize.ts` | 单人局与双人局共用同一套接口（存储键、座位、视角、等对手、补账给谁）与对局事务（排队、写回前校验） | 不认招式、不拼文案 |
 | 规则层 | `src/game/engine.ts`、`rules.ts`、`rng.ts` | 创建对局、双阶段结算、胜负，纯函数，随机数由 seed 派生 | 不感知协议 |
 | 策略层 | `src/game/enemy.ts`、`enemy-jev.ts`、`intent.ts` | 对手决策与「这句话是哪一招」的归一化，只选动作 | 不产出数值、不改状态 |
 | 联机层 | `src/game/pvp.ts`、`src/store/rooms.ts` | 房间号、视角镜像与写回、事件换视角 | 不复制引擎 |
 | 表现层 | `src/game/narrator.ts` | 为「听」写的播报，只依赖对局状态与事件 | 不拼业务判断 |
-| 分类与视图 | `src/game/utterance.ts`、`state.ts` | 原话分类（招式 / 战况 / 玩法 / 开局）与界面用的局面快照 | 不写状态 |
+| 命令与视图 | `src/game/command.ts`、`state.ts` | 把原话读成命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手）与界面用的局面快照 | 不写状态 |
 | 存储层 | `src/store/battles.ts`、`rooms.ts`、`echoes.ts` | 对局、房间、补账的读写与过期清理 | 不做结算 |
 
 ### 一次请求的完整路径
 
 1. 平台或沙箱 `POST /mcp`，JSON-RPC 带 `X-Linx-Device-Id` / `X-Linx-Agent-Id` / `X-Linx-Session-Id` / `X-Linx-Display`；
 2. 接入层建临时 `McpServer`（无状态传输）→ 协议层取出 `deviceId#agentId` 作为对局键 → `game_say(text=原话)`；
-3. `GameService.say()` 先 `classifyUtterance`：招式 → `act`，战况 / 玩法 / 开局直接回，剩下的一律交给 `act` 兜底（含开房、加入房间、自动开局）；
-4. `act` 按是否在房间里分流：单人走本地 AI，双人按视角镜像后结算；
+3. `GameService.say()` 先用 `readCommand` 把原话读成一条命令：房间管理、玩法、战况直接回，招式进对局流水线（认不出时再问 JEV 意图模型）；
+4. 这一手交给所在的桌子结算：单人局用自己的对局键、双人局用房间号取事务锁，换回自己的视角再进引擎；模型返回后确认还是同一局、同一座位才写回；
 5. 规则层 `resolveTurn` 推进一个阶段并返回新状态与事件；认不出招式时**不推进回合**，只提示当前可用的说法；
 6. 表现层把事件拼成最多两句中文，双人局顺带把出手方错过的结算记进补账队列，然后原样作为 `content[].text` 返回，由平台 TTS 念给玩家；
 7. 旁路：页面用 `EventSource` 订阅 `GET /events` 拿只读局面，脚本用 `GET /state` 拿同一份快照——两者都不参与判断。
@@ -303,7 +306,7 @@ flowchart TB
 | `test/enemy-jev.test.ts` | JEV 对手决策：合法选项过滤、题干（含战报与习惯）、解析、低置信度/超时/异常回退 |
 | `test/intent.test.ts` | JEV decisions 返回解析、置信度阈值、阶段校验、请求体与失败回退 |
 | `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
-| `test/utterance.test.ts` | 原话分类：招式 / 战况 / 玩法 / 开局 / 认不出，以及各条边界说法 |
+| `test/command.test.ts` | 一句话读成命令：招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手，以及命令之间的优先级 |
 | `test/state.test.ts` | 局面快照字段、等对手标记、中文标签、视角镜像、胜负折算与幂等 |
 | `test/pvp.test.ts` | 建房/加入、视角镜像、双人出招与应对、房间校验、超时、结算事件镜像 |
 | `test/rooms.test.ts` | 房间号生成与复用、加入/满员/重复加入、玩家索引、过期清理 |
@@ -415,9 +418,11 @@ src/
     intent.ts         JEV 意图模型：自然语言归一化招式（规则优先）
     pvp.ts            双人视角镜像与房间号工具
     narrator.ts       播报文案
-    utterance.ts      玩家原话分类：招式 / 战况 / 玩法 / 开局
+    command.ts        把一句话读成命令：招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间
     state.ts          局面快照：给界面与脚本直接消费
-    service.ts        游戏编排：单人/双人分流
+    table.ts          桌子：单人局与双人局共用的存储键、座位、视角与补账对象
+    serialize.ts      对局事务：按对局排队，写回前校验还是不是同一局
+    service.ts        游戏编排：按命令分派，一手一张桌子
   mcp/
     context.ts        设备上下文与对局归属键
     server.ts         McpServer 创建与 instructions

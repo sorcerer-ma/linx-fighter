@@ -9,7 +9,10 @@ export interface Room {
   updatedAt: number;
 }
 
-export type JoinResult = { ok: true; room: Room } | { ok: false; reason: 'missing' | 'full' };
+/** 认领席位的结果：校验不过时什么都不改；成功时按旧房离开前的快照交出来，撤房与清补账由调用方做 */
+export type ClaimResult =
+  | { ok: true; room: Room; previous: Room | null }
+  | { ok: false; reason: 'missing' | 'full' | 'host' };
 
 export interface RoomStoreOptions {
   /** 房间空闲多久后清理（毫秒） */
@@ -51,15 +54,29 @@ export class RoomStore {
     return room;
   }
 
-  /** 加入房间：房间号不存在与已满分别返回，方便播报不同提示 */
-  join(code: string, key: string): JoinResult {
+  /**
+   * 认领房间里的加入者席位：校验、占座、摘旧房一次做完。
+   *
+   * 校验不过时索引一点不动（加入失败要保住玩家原来的房间）；成功时旧房把这位玩家
+   * 交出来，房间本身留给调用方连着那局对局一起撤——席位归属与对局清理都在这里对齐，
+   * 不会出现「人在新房、旧房还记着他」的中间态。
+   */
+  claim(code: string, key: string): ClaimResult {
     const room = this.get(code);
     if (!room) return { ok: false, reason: 'missing' };
+    if (room.hostKey === key) return { ok: false, reason: 'host' };
     if (room.guestKey !== null && room.guestKey !== key) return { ok: false, reason: 'full' };
+
+    const previous = this.byPlayer(key) ?? null;
+    const leaving = previous && previous.code !== code ? { ...previous } : null;
     room.guestKey = key;
     room.updatedAt = this.now();
     this.playerToRoom.set(key, room.code);
-    return { ok: true, room };
+    // 旧房不再记着这位玩家：即使调用方一时没撤，旧房也不会挂着一个已经离开的人。
+    // 交出去的是摘掉之前的快照——调用方要按旧房原来的成员清双方补账，
+    // 用摘过的旧房会漏掉离开者的那一份。
+    if (previous && previous.code !== code && previous.guestKey === key) previous.guestKey = null;
+    return { ok: true, room, previous: leaving };
   }
 
   /** 按对局键找当前所在房间，已过期视为不在房间 */

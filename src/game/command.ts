@@ -1,27 +1,35 @@
 import { matchAction, matchActionIds } from './actions.js';
+import { roomCodeFromPhrase, wantsOpenRoom } from './pvp.js';
+import type { ActionId } from './types.js';
 
 /**
- * 玩家一句话的意图分类。
+ * 一句话读出来的命令。
  *
- * 平台侧模型只负责转写与调用工具，不做判断，所以「战况怎么样」「怎么玩」「开一局」
- * 这些非招式语句都要在服务端认出来。判定顺序是有讲究的：
- *
- * 1. 先认「怎么玩/规则」这类问句——它们常含「出招」这种招式词，当问句处理才不会误出招；
- * 2. 再把明确的问句当战况——「我的大招还剩几次」也含招式词，不先拦下来就会真的出手；
- * 3. 再认招式——能匹配上就说明是来打这一手的，交给 act 走完整结算（含唤出指令回念）；
- * 4. 最后认战况与开局——这两类不含招式词，晚一步判断不会抢走出招。
- *
- * 认不出来的返回 unknown，由调用方兜底（通常是 act 的「没听清」提示）。
+ * 平台侧模型只转写原话，判断全在服务端，所以「这句话到底想干什么」必须只判一次：
+ * 这里给出带类型的结果，后续分派只看 kind，不再回头重解析同一句话。
+ * 规则匹配优先；规则认不出时返回 unknown，由对局流水线决定要不要再问意图模型。
  */
-export type UtteranceIntent = 'status' | 'help' | 'start' | 'unknown';
+/** 落到结算上的这一手：规则直接认出来的，或意图模型归一化出来的 */
+export interface TurnIntent {
+  action: ActionId;
+  chant?: string;
+}
 
-/**
- * 招式拦截原因：这是问句 / 在说不打 / 一句话说了两招。
- *
- * 查询与否定都不能落到「出手」上——语音里「我的大招还剩几次」「不要大招」
- * 都带招式词，靠 matchAction 单独判断会真的把招式放出去。
- */
-export type ActionBlock = 'query' | 'negated' | 'ambiguous';
+export type Command =
+  | ({ kind: 'turn' } & TurnIntent)
+  | { kind: 'status' }
+  | { kind: 'help' }
+  | { kind: 'start' }
+  | { kind: 'open-room' }
+  | { kind: 'join-room'; code: string }
+  | { kind: 'refused'; why: RefuseReason }
+  | { kind: 'unknown' };
+
+/** 不执行的原因：明确说不打，或一句话点了两招 */
+export type RefuseReason = 'negated' | 'ambiguous';
+
+/** 拦下这一手的原因：问句只是问，不是出手 */
+type BlockReason = 'query' | RefuseReason;
 
 /** 去空白与标点、英文转小写：语音转写常带逗号句号，先抹平再判断 */
 function compact(raw: string): string {
@@ -40,7 +48,7 @@ const STATUS_RULES = ['战况', '局面', '什么情况', '多少血', '还剩',
 /** 明确说「开始」的整句；单字「开」不算，避免误判 */
 const START_EXACT = ['开始', '开始吧', '开打', '开战', '开局', '来一局', '打一局', '开一局', '重开', '再来一局', '重新开始'];
 
-/** 开局意图的长句说法：开房、联机这类交给 act/start 里的联机逻辑，这里只负责归类 */
+/** 开局意图的长句说法：开房、联机这类还要再判一次，看是不是真的要开房 */
 const START_RULES = ['开始游戏', '开始对战', '开房间', '开个房', '开房', '建房间', '新建房间', '创建房间', '联机', '双人对战'];
 
 /** 反问式疑问：玩家在商量要不要出手，不是已经决定出手 */
@@ -70,18 +78,16 @@ function includesAny(text: string, rules: string[]): boolean {
 }
 
 /**
- * 判断这句话该不该按招式处理。
+ * 这句话该不该落在招式上。
  *
- * 返回 null 表示可以继续按招式走；否则给出拦截原因，由调用方播提示而不是出手。
  * 优先级固定为 反问式疑问 → 否定 → 多招式歧义 → 其它疑问：
  * 「能不能放大招」既含「能不能」又含「不能」，先判反问才不会被当成否定；
  * 「要不要放大招」同理，先判反问才不会被「不要」截走。
  */
-export function blockAction(raw: string): ActionBlock | null {
+function blockReason(raw: string, text: string): BlockReason | null {
+  if (!text) return null;
   // 问号要在 compact 之前判断：compact 会把标点一起抹掉
   const asked = /[?？]/.test(raw);
-  const text = compact(raw);
-  if (!text) return null;
 
   if (includesAny(text, QUESTION_RULES)) return 'query';
 
@@ -98,28 +104,38 @@ export function blockAction(raw: string): ActionBlock | null {
 }
 
 /**
- * 把玩家原话归一化成四类意图。
+ * 把一句玩家原话读成命令，只认一次。
  *
- * 只做归类，不推进对局、不改任何状态；同样的输入永远得到同样的输出。
+ * 判定顺序按「意图强度」排：带房间号的加入 → 问玩法 → 开房 → 不该出手 → 招式 → 战况 → 开局。
+ * 几个容易踩的点：
+ * - 房间语义在前：说「能不能联机」是问怎么开双人，不是问战况；
+ * - 玩法问句在开房之前：「双人怎么玩」问的是规则，不能顺手开一局；
+ * - 问句必须在招式之前：「我的大招还剩几次」带招式词，但只是问；
+ * - 否定与歧义不执行，也不能因为这句话顺手开一局；
+ * - 战况与开局不含招式词，放在招式后面判断不会抢走出招。
  */
-export function classifyUtterance(raw: string): UtteranceIntent {
+export function readCommand(raw: string): Command {
   const text = compact(raw);
-  if (!text) return 'unknown';
 
-  // 问句优先：语音里「怎么出招」很常见，不能被「出招」抢成出招
-  if (includesAny(text, HELP_RULES)) return 'help';
+  // 带房间号的加入最明确：已经在房间里的玩家也要能凭这句话换房
+  const code = text ? roomCodeFromPhrase(raw) : null;
+  if (code) return { kind: 'join-room', code };
 
-  // 点了招式的问句当战况处理，别把「还剩几次」当成真出手；
-  // 没点招式的问句（「能不能联机」）不改判，仍按开局走
-  if (matchAction(raw) && blockAction(raw) === 'query') return 'status';
+  if (text && includesAny(text, HELP_RULES)) return { kind: 'help' };
 
-  // 能匹配招式就是来打这一手的，交给 act 处理阶段与结算；
-  // 否定与歧义也落到这里，由 act 依据 blockAction 提示重说
-  if (matchAction(raw)) return 'unknown';
+  // 语音链路常把整句话塞进参数，「开房 / 联机」这类说法在这里兜底
+  if (text && wantsOpenRoom(text)) return { kind: 'open-room' };
 
-  if (includesAny(text, STATUS_RULES)) return 'status';
+  const block = blockReason(raw, text);
+  if (block === 'negated' || block === 'ambiguous') return { kind: 'refused', why: block };
+  if (block === 'query') return { kind: 'status' };
 
-  if (START_EXACT.includes(text) || includesAny(text, START_RULES)) return 'start';
+  const match = text ? matchAction(raw) : null;
+  if (match) return { kind: 'turn', action: match.id, chant: match.chant };
 
-  return 'unknown';
+  if (text && includesAny(text, STATUS_RULES)) return { kind: 'status' };
+
+  if (text && (START_EXACT.includes(text) || includesAny(text, START_RULES))) return { kind: 'start' };
+
+  return { kind: 'unknown' };
 }

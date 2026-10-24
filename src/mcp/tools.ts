@@ -138,7 +138,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
       inputSchema: actionInput,
     },
     async ({ action }) =>
-      invoke('game_action', { action }, () => service.act(battleKey(ctx), action, speakOptions())),
+      invoke('game_action', { action }, () => service.say(battleKey(ctx), action, speakOptions())),
   );
 
   server.registerTool(
