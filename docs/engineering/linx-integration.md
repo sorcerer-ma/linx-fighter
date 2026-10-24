@@ -151,8 +151,8 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 
 服务端做不到、必须靠平台侧的：
 
-- 服务端拿不到说话人身份。MCP 只注入 Device / Agent / Session 三个头，平台「不会将其自动填入工具入参」，所以「谁在说话」只能靠平台声纹或座位口令。
-- 控制台配好声纹之后，平台有没有把说话人一并下发，代码里按「带了就记、没带为空」处理：`src/mcp/context.ts` 认 `X-Linx-Speaker-Name` / `X-Linx-Speaker-Id`（只进日志，不参与对局归属），并在每个进程第一次见到某种请求头组合时打一条 `请求身份头快照`，把平台实际下发的自定义头列出来（`authorization`、`cookie` 之类按名字打码）。确认办法：重启服务后让设备说一句话，再 `journalctl -u linx-fighter --no-pager | grep -m1 请求身份头快照`，看有没有说话人相关的头；有就把它补进上面的常量与文档，没有就只当日志里的排查信息。
+- 说话人身份要「先要」才「再给」：MCP 请求头里只有 Device / Agent / Session 三个 `X-Linx-*` 头，不带说话人；但**在工具的 `inputSchema` 里声明了 `speaker` 参数之后，平台会把声纹识别出的名字填进这个参数**（平台支持侧的说明；真机待验）。五个工具都声明了它，服务端只拿它记日志、写回 `DeviceContext.speakerName`，不参与招式裁决与座位归属。
+- 请求头里如果也带了 `X-Linx-Speaker-Name` / `X-Linx-Speaker-Id` 会一并接住（同样只进日志），并且每个进程第一次见到某种请求头组合时会打一条 `请求身份头快照`，把平台实际下发的自定义头列出来（`authorization`、`cookie` 之类按名字打码）。确认办法：`journalctl -u linx-fighter --no-pager -o cat --since "10 min ago" | grep -E '工具调用|请求身份头快照'`，看 `speaker` 字段有没有值。
 - 平台的声纹开关（控制台「声纹功能：只回应指定的人」）是**内部门禁**：命中就转发、不命中设备直接不吭声。它要求**每台设备绑各自的智能体**，否则两台设备在平台眼里是同一个主人，声纹也分不开。
 - 换设备所属智能体有官方接口（`PUT /v1/devices/{mac_address}/agent/{agent_id}`，原文「将设备切换到目标智能体」）：
 
