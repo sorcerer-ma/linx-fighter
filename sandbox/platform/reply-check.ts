@@ -7,9 +7,12 @@ function normalize(text:string):string {
   return text.replace(/[一二两三四五六七八九零](?=次|点|轮)/g,n=>digits[n]!)
     .replace(/我方/g,'我').replace(/对方|敌方|敌人/g,'对手');
 }
-function numbers(text:string):string[] {
+function numbers(text:string, details:Presentation):string[] {
   let owner='?'; const values:string[]=[];
-  const normalized=normalize(text);
+  const name=details.facts.opponentName;
+  const normalized=normalize(name && name!=='对手' ? text.split(name).join('对手') : text)
+    // A request to repeat once is conversational wording, not a battle resource.
+    .replace(/再(?:说|告诉我|讲|重复)(?:1次|一遍)/g,'重说');
   for(const match of normalized.matchAll(/对手|我|[。！？；]|\d+(?:\.\d+)?/g)) {
     const token=match[0];
     if(token==='我'||token==='对手')owner=token;
@@ -30,7 +33,14 @@ function winner(text:string):string|null {
 }
 export function checkReply(source:string,candidate:string,details:Presentation):boolean {
   if(!candidate.trim()||candidate.length>Math.max(60,source.length+20))return false;
-  if(JSON.stringify(numbers(source))!==JSON.stringify(numbers(candidate)))return false;
+  if(JSON.stringify(numbers(source,details))!==JSON.stringify(numbers(candidate,details)))return false;
+  if(details.kind==='retry' && details.facts.next!=='start' && !/没听清|没听懂|听不清|重说|再说|再告诉|没认出/.test(candidate))return false;
+  if(details.certainty==='not-applied'){
+    // An acknowledged rejection/retry must not turn into an executed action.
+    const success=/(?:命中|击中|打中|挡住|躲开|释放了|出手了|获胜|赢了)/;
+    const positive=(s:string)=>s.replace(/(?:没能|没有|不能|未能|没|未|不)(?:命中|击中|打中|挡住|躲开|释放了|出手了|获胜|赢了)/g,'');
+    if(!success.test(positive(source)) && success.test(positive(candidate)))return false;
+  }
   const expected=details.facts.phase==='victory'?'you':details.facts.phase==='defeat'?'opponent':winner(source);
   if(expected && winner(candidate)!==expected)return false;
   if(details.facts.phase==='battle' && !winner(source) && winner(candidate))return false;
@@ -44,10 +54,12 @@ export function checkReply(source:string,candidate:string,details:Presentation):
     if(event.guarded && !/格挡|挡下|挡住|举盾/.test(t))return false;
   }
   const next=details.facts.next;
-  if(next==='ended' && /该我出招|轮到我|请指挥我/.test(candidate))return false;
+  if(next==='ended' && /该我出招|轮到我|请指挥我|我该怎么做/.test(candidate))return false;
+  if(next==='wait-join' && /对决开始|开打|该我出招|轮到我|我该怎么做/.test(candidate))return false;
+  if(next==='start' && /(?:轮到|该)我(?:出招|格挡)|等对手(?:加入|应对)/.test(candidate))return false;
   if(next==='act' && /该我出招|轮到我|请指挥我/.test(source) && !/该我|轮到我|指挥我|听你(?:的|指挥)|我(?:来|接着).*出招|我该怎么做/.test(candidate))return false;
   if(['wait-opponent','wait-response'].includes(next) && /等对手/.test(source) && (!/等.*(?:对手|对方)/.test(candidate)||/该我出招|轮到我/.test(candidate)))return false;
-  if(next==='respond' && /格挡|闪避|应对/.test(source) && !/格挡|闪避|应对|承受/.test(candidate))return false;
+  if(next==='respond' && details.kind!=='retry' && /格挡|闪避|应对/.test(source) && !/格挡|闪避|应对|承受/.test(candidate))return false;
   if(details.facts.events.some(e=>e.type==='pending') && !attacks.length && !/命中|击倒/.test(source) && /命中|击倒/.test(candidate))return false;
   return true;
 }

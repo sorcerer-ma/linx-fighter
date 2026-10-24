@@ -23,8 +23,8 @@ export class SandboxAgent {
     const result = await tools.callTool('game_say', {text});
     const original = {tool:'game_say',...result,sourceText:result.text};
     const facts = result.presentation;
-    if (!this.model || result.isError || !facts || facts.certainty !== 'confirmed'
-      || !['turn','status'].includes(facts.kind)) {
+    if (!this.model || result.isError || !facts || facts.certainty === 'unknown'
+      || !['turn','status','opening','retry','rejected'].includes(facts.kind)) {
       return {...original,rewriteStatus:'original'};
     }
     try {

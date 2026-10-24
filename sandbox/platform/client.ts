@@ -77,8 +77,9 @@ export class SandboxClient {
       const trace = mcp.takeTrace();
       this.options.logger.info('沙箱转发', {
         deviceId,
-        text: text.slice(0, 40),
-        reply: reply.slice(0, 40),
+        requestId: sessionId,
+        rewriteStatus: outcome.rewriteStatus,
+        expressionError: 'expressionError' in outcome ? outcome.expressionError : undefined,
         isError,
         round: state?.battle?.round ?? 0,
         room: state?.room,
