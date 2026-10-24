@@ -190,7 +190,7 @@ export class GameService {
         this.rooms.remove(table.room);
         return { text: narrateRoomMissing(table.room), battle: null };
       }
-      return { text: narrateNoBattle(), battle: null };
+      return { text: narrateNoBattle(), battle: null, presentation:presentation('status',null) };
     }
 
     const view = table.view(sessionKey) ?? battle;
@@ -360,7 +360,7 @@ export class GameService {
       // 单人局：认不出招式就不自动开局，避免随便一句话就开一局
       if (!direct) {
         this.logger.debug('招式无法识别', { sessionKey, raw });
-        return { text: `${catchUp}${narrateUnknownAction(null)}`, battle: null };
+        return { text: `${catchUp}${narrateUnknownAction(null)}`, battle: null, presentation:presentation('retry',null,{rejection:'unrecognized'}) };
       }
       const spawned = await this.spawnSolo();
       // 等对手先手的这段时间里玩家可能已经进了房间：这一手不另开
@@ -382,18 +382,18 @@ export class GameService {
 
     const view = viewAs(canonical, seat);
     if (view.phase !== 'battle') {
-      return { text: `${catchUp}${prefix}${narrateEnded(view)}`, battle: view };
+      return { text: `${catchUp}${prefix}${narrateEnded(view)}`, battle: view, presentation:presentation('status',view) };
     }
 
     const match = direct;
     if (!match) {
       this.logger.debug('招式无法识别', { sessionKey, room: table.room, raw });
-      return { text: `${catchUp}${prefix}${narrateUnknownAction(view)}`, battle: view };
+      return { text: `${catchUp}${prefix}${narrateUnknownAction(view)}`, battle: view, presentation:presentation('retry',view,{waiting:table.waiting(),rejection:'unrecognized'}) };
     }
 
     // 还在等对手进来：这一手不结算，先把房间号再说一遍
     if (table.waiting()) {
-      return { text: `${catchUp}${prefix}${narrateWaitingRoom(table.room ?? '')}`, battle: view };
+      return { text: `${catchUp}${prefix}${narrateWaitingRoom(table.room ?? '')}`, battle: view, presentation:presentation('status',view,{waiting:true}) };
     }
 
     // 模型回复期间局面可能已经变了：不是刚才那一局就丢弃这次识别
@@ -459,10 +459,11 @@ export class GameService {
     this.logger.debug('这句话不该出手', { sessionKey, room: room?.code ?? null, why });
     if (room) {
       const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
-      return { text: `${catchUp}${narrateActionBlocked(why)}`, battle: this.viewFor(sessionKey) };
+      const view = this.viewFor(sessionKey);
+      return { text: `${catchUp}${narrateActionBlocked(why)}`, battle: view, presentation:presentation('rejected',view,{waiting:room.guestKey===null,rejection:why}) };
     }
     const battle = this.store.get(sessionKey) ?? null;
-    return { text: battle ? narrateActionBlocked(why) : narrateUnknownAction(null), battle };
+    return { text: battle ? narrateActionBlocked(why) : narrateUnknownAction(null), battle, presentation:presentation('rejected',battle,{rejection:why}) };
   }
 
   /**
@@ -514,7 +515,7 @@ export class GameService {
       enemy: battle.enemy.name,
       firstMover: battle.firstMover,
     });
-    return { text: narrateOpening(battle), battle };
+    return { text: narrateOpening(battle), battle, presentation:presentation('opening',battle) };
   }
 
   /**
@@ -534,6 +535,7 @@ export class GameService {
       return {
         text: `${narrateWaitingRoom(existing.code)}。`,
         battle: this.store.get(pvpBattleKey(existing.code)) ?? null,
+        presentation:presentation('status',this.store.get(pvpBattleKey(existing.code)) ?? null,{waiting:true}),
       };
     }
     if (existing) dropRoom(this.tables, existing, '重新开局');
@@ -552,6 +554,7 @@ export class GameService {
     return {
       text: `${narrateRoomCreated(room.code)}。`,
       battle,
+      presentation:presentation('opening',battle,{waiting:true}),
     };
   }
 
@@ -633,7 +636,7 @@ export class GameService {
     const opening = fresh
       ? `${narrateRoomJoined(code)}。${narrateBattleStart(view)}`
       : `${narrateRoomJoined(code)}。${narrateStatus(view)}`;
-    return { text: opening, battle: view };
+    return { text: opening, battle: view, presentation:presentation('opening',view) };
   }
 
   /**
