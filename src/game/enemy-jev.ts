@@ -43,7 +43,7 @@ export interface JevEnemyOptions {
   timeoutMs?: number;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
-  logger?: Pick<Logger, 'warn' | 'debug'>;
+  logger?: Pick<Logger, 'info' | 'warn' | 'debug'>;
   /** 回退用的本地决策模型，默认 ENEMY_AI */
   fallback?: BattleAI;
 }
@@ -200,9 +200,18 @@ export function createJevEnemyAI(options: JevEnemyOptions): BattleAI {
       const payload = await response.json();
       const choice = parseEnemyDecision(payload, legal);
       const usage = (payload as JevAnswer).usage;
-      options.logger?.debug('对手决策调用完成', {
+      const answer = (payload as JevAnswer).answers?.move as { confidence?: unknown } | undefined;
+      const confidence = typeof answer?.confidence === 'number'
+        ? Number(answer.confidence.toFixed(3))
+        : undefined;
+      if (!choice) {
+        options.logger?.info('对手决策未采纳，回退本地', { kind, confidence });
+        return null;
+      }
+      options.logger?.info('对手决策调用完成', {
         kind,
         choice,
+        confidence,
         latencyMs: Date.now() - startedAt,
         cost: typeof usage?.cost === 'number' ? usage.cost : undefined,
       });

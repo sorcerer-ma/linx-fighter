@@ -11,7 +11,7 @@ import {
 } from '../src/game/enemy-jev.js';
 import type { ActionView, BattleAI, ResponseView } from '../src/game/types.js';
 
-const logger = { warn: () => {}, debug: () => {} };
+const logger = { info: () => {}, warn: () => {}, debug: () => {} };
 
 /** 主动阶段视角：默认对手（enemy 侧）满血、3 真气、1 次大招；玩家 14 血 */
 function actionViewFixture(
