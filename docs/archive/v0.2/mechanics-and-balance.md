@@ -3,7 +3,7 @@
 状态：供原型与试玩使用的候选方案；尚未完成平衡验证。
 更新：2026-10-23。
 
-与已实现规则的关系：本文是早期候选设计稿，只作设计思路参考；与已落地规则冲突时，以 [docs/game-design.md](../docs/game-design.md) 与 `src/game/rules.ts` 为准。
+与已实现规则的关系：本文是早期候选设计稿，只作设计思路参考；与已落地规则冲突时，以 [docs/game/game-design.md](../../game/game-design.md) 与 `src/game/rules.ts` 为准。
 
 ## 1. 体验目标与边界
 

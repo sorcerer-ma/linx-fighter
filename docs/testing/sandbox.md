@@ -87,7 +87,7 @@ pnpm sandbox:selfplay --rounds 6 --json
 pnpm sandbox:selfplay --rounds 1 --screen
 ```
 
-跑出来的对局样例见 [`test-cases.md`](./test-cases.md)：3 局真实对局，逐轮记录双方原话、听到的播报与局面变化。
+跑出来的对局样例见 [`test-cases.md`](sandbox-test-cases.md)：3 局真实对局，逐轮记录双方原话、听到的播报与局面变化。
 
 HTTP 接口同理（`curl` 可用）：
 

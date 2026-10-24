@@ -2,7 +2,7 @@
  * v0.2 玩法数值表。
  *
  * 这里只放可调参数与读取它们的纯函数；结算流程在 engine.ts。
- * 每个取值和调整理由都要同步写进 docs/game-design.md，避免数值散落。
+ * 每个取值和调整理由都要同步写进 docs/game/game-design.md，避免数值散落。
  */
 
 import type { AttackMove, ResponseMove } from './types.js';

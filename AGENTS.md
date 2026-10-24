@@ -7,7 +7,7 @@
 - **是什么**：灵犀（七牛 Xrobot 语音硬件）上的 1v1 回合制语音对战。玩家用嘴下令，服务端持有对局并结算，平台侧模型只负责理解意图、调用工具、朗读结果。服务通过 MCP 接入平台。
 - **灵犀只是载体**：真正对外的是这套 MCP 服务，硬件只是它的输入与播报通道。同一套服务端既能接灵犀硬件，也能接网页 / 手机（本地沙箱就是替身），**换载体不改服务**；演示可以把硬件换成手机 Web。
 - **分工**：ASR、TTS、唤醒都在灵犀平台侧，本服务只接收文字、只返回文字。不要引入语音库、不要处理音频。
-- **命名**：中文名「共鸣：闻声对决」**已定稿**（正式名，不再改动）；英文名 `linx-fighter` 用于仓库名、包名、服务名、`systemd` 单元与镜像名。面向玩家的文案、文档标题、灵犀控制台的智能体名称与提示词都用中文名。确需改名时，搜这几处一起同步：`README.md`、`docs/linx-integration.md`、`src/mcp/server.ts`、`src/mcp/tools.ts`、`src/game/narrator.ts`、`src/http/app.ts`、`src/index.ts`、`test/mcp.e2e.test.ts`。
+- **命名**：中文名「共鸣：闻声对决」**已定稿**（正式名，不再改动）；英文名 `linx-fighter` 用于仓库名、包名、服务名、`systemd` 单元与镜像名。面向玩家的文案、文档标题、灵犀控制台的智能体名称与提示词都用中文名。确需改名时，搜这几处一起同步：`README.md`、`docs/engineering/linx-integration.md`、`src/mcp/server.ts`、`src/mcp/tools.ts`、`src/game/narrator.ts`、`src/http/app.ts`、`src/index.ts`、`test/mcp.e2e.test.ts`。
 - **截止**：黑客松评审 2026-10-26 09:00 现场演示，时间以小时计。优先级 **闭环能玩 > 数值平衡 > 打磨**；每个需求先问「演示必须吗」。
 - **现状**：v0.2 玩法（七招、真气循环、伤害加成、先手补偿）、JEV 决策对手、双人联机（房间号 + 视角镜像）与 JEV 意图模型均已落地；规则对拍 256,000 局零漂移，部署在 `100.100.61.41`。另有本地沙箱 `sandbox/`（Web 模拟器 + 多窗口多人 + 脚本自对弈），用于不依赖硬件地跑通整条链路。
 - **沙箱的定位**：`sandbox/` 不是为了做个页面，而是给 Agent 一条不依赖控制台与实体硬件的真实链路——脚本能驱动整局（`pnpm sandbox:selfplay`）做回归，页面能开多个窗口模拟多人，手机同一内网可访问（后续可能顶替硬件上台演示）。它只是灵犀设备的替身：所有话语仍经 MCP `game_say` 进服务端，不在沙箱里加任何玩法判断；页面上的语音识别与 TTS 也由浏览器提供，属于设备替身，不进服务端。
@@ -21,8 +21,8 @@
 | 用户提到了什么 | 写到哪里 |
 | --- | --- |
 | 新约束、禁止事项、协作方式、演示方式的改变 | 本文件「项目」「规则」「路线」 |
-| 玩家可见的新能力、新命令、新端点、新配置、目录变化 | `README.md` 的对应表格与目录结构；沙箱相关再同步 `sandbox/README.md` |
-| 已定架构被改（传输、工具边界、判定归属） | 本文件 + `docs/architecture.md` 的设计决策 |
+| 玩家可见的新能力、新命令、新端点、新配置、目录变化 | `README.md` 的对应表格与目录结构；沙箱相关再同步 `docs/testing/sandbox.md` |
+| 已定架构被改（传输、工具边界、判定归属） | 本文件 + `docs/engineering/architecture.md` 的设计决策 |
 
 - 只写用户确认过的内容：猜测、未验证的方案不进 README；README 只写已验证的行为。
 - 一条说清一件事，沿用现有表格与编号的风格；已经写过的不要重复堆叠。
@@ -32,12 +32,15 @@
 
 | 文档 | 用途 |
 | --- | --- |
-| `README.md` | 现状、命令、MCP 接口与请求头、部署 |
-| `docs/architecture.md` | 分层职责与**已定决策**（改传输、存储、工具返回值前必读） |
-| `docs/game-design.md` | 玩法施工图：已实现 / 待定 / 每项改哪里（改结算前必读） |
-| `docs/linx-integration.md` | 平台接入步骤、智能体提示词、排障 |
-| `docs/design-references.md` | 同类设计案例（读招、资源、节奏、先手补偿）与改进建议（改规则前参考） |
-| `sandbox/README.md` | 本地沙箱的启动、身份、接口契约与 Agent 用法 |
+| `README.md` | 根目录统一入口：现状、命令、MCP 接口与请求头、部署、文档导航与维护约定 |
+| `docs/product/product-design.md` | 产品定位、玩家旅程、语音体验、验收与待决策项；产品流程变化时同步 |
+| `docs/engineering/architecture.md` | 分层职责与**已定决策**（改传输、存储、工具返回值前必读） |
+| `docs/game/game-design.md` | 玩法施工图：已实现 / 待定 / 每项改哪里（改结算前必读） |
+| `docs/engineering/linx-integration.md` | 平台接入步骤、智能体提示词、排障 |
+| `docs/references/design-references.md` | 同类设计案例（读招、资源、节奏、先手补偿）与改进建议（改规则前参考） |
+| `docs/testing/sandbox.md` | 本地沙箱的启动、身份、接口契约与 Agent 用法 |
+
+项目文档统一放在 `docs/`：`product/` 写产品体验，`game/` 写现行玩法，`engineering/` 写架构与接入，`testing/` 写验证操作和案例，`references/` 写参考资料，`archive/` 保存历史候选与报告。临时过程文件、日志和备份保存在仓库外；有协作价值的结论整理进正式文档或历史归档。根目录保留项目入口 `README.md` 和协作约定 `AGENTS.md`，不建立额外的工作资料目录。文档移动时同步更新 Markdown 链接、源码注释中的路径与 README 导航。
 
 `docs/xrobot-dev-spec/` 是平台官方文档的整份拷贝（含大量图片，约 51MB）：**不入库**（已列入 `.gitignore`），只在本地按需查阅，新环境需要时从 [linx.qiniu.com/docs/xrobot](https://linx.qiniu.com/docs/xrobot/) 同步。**只读、按需单篇读**，不要编辑，也不要整目录检索图片。常用：`mcp/software-mcp.md`（请求头、`structuredContent`）、`mcp/hardware-mcp.md`（设备侧 JSON-RPC）、`guide/agent-config.md`（智能体配置）。
 
@@ -100,13 +103,13 @@ ASR 在平台侧，错误是常态（「攻击」被识别成「公鸡」）。�
 4. **认不出就重说**：语音识别错误是常态。招式认不出时**不推进回合、不改数值**，只提示可选说法。
 5. **工具不抛异常**：错误统一转成 `isError: true` + 一句玩家能听懂的话，并记 `logger.error`；协议层保持正常响应。
 6. **身份只从请求头来**：`X-Linx-Device-Id` / `X-Linx-Agent-Id` / `X-Linx-Session-Id` 由平台注入，不进工具入参；对局键是 `deviceId#agentId`，不要按 session 存。
-7. **两套传输都留着**：平台实测走 `POST /mcp`（Streamable HTTP），SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）保持兼容，`DELETE /mcp` 直接 200。改路由前先看 `docs/architecture.md` 的设计决策。
+7. **两套传输都留着**：平台实测走 `POST /mcp`（Streamable HTTP），SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）保持兼容，`DELETE /mcp` 直接 200。改路由前先看 `docs/engineering/architecture.md` 的设计决策。
 8. **原话透传，判断在服务端**：平台侧模型只该调 `game_say`，把玩家原话一字不改放进去；招式、战况、玩法、开局、开房都由 `src/game/utterance.ts` + `matchAction` + JEV 判断。不要把「这句话是哪一招」的判断推回给平台模型。
 9. **招式扩展不新增工具**：扩 `ActionId` 复用 `game_action`；工具总数固定 5 个（`game_say` + 四个兜底，平台侧模型工具越多越容易选错）。只有需要驱动设备动作才返回 `structuredContent.funcs`（`linx_play` / `linx_stop` / `change_role`），`content.text` 保持可读。
-10. **数值集中**：可调参数放 `src/game/rules.ts`，不散落魔法数字；同时把取值与理由写进 `docs/game-design.md`。
+10. **数值集中**：可调参数放 `src/game/rules.ts`，不散落魔法数字；同时把取值与理由写进 `docs/game/game-design.md`。
 11. **日志**用 `src/log.ts` 的 `createLogger` 结构化字段（`logger.info('消息', { ... })`），不要 `console.log`（`log.ts` 内部除外）。
 12. **不加依赖、不扩栈**：需要新库先问；单实例内存存储够用。
-13. **README 是门面**：新增命令、端点、请求头、配置项或测试文件时，同步更新 `README.md` 的对应表格与目录结构；沙箱相关同步 `sandbox/README.md`；README 里只写已验证的行为，不写计划中的能力。
+13. **README 是门面**：新增命令、端点、请求头、配置项或测试文件时，同步更新 `README.md` 的对应表格与目录结构；沙箱相关同步 `docs/testing/sandbox.md`；README 里只写已验证的行为，不写计划中的能力。
 14. **PVP 是新增层**：配对与房间独立于现有 1v1，不改 `Battle` 的语义；玩家身份仍是 `deviceId#agentId`，没有匹配到人时用 AI 兜底，保证演示随时能玩。
 15. **载体差异走请求头**：有没有屏幕这类能力用 `X-Linx-Display`（`voice` 默认 / `screen`）表达，解析在 `src/mcp/context.ts`，效果落到 `SayOptions.catchUp`。不要把「客户端是什么设备」塞进工具入参，也不要让平台侧模型判断要不要补账。
 16. **对局状态串行写，异步回来先校验**：意图模型（1.5 秒）与对手决策（1.2 秒）都是异步的，读改写一律走 `src/game/serialize.ts` 的 `SerialQueue`（单人按对局键、双人按房间号）；返回后必须确认还是同一局、同一个座位（对局每次结算都换新对象，对象身份就是版本号），对不上就丢弃并让玩家重说，绝不把旧快照写回。新的读改写路径不要绕过队列直接 `store.set`。
@@ -133,7 +136,7 @@ gh pr create --fill
 
 ## 演示环境
 
-- 内网机 `100.100.61.41`，代码 `/opt/linx-fighter`，systemd `linx-fighter.service`；公网靠 `linx-tunnel.service`（bore），控制台填 `http://bore.pub:3216/mcp`。排障见 `docs/linx-integration.md`。
+- 内网机 `100.100.61.41`，代码 `/opt/linx-fighter`，systemd `linx-fighter.service`；公网靠 `linx-tunnel.service`（bore），控制台填 `http://bore.pub:3216/mcp`。排障见 `docs/engineering/linx-integration.md`。
 - 发布用 `scripts/deploy.sh`（编译 → rsync → 装生产依赖 → 重启 → 自检）。
 - 自检：`curl http://127.0.0.1:8000/health`、`pnpm smoke <baseUrl>`。
 - 演示前不要动隧道、端口、systemd 配置；不提交 `.env`、密钥、`dist/`、`node_modules/`。

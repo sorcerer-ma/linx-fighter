@@ -125,7 +125,7 @@ node --import tsx --test test/enemy.test.ts
   期权项只在很窄的区间里改变决策。
 
 顺带一提：`RULES`、`ATTACKS`、`RESPONSES` 是冻结契约，调平衡先动 `WEIGHTS`；非动数值表不可时，
-改完把 `docs/game-design.md` 的数值与理由一起更新。
+改完把 `docs/game/game-design.md` 的数值与理由一起更新。
 
 ## 已知取舍
 

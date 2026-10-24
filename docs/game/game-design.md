@@ -3,13 +3,13 @@
 > 本文是实现与调参的唯一入口：规则、数值、AI 策略、双人联机与验证方式。
 > 代码落点：`src/game/rules.ts`（数值）、`engine.ts`（结算）、`enemy.ts`（AI）、`service.ts`（业务流程）、`pvp.ts`（双人视角）。
 > 数值改动必须同时更新本文与 `test/simulation.test.ts`、`scripts/validate-v02.ts` 的对拍结果。
-> [`outputs/mechanics-and-balance.md`](../outputs/mechanics-and-balance.md) 是早期候选设计稿，不是实现依据：与本文冲突时以本文为准，数值一律以 `src/game/rules.ts` 为准。
+> [`docs/archive/v0.2/mechanics-and-balance.md`](../archive/v0.2/mechanics-and-balance.md) 是早期候选设计稿，不是实现依据：与本文冲突时以本文为准，数值一律以 `src/game/rules.ts` 为准。
 
 ## 体验目标
 
 玩家用语音下指令，服务端按回合结算。核心不是手速，而是**读招与资源取舍**：主动阶段选普攻/强攻/蓄力/大招，对手出招后选格挡/闪避/承受。播报短、有节奏感，适合语音听。
 
-这套「出招—应对」的单边读招 + 真气循环，同类设计怎么解、踩过哪些坑，见 [design-references.md](design-references.md)（改规则前先看那页的结论与建议）。
+这套「出招—应对」的单边读招 + 真气循环，同类设计怎么解、踩过哪些坑，见 [design-references.md](../references/design-references.md)（改规则前先看那页的结论与建议）。
 
 ## 一场对局
 
