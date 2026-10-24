@@ -7,7 +7,7 @@ import {
   syllableDistance,
   toSyllables,
 } from '../src/game/asr.js';
-import { parseAction } from '../src/game/actions.js';
+import { ACTIONS, parseAction } from '../src/game/actions.js';
 import { readCommand } from '../src/game/command.js';
 
 /** 断言识别到指定招式，并把命中路径一起钉住，避免以后放宽到错配 */
@@ -95,6 +95,19 @@ describe('线上真实语料：同音只差一处也认', () => {
   it('长说法优先，不在同一个词里抠出短招式', () => {
     // 「全力攻击」是强攻：等长比较时整体更像「全力攻击」，不能被「攻击」抢走
     assert.equal(matchSpokenAction('全力攻击')?.id, 'heavy');
+  });
+});
+
+describe('招式词表自洽', () => {
+  it('每个误写词都能在对应阶段命中本招式', () => {
+    const responseIds = new Set(['guard', 'dodge', 'take']);
+    for (const meta of Object.values(ACTIONS)) {
+      const stage = (responseIds.has(meta.id) ? 'response' : 'active') as 'response' | 'active';
+      for (const word of [meta.label, ...(meta.asrErrors ?? [])]) {
+        const matched = matchSpokenAction(word, stage);
+        assert.equal(matched?.id, meta.id, `${meta.id} 的「${word}」应命中自身，实际 ${matched?.id ?? '未命中'}`);
+      }
+    }
   });
 });
 
