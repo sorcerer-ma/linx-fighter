@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#05070d">
+  <title>共鸣：闻声对决 · 沙箱</title>
+  <!-- 内联 SVG 图标，页面完全离线可用 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23070d16' stroke='%232ef2c0'/%3E%3Cpath d='M7 16h3l2-5 3 10 3-8 2 3h5' fill='none' stroke='%232ef2c0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- 顶栏：身份、连接状态、新窗口 -->
+    <div class="chrome">
+      <header class="topbar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2.5 12h3l2.2-5.4 3.1 10.8 2.6-7.4 1.9 3.6h6.2"/>
+          </svg>
+          <span class="brand-name">共鸣</span>
+          <span class="brand-sub">沙箱</span>
+        </div>
+        <div class="topbar-tools">
+          <span class="conn" id="conn" data-state="offline" title="状态流连接状态">
+            <i class="conn-dot" aria-hidden="true"></i>
+            <span id="conn-label">未连接</span>
+          </span>
+          <span class="player-badge" id="player-badge" title="当前玩家身份">…</span>
+          <button type="button" class="btn btn-ghost" id="new-window" aria-label="在新窗口打开下一个玩家">
+            <span aria-hidden="true">＋</span><span class="new-window-text">新窗口</span>
+          </button>
+        </div>
+      </header>
+      <div class="notice" id="notice" role="status" hidden>
+        <span class="notice-text" id="notice-text"></span>
+        <button type="button" class="btn btn-mini" id="notice-retry">重试连接</button>
+      </div>
+    </div>
+
+    <main class="layout">
+      <!-- 左：设备舞台 + 对话输入 -->
+      <section class="device" aria-label="灵犀设备">
+        <div class="stage">
+          <button type="button" class="orb" id="orb" data-state="idle" data-unavailable="false"
+                  aria-label="麦克风：点一下开始说话" aria-pressed="false">
+            <span class="orb-glow" aria-hidden="true"></span>
+            <span class="orb-ring orb-ring--a" aria-hidden="true"></span>
+            <span class="orb-ring orb-ring--b" aria-hidden="true"></span>
+            <svg class="orb-arc" viewBox="0 0 200 200" aria-hidden="true" fill="none">
+              <defs>
+                <linearGradient id="arc-gradient" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#2ef2c0"/>
+                  <stop offset="1" stop-color="#ff3fa4"/>
+                </linearGradient>
+              </defs>
+              <circle cx="100" cy="100" r="92" stroke="url(#arc-gradient)" stroke-width="3"
+                      stroke-linecap="round" stroke-dasharray="120 458"/>
+            </svg>
+            <span class="orb-core">
+              <svg class="orb-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+                   stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3.6a2.6 2.6 0 0 0-2.6 2.6v5.1a2.6 2.6 0 0 0 5.2 0V6.2A2.6 2.6 0 0 0 12 3.6Z"/>
+                <path d="M6.4 10.7a5.6 5.6 0 0 0 11.2 0"/>
+                <path d="M12 16.3v3.2"/>
+              </svg>
+              <span class="orb-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            </span>
+            <span class="orb-slash" aria-hidden="true"></span>
+          </button>
+          <div class="stage-state" id="stage-state" aria-live="polite">待唤醒</div>
+          <p class="stage-hint" id="stage-hint">点一下圆环说话，识别完自动发送</p>
+        </div>
+
+        <div class="reply-card" id="reply-card" data-tone="idle">
+          <div class="reply-head">
+            <span class="reply-title">播报</span>
+            <span class="reply-meta" id="reply-meta"></span>
+            <button type="button" class="btn btn-mini" id="replay" aria-label="重播最近一条播报" disabled>重播</button>
+          </div>
+          <p class="reply-text" id="reply-text" aria-live="polite">说「开始游戏」开一局，或者说「开房间」和另一个窗口对打。</p>
+        </div>
+
+        <form class="composer" id="composer" autocomplete="off">
+          <label class="sr-only" for="input">对灵犀说一句话</label>
+          <textarea id="input" class="input" rows="1" maxlength="200"
+                    placeholder="对灵犀说句话，比如「强攻」"></textarea>
+          <button type="submit" class="btn btn-send" id="send" aria-label="发送这句话">发送</button>
+        </form>
+
+        <div class="switches">
+          <label class="switch">
+            <input type="checkbox" id="auto-send" checked>
+            <span class="switch-box" aria-hidden="true"></span>
+            <span class="switch-label">识别完自动发送</span>
+          </label>
+          <label class="switch" id="tts-switch">
+            <input type="checkbox" id="tts" checked>
+            <span class="switch-box" aria-hidden="true"></span>
+            <span class="switch-label">语音播报</span>
+          </label>
+        </div>
+
+        <div class="chips-wrap">
+          <p class="chips-caption">快捷说法 · 只填入输入框，再按发送</p>
+          <div class="chips" id="chips"></div>
+        </div>
+      </section>
+
+      <!-- 右：只读局面面板（由服务端 SSE 推送） -->
+      <section class="board" id="board" aria-label="对局局面（只读）">
+        <div class="board-body" id="board-body"></div>
+      </section>
+    </main>
+
+    <!-- 底部：可折叠调试面板，默认收起 -->
+    <details class="debug" id="debug">
+      <summary class="debug-summary">
+        <span class="debug-title">调试面板</span>
+        <span class="debug-sub">sandbox · upstream · eventsUrl · trace · tools</span>
+        <span class="debug-caret" aria-hidden="true"></span>
+      </summary>
+      <div class="debug-body">
+        <div class="dbg-rows">
+          <div class="dbg-row"><span class="dbg-k">sandbox</span><code class="dbg-v" id="dbg-sandbox">—</code><button type="button" class="dbg-copy" data-copy="dbg-sandbox" aria-label="复制 sandbox 版本">复制</button></div>
+          <div class="dbg-row"><span class="dbg-k">upstream</span><code class="dbg-v" id="dbg-upstream">—</code><button type="button" class="dbg-copy" data-copy="dbg-upstream" aria-label="复制 upstream 地址">复制</button></div>
+          <div class="dbg-row"><span class="dbg-k">eventsUrl</span><code class="dbg-v" id="dbg-events">—</code><button type="button" class="dbg-copy" data-copy="dbg-events" aria-label="复制状态流地址">复制</button></div>
+          <div class="dbg-row"><span class="dbg-k">deviceId</span><code class="dbg-v" id="dbg-device">—</code><button type="button" class="dbg-copy" data-copy="dbg-device" aria-label="复制 deviceId">复制</button></div>
+          <div class="dbg-row"><span class="dbg-k">agentId</span><code class="dbg-v" id="dbg-agent">—</code><button type="button" class="dbg-copy" data-copy="dbg-agent" aria-label="复制 agentId">复制</button></div>
+          <div class="dbg-row"><span class="dbg-k">revision</span><code class="dbg-v" id="dbg-revision">—</code><button type="button" class="dbg-copy" data-copy="dbg-revision" aria-label="复制 revision">复制</button></div>
+          <div class="dbg-row"><span class="dbg-k">连接</span><code class="dbg-v" id="dbg-conn">未连接</code><button type="button" class="dbg-copy" data-copy="dbg-conn" aria-label="复制连接状态">复制</button></div>
+        </div>
+
+        <div class="dbg-block">
+          <div class="dbg-block-head">
+            <span class="dbg-k">最近一次 /api/say 的 trace</span>
+            <button type="button" class="dbg-copy" data-copy="dbg-trace" aria-label="复制 trace">复制</button>
+          </div>
+          <pre class="dbg-pre" id="dbg-trace" tabindex="0">还没有发过话。</pre>
+        </div>
+
+        <div class="dbg-block">
+          <div class="dbg-block-head">
+            <span class="dbg-k">工具（GET /api/tools，展开面板时懒加载）</span>
+            <button type="button" class="dbg-copy" data-copy="dbg-tools" aria-label="复制工具名列表">复制</button>
+          </div>
+          <code class="dbg-tools" id="dbg-tools">展开面板后加载…</code>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <noscript>
+    <p class="noscript">这个页面需要 JavaScript 才能连沙箱。</p>
+  </noscript>
+  <script src="/app.js"></script>
+</body>
+</html>

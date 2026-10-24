@@ -55,6 +55,8 @@ export function canonicalize(view: Battle, side: Side, base: Battle): Battle {
 function swapSides(battle: Battle): Battle {
   return {
     ...battle,
+    // 胜负记在基准视角上，换视角必须一起翻：否则输的一方会被告知「你赢了」
+    phase: battle.phase === 'victory' ? 'defeat' : battle.phase === 'defeat' ? 'victory' : 'battle',
     player: { ...battle.enemy, id: 'player', name: '你' },
     enemy: { ...battle.player, id: 'enemy', name: '对手' },
     firstMover: otherSide(battle.firstMover),

@@ -24,12 +24,21 @@ import {
   narrateWaitingRoom,
 } from './narrator.js';
 import { canonicalize, normalizeRoomCode, pvpBattleKey, roomCodeFromPhrase, viewAs, wantsOpenRoom } from './pvp.js';
+import { battleState, type BattleState } from './state.js';
 import type { Battle, BattleAI, BattleEvent, Side } from './types.js';
+import { classifyUtterance } from './utterance.js';
 
 /** 一次工具调用的结果：可直接朗读的文本 + 当前玩家视角的最新对局状态 */
 export interface ServiceResult {
   text: string;
   battle: Battle | null;
+}
+
+/** 只读局面快照：给状态流与调试接口用，不做播报、不推进对局 */
+export interface SnapshotResult {
+  /** 四位房间号；单人局为 null */
+  room: string | null;
+  state: BattleState;
 }
 
 /** 开局参数：单人可指定对手名；双人可开房或加入房间 */
@@ -212,6 +221,47 @@ export class GameService {
   /** 玩法说明，用于玩家不知道说什么的场景 */
   help(): ServiceResult {
     return { text: narrateHelp(), battle: null };
+  }
+
+  /**
+   * 统一入口：玩家说了什么就传什么，由服务端判断该怎么反应。
+   *
+   * 平台侧模型不做意图判断，只把原话交进来，所以这里必须先认句子：
+   * 招式（含同音误识别）交给 act，查战况问玩法直接回，剩下的一律交给 act 兜底，
+   * 由它处理开房、加入房间、自动开局与「没听清」。
+   */
+  async say(sessionKey: string, text: string): Promise<ServiceResult> {
+    switch (classifyUtterance(text)) {
+      case 'status':
+        return this.status(sessionKey);
+      case 'help':
+        return this.help();
+      case 'start':
+        return this.start(sessionKey, { text });
+      default:
+        return this.act(sessionKey, text);
+    }
+  }
+
+  /**
+   * 当前玩家视角的局面快照；不在任何对局里返回 null。
+   *
+   * 双人房里基准对局存在房主键下，加入者看到的是镜像视角，
+   * 这里按房间成员判断坐在哪一边，和出招时的视角保持一致。
+   */
+  snapshot(sessionKey: string): SnapshotResult | null {
+    const room = this.rooms.byPlayer(sessionKey);
+    if (room) {
+      const canonical = this.store.get(pvpBattleKey(room.code));
+      if (!canonical) return null;
+      const side = this.sideOf(room, sessionKey) ?? 'player';
+      const waiting = room.guestKey === null;
+      return { room: room.code, state: battleState(canonical, { room: room.code, side, waiting }) };
+    }
+
+    const battle = this.store.get(sessionKey);
+    if (!battle) return null;
+    return { room: null, state: battleState(battle, { room: null, side: 'player' }) };
   }
 
   /** 开双人房：先建基准对局，再等第二位玩家凭房间号加入 */

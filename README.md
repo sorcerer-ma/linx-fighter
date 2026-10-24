@@ -8,19 +8,22 @@
 
 当前进度：**v0.2 玩法已落地**。七种招式、真气循环、伤害加成、先手补偿、AI 对手与双人联机（房间号 + 视角镜像）全部接通；结算由服务端唯一裁定，并用 PR 参考仿真的 256,000 局做数值对拍。规则与调参见 [docs/game-design.md](docs/game-design.md)。
 
+另带一个本地沙箱（[`sandbox/`](sandbox/README.md)）：在浏览器里模拟灵犀设备的输入与播报，可开多个窗口互相对战，也可以用命令行或脚本让 Agent 自己把整局打完，不依赖控制台与实体硬件。
+
 ## 一次语音出招是怎么走完的
 
-1. 玩家对设备说「强攻」，灵犀平台完成唤醒、ASR 与意图理解；
-2. 平台把意图交给智能体，智能体调用 MCP 工具 `game_action`，设备与智能体身份通过请求头传入；
-3. 服务端按 `deviceId#agentId` 取出对局：主动阶段先锁伤害，再把出手回合交给对手（单人走 AI，双人等另一位玩家）；
+1. 玩家对设备说「强攻」，灵犀平台完成唤醒与 ASR；
+2. 平台把玩家原话交给智能体，智能体调用 MCP 工具 `game_say`，只做透传；设备与智能体身份通过请求头传入；
+3. 服务端自己判断这句话想干什么：规则匹配优先，认不出再交给 JEV 意图模型归一化，最后按 `deviceId#agentId` 取出对局并推进一个阶段；
 4. 对手出招后，玩家说「格挡」「闪避」或「承受」完成应对，服务端结算、判胜负、生成播报；
 5. 平台把返回文本 TTS 给玩家，一回合结束。
 
-所有数值与胜负只以服务端为准（`src/game/engine.ts`），平台侧模型不需要记忆对局状态。
+判断与结算全部在服务端：平台侧模型不需要理解玩法、不需要记忆对局状态，也不改数值。
 
 ## 核心能力
 
 - **完整回合制玩法**：普攻 / 强攻 / 大招 / 蓄力 / 格挡 / 闪避 / 承受；真气上限 5、主动阶段回气、第 3 轮起伤害加成、先手 14 血 / 后手 18 血、大招一局一次。
+- **原话透传，判断在服务端**：平台把玩家原话原样交给 `game_say`，招式、战况、玩法、开局、开房都由服务端分类；规则认不出时才落到 JEV 意图模型，任何模型异常都当作没认出来，回合不丢。
 - **语音即操作，不止认关键词**：口语别名（强攻 / 猛攻 / 抡、格挡 / 防御、承受 / 硬抗）、句中夹杂（「我要公鸡你」）、ASR 同音误识别（「公鸡」「工击」→ 普攻，「墙攻」「抢攻」→ 强攻，「大召」→ 大招）；每招另有中二唤出指令（「共鸣斩破军」「天倾共此声」），念出来会被回念一句。
 - **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；配了 OpenRouter Key 时再叠一层 JEV 意图模型（decisions 接口，把「这句话对应哪一招」做成阶段内选择题），把「给我狠狠来一下」这类自由说法归一化成招式，规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。
 - **JEV 决策对手**：每次出招与应对都把「当前局面 → 合法选项」做成选择题交给 OpenRouter 的 JEV 决策模型（`typesafe/jev-1.13`）；本地先按真气与大招次数过滤出合法选项，模型只能从里面选；选择越界、超时 1.2 秒或返回异常时回退本地效用决策，回合不会卡住，置信度与概率只写进日志。本地兜底策略见 [docs/ai-enemy.md](docs/ai-enemy.md)；`ENEMY_AI=local` 可整体关掉模型层。
@@ -37,6 +40,7 @@
 pnpm install
 pnpm dev        # tsx watch，默认 0.0.0.0:8000
 pnpm demo       # 不连 MCP，直接看每个指令的播报
+pnpm sandbox    # 沙箱：浏览器模拟器 + MCP 透传，默认 0.0.0.0:8100
 ```
 
 服务起来后：
@@ -56,6 +60,10 @@ pnpm coverage:lcov # 生成 coverage/lcov.info，供 Codecov 上传
 pnpm validate      # 规则对拍：8 种策略 × 组合 2000 局，共 256,000 局
 pnpm build         # 编译到 dist/
 pnpm start         # 运行编译产物
+pnpm sandbox       # 启动沙箱页面（需先起游戏服务）
+pnpm sandbox:say   # 命令行说一句：pnpm sandbox:say --device web-a "强攻"
+pnpm sandbox:state # 打印某个设备看到的局面快照
+pnpm sandbox:selfplay --rounds 3  # 两个脚本身份自动打完 3 局，顺带校验视角镜像
 ```
 
 ## MCP 接口
@@ -64,12 +72,13 @@ pnpm start         # 运行编译产物
 
 | 工具 | 玩家说法 | 说明 |
 | --- | --- | --- |
+| `game_say` | 玩家的任何一句话 | **统一入口**：把原话一字不改放进 `text`，服务端自己判断是出招、查战况、看玩法还是开局；平台侧模型不用做选择 |
 | `game_start` | 「开始游戏」「来一局」「联机」「加入房间1234」 | 开一局新对局，覆盖未结束的旧对局；`mode: "pvp"` 建房，`room` 加入房间，`text` 可放玩家原话由服务端兜底识别，`opponent` 指定单人对手 |
 | `game_action` | 「强攻」「格挡」「闪避」「共鸣斩破军」 | 识别招式并推进一个阶段，返回播报 |
 | `game_status` | 「战况如何」「我还剩多少血」 | 播报双方气血、真气与当前阶段 |
 | `game_help` | 「怎么玩」 | 播报玩法说明 |
 
-工具总数刻意控制在 5 个以内：平台侧模型工具越多越容易选错。
+工具总数刻意控制在 5 个以内：平台侧模型工具越多越容易选错。推荐把 `game_say` 当成唯一入口，其余四个作为它的兜底。
 
 ### 端点
 
@@ -80,6 +89,8 @@ pnpm start         # 运行编译产物
 | `/mcp/message?sessionId=<id>` | POST | 老式 SSE 通道：接收 JSON-RPC，响应从 SSE 流返回 |
 | `/mcp` | DELETE | 会话收尾，直接返回 200 |
 | `/health` | GET | 健康检查：状态、对局数、房间数、运行时长 |
+| `/state?device=&agent=` | GET | 某位玩家视角的局面快照（JSON），供沙箱与 Agent 自主模拟 |
+| `/events?device=&agent=` | GET | SSE 状态流：局面变化时推 `event: state`，15 秒一次心跳注释；跨域开放，手机页面可直连 |
 | `/debug/*` | GET/POST | 调试接口：`start` / `action` / `status` / `state`，默认仅非生产环境开启；`start` 支持 `mode` 与 `room` |
 
 ### 身份
@@ -158,7 +169,7 @@ flowchart LR
 
 [![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
 
-`node:test` + 内置覆盖率，不引入额外测试框架。当前 **178 个用例**，行覆盖 **98.9%**、分支覆盖 **93.9%**、函数覆盖 **99.1%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
+`node:test` + 内置覆盖率，不引入额外测试框架。当前 **208 个用例**，行覆盖 **99.2%**、分支覆盖 **94.1%**、函数覆盖 **98.3%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
@@ -168,6 +179,8 @@ flowchart LR
 | `test/enemy-jev.test.ts` | JEV 对手决策：合法选项过滤、题干、解析、低置信度/超时/异常回退 |
 | `test/intent.test.ts` | JEV decisions 返回解析、置信度阈值、阶段校验、请求体与失败回退 |
 | `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
+| `test/utterance.test.ts` | 原话分类：招式 / 战况 / 玩法 / 开局 / 认不出，以及各条边界说法 |
+| `test/state.test.ts` | 局面快照字段、等对手标记、中文标签、视角镜像、胜负折算与幂等 |
 | `test/pvp.test.ts` | 建房/加入、视角镜像、双人出招与应对、房间校验、超时 |
 | `test/rooms.test.ts` | 房间号生成与复用、加入/满员/重复加入、玩家索引、过期清理 |
 | `test/service.test.ts` | 开局 / 出招 / 战况 / 说明、单人 AI 先手、错误文案、双人分流 |
@@ -179,7 +192,8 @@ flowchart LR
 | `test/tools.test.ts` | 工具注册与业务异常转 `isError` |
 | `test/http.test.ts` | 路由、健康检查、SSE 握手、调试接口（含双人房）、404 与非法 JSON |
 | `test/streamable.test.ts` | Streamable HTTP：initialize / tools/list / tools/call |
-| `test/mcp.e2e.test.ts` | 完整对局链路、多设备隔离、无对局自动开局、双人房 |
+| `test/mcp.e2e.test.ts` | 完整对局链路、多设备隔离、无对局自动开局、双人房、`game_say` 单工具走完全流程 |
+| `test/sandbox.test.ts` | 沙箱服务：配置、透传、快照、工具列表、上游不可达与 trace |
 
 规则对拍单独跑：`pnpm validate` 会用纯 TS 复刻 PR 参考仿真的 8 种策略、各组合 2000 局（共 256,000 局），与 `test/fixtures/v02-validation.json` 逐项比对，任何数值、随机数或结算顺序漂移都会以非零退出码失败。CI 在 [.github/workflows/ci.yml](.github/workflows/ci.yml)：安装依赖 → 类型检查 → 覆盖率门禁 → 规则对拍 → 生成 lcov 并上传 Codecov → 构建产物。
 
@@ -215,6 +229,7 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | [docs/architecture.md](docs/architecture.md) | 请求链路、分层职责、已定设计决策 |
 | [docs/game-design.md](docs/game-design.md) | v0.2 规则、数值、AI、双人联机与验证 |
 | [docs/ai-enemy.md](docs/ai-enemy.md) | AI 决策模型、权重与自博弈结果 |
+| [sandbox/README.md](sandbox/README.md) | 本地沙箱：多窗口模拟、Agent 脚本驱动、接口契约、手机语音 |
 | [docs/linx-integration.md](docs/linx-integration.md) | 平台接入、提示词、排障 |
 | [AGENTS.md](AGENTS.md) | 给 AI 协作者的仓库规范 |
 
@@ -238,15 +253,23 @@ src/
     intent.ts         JEV 意图模型：自然语言归一化招式（规则优先）
     pvp.ts            双人视角镜像与房间号工具
     narrator.ts       播报文案
+    utterance.ts      玩家原话分类：招式 / 战况 / 玩法 / 开局
+    state.ts          局面快照：给界面与脚本直接消费
     service.ts        游戏编排：单人/双人分流
   mcp/
     context.ts        设备上下文与对局归属键
     server.ts         McpServer 创建与 instructions
     tools.ts          工具注册
-  http/app.ts         路由：Streamable HTTP / SSE、健康检查、调试接口
+  http/app.ts         路由：Streamable HTTP / SSE、状态流、健康检查、调试接口
   store/
     battles.ts        对局存储（内存 + TTL）
     rooms.ts          房间存储与玩家索引
+sandbox/
+  server.ts           沙箱服务：静态页 + /api/say 透传 + 状态流代理
+  cli.ts              命令行说一句 / 看局面 / 列工具
+  selfplay.ts         两个脚本身份自动打完一局并校验视角镜像
+  platform/           手写 MCP 客户端与沙箱客户端（逐请求 trace）
+  public/             浏览器里的灵犀模拟器（语音 + 文字 + 只读战况）
 scripts/
   demo.ts             脱离 MCP 直接跑播报
   smoke.ts            真实调用链自检

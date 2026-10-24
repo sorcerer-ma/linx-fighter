@@ -43,6 +43,15 @@ const actionInput = {
     ),
 };
 
+const sayInput = {
+  text: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .describe('玩家原话，一字不改地传进来，例如「攻击」「我还剩多少血」「开房间」「加入房间1234」「怎么玩」'),
+};
+
 /**
  * 注册游戏工具。
  * 工具层只做参数形状与错误兜底，业务编排在 GameService，方便后续替换实现。
@@ -90,6 +99,17 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
       };
     }
   };
+
+  server.registerTool(
+    'game_say',
+    {
+      title: '玩家说了什么',
+      description:
+        '玩家说完话就调用它，把原话一字不改地放进 text，不要自己判断这是开局、出招还是提问。服务端会识别招式与同音误识别、战况、玩法、开局、开房间与加入房间，并返回一句可以直接朗读的播报。不确定该用哪个工具时，永远用这个。',
+      inputSchema: sayInput,
+    },
+    async ({ text }) => invoke('game_say', { text }, () => service.say(battleKey(ctx), text)),
+  );
 
   server.registerTool(
     'game_start',

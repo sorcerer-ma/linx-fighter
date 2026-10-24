@@ -100,11 +100,11 @@ describe('Streamable HTTP 通道', () => {
     assert.equal(payload.result?.serverInfo?.name, 'linx-fighter');
   });
 
-  it('tools/list 能列出四个工具', async () => {
+  it('tools/list 能列出五个工具', async () => {
     const result = await rpc('tools/list');
     const payload = JSON.parse(result.text) as { result?: { tools?: Array<{ name: string }> } };
     const names = (payload.result?.tools ?? []).map((tool) => tool.name).sort();
-    assert.deepEqual(names, ['game_action', 'game_help', 'game_start', 'game_status']);
+    assert.deepEqual(names, ['game_action', 'game_help', 'game_say', 'game_start', 'game_status']);
   });
 
   it('工具调用在多次 POST 之间共享对局状态', async () => {

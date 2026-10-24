@@ -8,9 +8,9 @@
 - **分工**：ASR、TTS、唤醒都在灵犀平台侧，本服务只接收文字、只返回文字。不要引入语音库、不要处理音频。
 - **命名**：中文名「共鸣：闻声对决」（暂定）；英文名 `linx-fighter` 用于仓库名、包名、服务名、`systemd` 单元与镜像名。面向玩家的文案用中文名。如需改名，搜这几处并同步灵犀控制台的智能体名称与提示词：`README.md`、`docs/linx-integration.md`、`src/mcp/server.ts`、`src/mcp/tools.ts`、`src/game/narrator.ts`、`src/http/app.ts`、`src/index.ts`、`test/mcp.e2e.test.ts`。
 - **截止**：黑客松评审 2026-10-26 09:00 现场演示，时间以小时计。优先级 **闭环能玩 > 数值平衡 > 打磨**；每个需求先问「演示必须吗」。
-- **现状**：v0.2 玩法（七招、真气循环、伤害加成、先手补偿）、JEV 决策对手、双人联机（房间号 + 视角镜像）与 JEV 意图模型均已落地；规则对拍 256,000 局零漂移，部署在 `100.100.61.41`。
+- **现状**：v0.2 玩法（七招、真气循环、伤害加成、先手补偿）、JEV 决策对手、双人联机（房间号 + 视角镜像）与 JEV 意图模型均已落地；规则对拍 256,000 局零漂移，部署在 `100.100.61.41`。另有本地沙箱 `sandbox/`（Web 模拟器 + 多窗口多人 + 脚本自对弈），用于不依赖硬件地跑通整条链路。
 - **路线**：演示前以稳定性为主，数值平衡与观战/回放留到评审后；双人联机已可用，断线重连与超时判负未做。
-- **明确不做**（除非用户要求）：多实例/Redis/数据库、账号体系、前端页面、可观测性平台、容器编排。
+- **明确不做**（除非用户要求）：多实例/Redis/数据库、账号体系、可观测性平台、容器编排。**沙箱页面是唯一例外**：`sandbox/public/` 只做灵犀设备的替身（输入 + 只读局面），不承载业务判断，也不开第二条输入路径（所有话语仍走 `POST /api/say` → MCP `game_say`）。
 
 ## 资料
 
@@ -20,6 +20,7 @@
 | `docs/architecture.md` | 分层职责与**已定决策**（改传输、存储、工具返回值前必读） |
 | `docs/game-design.md` | 玩法施工图：已实现 / 待定 / 每项改哪里（改结算前必读） |
 | `docs/linx-integration.md` | 平台接入步骤、智能体提示词、排障 |
+| `sandbox/README.md` | 本地沙箱的启动、身份、接口契约与 Agent 用法 |
 
 `docs/xrobot-dev-spec/` 是平台官方文档的整份拷贝（含大量图片）：**只读、按需单篇读**，不要编辑，也不要整目录检索图片。常用：`mcp/software-mcp.md`（请求头、`structuredContent`）、`mcp/hardware-mcp.md`（设备侧 JSON-RPC）、`guide/agent-config.md`（智能体配置）。
 
@@ -36,6 +37,9 @@ pnpm demo       # 不连 MCP，直接看每个指令的播报
 pnpm smoke      # 真实调用链自检（默认 http://127.0.0.1:8000）
 pnpm validate   # 规则对拍：复刻 PR 参考仿真 256,000 局
 pnpm coverage:lcov # 生成 coverage/lcov.info（CI 上传 Codecov）
+pnpm sandbox       # 沙箱页面与透传服务（默认 0.0.0.0:8100，需先起 pnpm dev）
+pnpm sandbox:say   # 命令行说一句（--device 指定身份）
+pnpm sandbox:selfplay --rounds 3  # 两个脚本身份自动打完整局并校验视角镜像
 ```
 
 每次改完至少跑 `pnpm typecheck`。`pnpm test` 与 `pnpm coverage` 不必每个任务都跑，按天收口：每天收工前跑一遍并保持全绿、行覆盖 ≥ 95%。改玩法必须补测试；补覆盖率要补有断言的用例，不要为了数字写空转测试。
@@ -52,10 +56,14 @@ pnpm coverage:lcov # 生成 coverage/lcov.info（CI 上传 Codecov）
 | 双人房间与视角 | `src/game/pvp.ts`、`src/store/rooms.ts` |
 | 意图模型 | `src/game/intent.ts`（规则在 `actions.ts`） |
 | 播报文案 | `src/game/narrator.ts` |
+| 玩家原话分类（招式 / 战况 / 玩法 / 开局） | `src/game/utterance.ts` |
+| 界面/脚本用的局面快照 | `src/game/state.ts` |
 | 业务流程（开局 / 出招 / 战况 / 说明） | `src/game/service.ts` |
 | 工具定义与参数 | `src/mcp/tools.ts`、`src/mcp/server.ts` |
 | 路由、传输、请求头 | `src/http/app.ts` |
 | 存储 | `src/store/battles.ts`、`src/store/rooms.ts`（对外 `get/set/delete/sweep/size` 不变） |
+| 沙箱服务与页面 | `sandbox/server.ts`（透传）、`sandbox/platform/`（MCP 客户端）、`sandbox/public/`（页面） |
+| 状态流 | `src/http/app.ts` 的 `GET /events`（SSE）与 `GET /state` |
 
 ## 语音输入
 
@@ -75,12 +83,13 @@ ASR 在平台侧，错误是常态（「攻击」被识别成「公鸡」）。�
 5. **工具不抛异常**：错误统一转成 `isError: true` + 一句玩家能听懂的话，并记 `logger.error`；协议层保持正常响应。
 6. **身份只从请求头来**：`X-Linx-Device-Id` / `X-Linx-Agent-Id` / `X-Linx-Session-Id` 由平台注入，不进工具入参；对局键是 `deviceId#agentId`，不要按 session 存。
 7. **两套传输都留着**：平台实测走 `POST /mcp`（Streamable HTTP），SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）保持兼容，`DELETE /mcp` 直接 200。改路由前先看 `docs/architecture.md` 的设计决策。
-8. **招式扩展不新增工具**：扩 `ActionId` 复用 `game_action`；工具总数控制在 5 个以内（平台侧模型工具越多越容易选错）。只有需要驱动设备动作才返回 `structuredContent.funcs`（`linx_play` / `linx_stop` / `change_role`），`content.text` 保持可读。
-9. **数值集中**：可调参数放 `src/game/rules.ts`，不散落魔法数字；同时把取值与理由写进 `docs/game-design.md`。
-10. **日志**用 `src/log.ts` 的 `createLogger` 结构化字段（`logger.info('消息', { ... })`），不要 `console.log`（`log.ts` 内部除外）。
-11. **不加依赖、不扩栈**：需要新库先问；单实例内存存储够用。
-12. **README 是门面**：新增命令、端点、请求头、配置项或测试文件时，同步更新 `README.md` 的对应表格与目录结构；README 里只写已验证的行为，不写计划中的能力。
-13. **PVP 是新增层**：配对与房间独立于现有 1v1，不改 `Battle` 的语义；玩家身份仍是 `deviceId#agentId`，没有匹配到人时用 AI 兜底，保证演示随时能玩。
+8. **原话透传，判断在服务端**：平台侧模型只该调 `game_say`，把玩家原话一字不改放进去；招式、战况、玩法、开局、开房都由 `src/game/utterance.ts` + `matchAction` + JEV 判断。不要把「这句话是哪一招」的判断推回给平台模型。
+9. **招式扩展不新增工具**：扩 `ActionId` 复用 `game_action`；工具总数固定 5 个（`game_say` + 四个兜底，平台侧模型工具越多越容易选错）。只有需要驱动设备动作才返回 `structuredContent.funcs`（`linx_play` / `linx_stop` / `change_role`），`content.text` 保持可读。
+10. **数值集中**：可调参数放 `src/game/rules.ts`，不散落魔法数字；同时把取值与理由写进 `docs/game-design.md`。
+11. **日志**用 `src/log.ts` 的 `createLogger` 结构化字段（`logger.info('消息', { ... })`），不要 `console.log`（`log.ts` 内部除外）。
+12. **不加依赖、不扩栈**：需要新库先问；单实例内存存储够用。
+13. **README 是门面**：新增命令、端点、请求头、配置项或测试文件时，同步更新 `README.md` 的对应表格与目录结构；沙箱相关同步 `sandbox/README.md`；README 里只写已验证的行为，不写计划中的能力。
+14. **PVP 是新增层**：配对与房间独立于现有 1v1，不改 `Battle` 的语义；玩家身份仍是 `deviceId#agentId`，没有匹配到人时用 AI 兜底，保证演示随时能玩。
 
 ## Git 与 PR
 

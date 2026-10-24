@@ -4,6 +4,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { AppConfig } from '../config.js';
 import type { GameService } from '../game/service.js';
+import type { BattleState } from '../game/state.js';
 import type { Logger } from '../log.js';
 import { applyRequestContext, battleKey, createDeviceContext, type DeviceContext } from '../mcp/context.js';
 import { createMcpServer } from '../mcp/server.js';
@@ -24,6 +25,11 @@ interface McpSession {
   transport: SSEServerTransport;
   ctx: DeviceContext;
 }
+
+/** 局面快照轮询间隔：回合制游戏每回合只有几次变化，400ms 足够又不浪费 */
+const EVENTS_POLL_MS = 400;
+/** 心跳间隔：防止中间代理把空闲长连接掐掉 */
+const EVENTS_HEARTBEAT_MS = 15_000;
 
 export function createApp(deps: AppDependencies): express.Express {
   const { config, logger, store, rooms, service } = deps;
@@ -55,7 +61,13 @@ export function createApp(deps: AppDependencies): express.Express {
     res.json({
       service: 'linx-fighter',
       message: '灵犀对决 MCP 服务',
-      endpoints: { sse: '/mcp', message: '/mcp/message', health: '/health' },
+      endpoints: {
+        sse: '/mcp',
+        message: '/mcp/message',
+        health: '/health',
+        events: '/events',
+        state: '/state',
+      },
     });
   });
 
@@ -67,6 +79,73 @@ export function createApp(deps: AppDependencies): express.Express {
       battles: store.size,
       rooms: rooms.size,
     });
+  });
+
+  // 只读局面快照：给沙箱 CLI、调试脚本与状态流代理用，不推进对局
+  app.get('/state', (req, res) => {
+    const ctx = createDeviceContext(randomUUID());
+    applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
+    res.set({ 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+    res.json({ ok: true, ...snapshotBody(service, ctx) });
+  });
+
+  /**
+   * 手机页面只读同步局面走这里。
+   *
+   * 用 SSE 而不是 WebSocket：这场游戏是回合制、变化低频、事实来源在服务端，
+   * 只有「服务端 → 页面」一个方向，EventSource 自带重连与心跳，够用且更省事。
+   * EventSource 不能带请求头，身份从查询参数取（context 层已支持）。
+   */
+  app.get('/events', (req, res) => {
+    const ctx = createDeviceContext(randomUUID());
+    applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
+
+    res.status(200).set({
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.flushHeaders();
+
+    let revision = 0;
+    let lastFingerprint = '';
+    // 只在快照变化时推，避免每 400ms 一次空转把手机流量打满
+    const push = (force: boolean): void => {
+      const snap = service.snapshot(battleKey(ctx));
+      const battle = snap?.state ?? null;
+      const fingerprint = JSON.stringify(battle);
+      if (!force && fingerprint === lastFingerprint) return;
+      lastFingerprint = fingerprint;
+      revision += 1;
+      const payload = {
+        type: 'state',
+        device: ctx.deviceId,
+        agent: ctx.agentId,
+        revision,
+        battle,
+      };
+      res.write(`event: state\ndata: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    push(true);
+    const poll = setInterval(() => push(false), EVENTS_POLL_MS);
+    const heartbeat = setInterval(() => res.write(': ping\n\n'), EVENTS_HEARTBEAT_MS);
+    logger.info('状态流连接建立', {
+      deviceId: ctx.deviceId,
+      agentId: ctx.agentId,
+      battleKey: battleKey(ctx),
+    });
+
+    const close = (): void => {
+      clearInterval(poll);
+      clearInterval(heartbeat);
+      res.off('close', close);
+      logger.info('状态流连接关闭', { deviceId: ctx.deviceId, agentId: ctx.agentId });
+    };
+    res.on('close', close);
+    res.on('error', close);
   });
 
   // 平台用 GET 建立 SSE 长连接，并在后续 POST 请求里带上设备与会话头
@@ -230,6 +309,20 @@ export function createApp(deps: AppDependencies): express.Express {
   });
 
   return app;
+}
+
+/** 状态流与 /state 共用的快照结构，字段与 sandbox/README.md 的契约一致 */
+function snapshotBody(
+  service: GameService,
+  ctx: DeviceContext,
+): { device: string; agent: string; room: string | null; battle: BattleState | null } {
+  const snap = service.snapshot(battleKey(ctx));
+  return {
+    device: ctx.deviceId,
+    agent: ctx.agentId,
+    room: snap?.room ?? null,
+    battle: snap?.state ?? null,
+  };
 }
 
 /** 调试接口按 device/agent 查询参数定位对局，默认值方便本地 curl 直接跑 */

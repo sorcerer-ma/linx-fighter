@@ -205,4 +205,71 @@ describe('HTTP 外壳', () => {
     assert.equal(stateBody.key, 'debug-device#debug-agent');
     assert.equal(stateBody.battle.round, 1);
   });
+
+  it('GET /state 按身份返回只读局面，并允许跨域', async () => {
+    const empty = await fetch(`${baseUrl}/state?device=nobody`);
+    assert.equal(empty.status, 200);
+    assert.equal(empty.headers.get('access-control-allow-origin'), '*');
+    const emptyBody = (await empty.json()) as { ok: boolean; device: string; battle: unknown };
+    assert.equal(emptyBody.ok, true);
+    assert.equal(emptyBody.device, 'nobody');
+    assert.equal(emptyBody.battle, null);
+
+    await fetch(`${baseUrl}/debug/start?device=state-dev&agent=state-agent`, { method: 'POST' });
+    const filled = await fetch(`${baseUrl}/state?device=state-dev&agent=state-agent`);
+    const filledBody = (await filled.json()) as {
+      ok: boolean;
+      device: string;
+      agent: string;
+      battle: { round: number; you: { hp: number } };
+    };
+    assert.equal(filledBody.device, 'state-dev');
+    assert.equal(filledBody.agent, 'state-agent');
+    assert.equal(filledBody.battle.round, 1);
+    assert.ok(filledBody.battle.you.hp > 0);
+  });
+
+  it('GET /events 首帧就推当前局面，之后只在变化时推', async () => {
+    await fetch(`${baseUrl}/debug/start?device=stream-dev&agent=stream-agent`, { method: 'POST' });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(`${baseUrl}/events?device=stream-dev&agent=stream-agent`, {
+        signal: controller.signal,
+      });
+      assert.equal(response.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+      assert.equal(response.headers.get('access-control-allow-origin'), '*');
+      assert.ok(response.body, '状态流应有响应体');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      while (!text.includes('\n\n')) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        text += decoder.decode(chunk.value, { stream: true });
+      }
+      await reader.cancel();
+
+      assert.match(text, /^event: state\n/);
+      const dataLine = text.split('\n').find((line) => line.startsWith('data: '));
+      assert.ok(dataLine, '应有一行 data');
+      const payload = JSON.parse(dataLine.slice('data: '.length)) as {
+        type: string;
+        device: string;
+        agent: string;
+        revision: number;
+        battle: { round: number };
+      };
+      assert.equal(payload.type, 'state');
+      assert.equal(payload.device, 'stream-dev');
+      assert.equal(payload.agent, 'stream-agent');
+      assert.equal(payload.revision, 1);
+      assert.equal(payload.battle.round, 1);
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  });
 });

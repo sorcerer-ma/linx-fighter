@@ -5,15 +5,22 @@
 ```
 玩家语音
   → 灵犀设备
-  → 灵犀平台（意图识别 + 带 Function Call 的模型）
-  → MCP 客户端：POST /mcp 直接发 JSON-RPC（Streamable HTTP）
-  → 本服务 tools.ts / http/app.ts
-  → GameService → engine.ts（结算）+ enemy.ts（AI）+ pvp.ts（双人视角）+ narrator.ts（播报）
+  → 灵犀平台（唤醒 + ASR）
+  → MCP 客户端：POST /mcp 直接发 JSON-RPC（Streamable HTTP），调 game_say(text=原话)
+  → 本服务 mcp/tools.ts → GameService.say
+      → utterance.ts 分类（招式 / 战况 / 玩法 / 开局 / 认不出）
+      → 招式直接进结算；认不出时才问 JEV 意图模型
+      → engine.ts（结算）+ enemy.ts（AI）+ pvp.ts（双人视角）+ narrator.ts（播报）
   → 工具返回 text
   → 平台模型把 text 念给玩家
+
+旁路（只读，不参与判断）：
+  手机/浏览器页面 ← EventSource GET /events（SSE，局面变化即推）
+  Agent 脚本       ← GET /state（当前视角快照）
+  本地沙箱 sandbox/ 同时是这条链路的替身：页面把原话交给沙箱，沙箱只用 MCP 调 game_say。
 ```
 
-关键点：**服务端是对局的唯一事实来源**。平台侧模型只负责理解玩家意图、调用工具、朗读结果，不做数值推演；这样换模型、换提示词都不会影响对局正确性。
+关键点：**服务端是对局的唯一事实来源，也是唯一的判断者**。`game_say` 只透传原话，平台侧模型不需要理解玩法、不选招式、不做数值推演；这样换模型、换提示词都不会影响对局正确性。
 
 ## 分层职责
 
@@ -26,6 +33,7 @@
 | 策略层 | `src/game/enemy.ts` | AI 对手的决策模型，只读公开视角、不掷随机数 |
 | 联机层 | `src/game/pvp.ts` | 房间号、双人视角镜像与写回 |
 | 表现层 | `src/game/narrator.ts` | 播报文案，只依赖对局状态与事件 |
+| 分类与视图 | `src/game/utterance.ts`、`src/game/state.ts` | 原话分类（招式 / 战况 / 玩法 / 开局）与界面用的局面快照 |
 | 存储层 | `src/store/battles.ts`、`src/store/rooms.ts` | 对局与房间的读写、过期清理 |
 
 依赖方向自上而下，规则层不感知 MCP，因此可以用 `scripts/demo.ts` 脱离协议直接跑玩法。
@@ -88,15 +96,33 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 `McpServer` 内部保存每个连接的协议状态（初始化、能力协商），多连接共用一个实例会串会话。所以 `createMcpServer()` 在 `GET /mcp` 里按连接创建。
 
+### 11. 错误不外抛
+
+工具内部异常统一转成 `isError: true` + 一句玩家能听懂的提示，并记 error 日志。协议层保持 202 正常返回，避免平台侧模型拿到看不懂的协议错误后乱编结果。
+
 ### 12. JEV：意图归一化与对手决策
 
 意图模型（`src/game/intent.ts`）接在 `matchAction` 之后：规则认不出、且轮到该玩家时，才把原话和当前阶段发给 OpenRouter 的 decisions 接口（`POST /api/alpha/decisions`），把「这句话对应哪一招」表达成一个 choice 选择题，选项按阶段限定。模型返回选择与概率，置信度 ≥ 0.6 才采纳；它不产出数值、不改对局状态；超时 1.5 秒、HTTP 异常、返回越界都回退为「没听出来」，因此断网也能玩。未配 `OPENROUTER_API_KEY` 时整层不启用。
 
 对手的每次出招与应对也走 JEV（`src/game/enemy-jev.ts`）：本地先按真气与大招次数过滤出合法选项，把「当前局面 → 选哪个」做成选择题；模型只能从合法选项里选，超时 1.2 秒、HTTP 异常、选项越界都回退 `ENEMY_AI`，置信度与概率只写日志。模型只选动作，数值与胜负仍只在 engine 算。因为要等模型返回，`resolveTurn` / `advanceBattle` 是 async，但仍不改入参、返回新状态；同一 seed 不再保证复现，单测与 256,000 局对拍都注入本地 AI，不受影响。`ENEMY_AI=local` 可关闭这层。
 
-### 11. 错误不外抛
+### 13. 原话透传：MCP 只做传输，判断在服务端
 
-工具内部异常统一转成 `isError: true` + 一句玩家能听懂的提示，并记 error 日志。协议层保持 202 正常返回，避免平台侧模型拿到看不懂的协议错误后乱编结果。
+平台侧模型只拿到一个推荐入口 `game_say`：玩家说完话，它把原话一字不改地放进去。想干什么由服务端判断——先 `classifyUtterance`，招式再交给 `matchAction` 与 JEV 意图模型。
+
+这么做的原因：玩家一句话可能是出招、查战况、问玩法、开房，平台侧模型每多一个选择就多一次选错的机会；而判断依据（当前阶段、合法招式、对局状态）本来就在服务端手边。工具总数也因此稳在 5 个以内。
+
+### 14. 状态流用 SSE，不用 WebSocket
+
+手机/浏览器只需要**看**局面：回合制、每回合只有几次变化、唯一事实来源在服务端、方向是单向的服务端 → 页面。SSE 的 GET + 文本协议正好匹配这个形状，浏览器原生 `EventSource` 自带断线重连，服务端也不用手写心跳与重连状态机。WebSocket 只在未来出现「双向低延迟输入」（比如手机当手柄实时操作）时才值得引入。
+
+页面由 `/api/config` 拿到 `eventsUrl` 后直连 `GET /events?device=&agent=`（服务端开 CORS）。只有一种情况退回沙箱同源代理 `/api/events`：页面是 HTTPS 而服务端还是 HTTP，混合内容会被浏览器拦下。
+
+### 15. 沙箱是独立目录，走真实入口
+
+`sandbox/` 不复用服务端内部函数，而是像平台一样发 HTTP、调 `game_say`。好处是沙箱能骗过自己的只有 bug——它跑通的链路就是玩家会走的链路；坏处是多一层进程，所以它只做模拟与展示，不参与游戏判断。
+
+页面同源代理状态流的身份默认补 `agentId`（`deviceId#agentId` 才是对局键）；直连时页面必须自己带 `?device=` 与 `?agent=`，否则会查到 `device#default` 这局空对局。
 
 ## 扩展指引
 

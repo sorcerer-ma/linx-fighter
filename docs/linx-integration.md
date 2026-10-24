@@ -93,7 +93,7 @@ pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
 
 - 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
 - 地址填到 `/mcp` 即可。服务端同时支持两种传输：平台若走 Streamable HTTP 会直接 `POST /mcp`（实测就是这样），若走老式 SSE 会先 `GET /mcp` 再由 `endpoint` 事件下发 POST 地址，控制台不用区分。
-- 配好后控制台通常有「测试/校验」按钮，能看到 4 个工具（`game_start`、`game_action`、`game_status`、`game_help`）即说明连通。
+- 配好后控制台通常有「测试/校验」按钮，能看到 5 个工具（`game_say`、`game_start`、`game_action`、`game_status`、`game_help`）即说明连通。推荐只把 `game_say` 当主入口。
 
 ## 4. 控制台：配置智能体
 
@@ -112,11 +112,15 @@ pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
 语气干脆、带一点江湖气；每次只说一两句话，适合语音朗读。
 
 【工具】
-以下操作一律调用工具，不要凭记忆回答：
-- game_start：玩家说「开始游戏」「来一局」「重新开始」时调用；玩家说「联机」「开房间」时 mode 填 pvp；玩家报出四位房间号或说「加入房间」时，room 填那四位数字。拿不准参数就把原话放进 text，服务端会识别「开房间」「加入房间1234」；即使直接把这类原话传给 game_action，也会被当成联机操作处理。
-- game_action：active 阶段玩家说「普攻 / 攻击 / 强攻 / 大招 / 蓄力」；轮到应对时说「格挡 / 闪避 / 承受」，action 直接填招式或玩家原话。
-- game_status：玩家问「战况如何」「我还剩多少血」「第几轮」「房间号多少」时调用。
-- game_help：玩家问「怎么玩」「你能做什么」时调用。
+玩家说的每一句话都调用 game_say，text 填玩家原话，一字不改。
+
+不要在调用前自己判断这句话是出招、查战况、问玩法还是开房——那是服务端的工作。你只负责把原话递过去，再把返回的 text 念出来。
+
+只有当 game_say 返回 isError、或你明确知道它在处理某个操作上失败了，才考虑用兜底工具：
+- game_start：确知要重开一局、或用 pvp / room / opponent 指定明确参数时。
+- game_action：确知要直接指定某一招时。
+- game_status：确知要查战况、而 game_say 不可用时。
+- game_help：确知要玩法说明、而 game_say 不可用时。
 
 【双人联机】
 房主先调用 game_start 并 mode=pvp，把返回里的四位房间号念给玩家（开房阶段只报房间号，对手进来后才播「对决开始」）；另一位玩家用同一个智能体说「加入房间 1234」。房间号只在本服务实例有效，没有对手时先用 AI 打，随时可开新局。
@@ -126,7 +130,7 @@ pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
 
 【防护栏】
 血量、真气、回合数、胜负一律以工具返回为准。
-工具返回 isError 或提示没听清时，告诉玩家「这一手没生效，再说一次」，不要编造结果。
+工具返回 isError 或提示没听清时，告诉玩家「这一手没生效，再说一次」，不要编造结果，也不要自己替玩家补一招。
 ```
 
 ## 常见问题

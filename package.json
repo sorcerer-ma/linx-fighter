@@ -18,7 +18,12 @@
     "demo": "tsx scripts/demo.ts",
     "smoke": "tsx scripts/smoke.ts",
     "coverage:lcov": "node -e \"require('node:fs').mkdirSync('coverage',{recursive:true})\" && node --import tsx --test --experimental-test-coverage --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/index.ts' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test/*.test.ts",
-    "validate": "tsx scripts/validate-v02.ts"
+    "validate": "tsx scripts/validate-v02.ts",
+    "sandbox": "tsx sandbox/server.ts",
+    "sandbox:say": "tsx sandbox/cli.ts say",
+    "sandbox:state": "tsx sandbox/cli.ts state",
+    "sandbox:tools": "tsx sandbox/cli.ts tools",
+    "sandbox:selfplay": "tsx sandbox/selfplay.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

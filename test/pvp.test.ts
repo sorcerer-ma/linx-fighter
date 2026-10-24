@@ -81,6 +81,8 @@ describe('双人联机', () => {
     assert.equal(joined.battle?.history.length, 0);
     assert.equal(joined.battle?.player.hp, 18);
     assert.equal(joined.battle?.enemy.hp, 14);
+    // 换视角后对手没有名字，播报里不能出现「你的对手是对手」
+    assert.doesNotMatch(joined.text, /你的对手是对手/);
   });
 
   it('房主出招、对手应对，双方共享同一份结算', async () => {
@@ -104,6 +106,27 @@ describe('双人联机', () => {
     assert.equal(hostStatus.battle?.enemy.hp, 17);
     assert.match(hostStatus.text, /第1轮/);
     assert.match(hostStatus.text, /等对手出招/);
+  });
+
+  it('对手赢下这一局时，双方各自看到自己赢或输', async () => {
+    const { service, store } = setup();
+    await service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    await service.start(GUEST, { room: code });
+
+    // 直接摆一个「基准视角的 player 已倒下」的终局，省去把整局打满
+    const key = `pvp:${code}`;
+    const canonical = store.get(key);
+    assert.ok(canonical);
+    store.set(key, { ...canonical, phase: 'defeat', player: { ...canonical.player, hp: 0 } });
+
+    const hostStatus = service.status(HOST);
+    assert.equal(hostStatus.battle?.phase, 'defeat');
+    assert.match(hostStatus.text, /你输了/);
+
+    const guestStatus = service.status(GUEST);
+    assert.equal(guestStatus.battle?.phase, 'victory');
+    assert.match(guestStatus.text, /你赢了/);
   });
 
   it('房主没等到人时出招只提示等对手', async () => {

@@ -1,6 +1,6 @@
 /**
  * 冒烟脚本：对着已在运行的 MCP 服务跑一遍真实调用链（initialize → tools/call）。
- * 覆盖单人整回合、四人房与双人联机（房主开局 → 对手加入 → 各出一手）。
+ * 覆盖原话透传（game_say）、单人整回合与双人联机（房主开局 → 对手加入 → 各出一手）。
  * 用法：node --import tsx scripts/smoke.ts http://127.0.0.1:8787
  */
 import { McpTestClient } from '../test/helpers/mcp-client.js';
@@ -13,6 +13,12 @@ const host = {
 };
 const guest = {
   'X-Linx-Device-Id': 'smoke-device-b',
+  'X-Linx-Agent-Id': 'smoke-agent',
+  'X-Linx-Session-Id': 'smoke-session',
+};
+// 原话透传用独立身份，免得和后面的单人/双人对局串在同一局里
+const talker = {
+  'X-Linx-Device-Id': 'smoke-device-say',
   'X-Linx-Agent-Id': 'smoke-agent',
   'X-Linx-Session-Id': 'smoke-session',
 };
@@ -41,6 +47,12 @@ async function call(
   console.log(`\n--- ${name} ---\n${text}`);
   return text;
 }
+
+// 统一入口：玩家原话原样交给 game_say，由服务端判断玩法 / 开局 / 招式与误识别 / 战况
+await call('game_say', { text: '怎么玩' }, talker);
+await call('game_say', { text: '开始' }, talker);
+await call('game_say', { text: '公鸡' }, talker);
+await call('game_say', { text: '战况如何' }, talker);
 
 // 单人：开局 → 主动出招（对手先手时先应对）→ 应对 → 战况 → 说明
 const opened = await call('game_start');

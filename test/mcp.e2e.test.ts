@@ -99,13 +99,13 @@ function textOf(result: any): string {
 }
 
 describe('MCP 协议链路', () => {
-  it('tools/list 暴露四个游戏工具', async () => {
+  it('tools/list 暴露五个游戏工具', async () => {
     const client = await connect(DEVICE_A, 'list-session');
     const response = await client.request('tools/list');
     assert.equal(response.error, undefined);
 
     const names = (response.result?.tools ?? []).map((tool: { name: string }) => tool.name).sort();
-    assert.deepEqual(names, ['game_action', 'game_help', 'game_start', 'game_status']);
+    assert.deepEqual(names, ['game_action', 'game_help', 'game_say', 'game_start', 'game_status']);
 
     for (const tool of response.result.tools) {
       assert.ok(tool.description.length > 0, `${tool.name} 应有描述，平台模型靠它决定何时调用`);
@@ -215,4 +215,44 @@ describe('MCP 协议链路', () => {
     const actionBody = (await action.json()) as { ok: boolean; text: string };
     assert.match(actionBody.text, /普攻/);
   });
+
+  it('game_say 一个工具走完开局、出招、战况与玩法', async () => {
+    const client = await connect('device-say', 'say-routing');
+
+    const start = await callTool(client, 'game_say', { text: '开始游戏' });
+    assert.match(textOf(start), /对决开始/);
+
+    // 「公鸡」是 ASR 对「攻击」的常见误识别，透传原话后服务端仍要能出招
+    const hit = await callTool(client, 'game_say', { text: '公鸡' });
+    assert.match(textOf(hit), /普攻/);
+
+    const status = await callTool(client, 'game_say', { text: '战况如何' });
+    assert.match(textOf(status), /第1轮/);
+    assert.match(textOf(status), /气血/);
+
+    const help = await callTool(client, 'game_say', { text: '怎么玩' });
+    assert.match(textOf(help), /普攻/);
+
+    const miss = await callTool(client, 'game_say', { text: '今天天气不错' });
+    assert.match(textOf(miss), /没听清/);
+  });
+
+  it('game_say 开房间与加入房间走通双人联机', async () => {
+    const host = await connect('device-say-host', 'say-pvp-host');
+    const opened = await callTool(host, 'game_say', { text: '开房间' });
+    const room = /房间(\d{4})/.exec(textOf(opened))?.[1];
+    assert.ok(room, `应播报四位房间号：${textOf(opened)}`);
+
+    const guest = await connect('device-say-guest', 'say-pvp-guest');
+    const joined = await callTool(guest, 'game_say', { text: `加入房间${room}` });
+    assert.match(textOf(joined), /房间/);
+
+    // 两边看到的是同一局的镜像视角：加入者先手
+    const guestStatus = await callTool(guest, 'game_say', { text: '战况如何' });
+    assert.match(textOf(guestStatus), /第1轮/);
+
+    const hostStatus = await callTool(host, 'game_say', { text: '战况如何' });
+    assert.match(textOf(hostStatus), /第1轮/);
+  });
 });
+

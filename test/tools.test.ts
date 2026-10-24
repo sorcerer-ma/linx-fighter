@@ -27,20 +27,20 @@ function registerWith(service: GameService): Map<string, ToolHandler> {
 }
 
 describe('工具层', () => {
-  it('注册四个游戏工具', () => {
+  it('注册五个游戏工具', () => {
     const handlers = registerWith({} as GameService);
-    assert.deepEqual([...handlers.keys()].sort(), ['game_action', 'game_help', 'game_start', 'game_status']);
+    assert.deepEqual([...handlers.keys()].sort(), ['game_action', 'game_help', 'game_say', 'game_start', 'game_status']);
   });
 
   it('业务异常转成可朗读的失败播报，不抛给协议层', async () => {
     const boom = (): never => {
       throw new Error('底层服务炸了');
     };
-    const service = { start: boom, act: boom, status: boom, help: boom } as unknown as GameService;
+    const service = { start: boom, act: boom, status: boom, help: boom, say: boom } as unknown as GameService;
     const handlers = registerWith(service);
 
-    for (const name of ['game_start', 'game_action', 'game_status', 'game_help']) {
-      const result = await handlers.get(name)!({ action: '攻击', opponent: '木人' });
+    for (const name of ['game_start', 'game_action', 'game_status', 'game_help', 'game_say']) {
+      const result = await handlers.get(name)!({ action: '攻击', opponent: '木人', text: '攻击' });
       assert.equal(result.isError, true, `${name} 应标记为失败`);
       assert.match(result.content[0]!.text, /服务出了点问题/);
     }

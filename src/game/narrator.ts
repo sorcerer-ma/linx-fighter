@@ -35,7 +35,9 @@ export function fighterLine(battle: Battle): string {
 /** 开局播报：对手、先手、初始气血，一句话说清 */
 export function narrateBattleStart(battle: Battle): string {
   const first = battle.firstMover === 'player' ? '你先手' : '对手先手';
-  return `对决开始，你的对手是${battle.enemy.name}，${first}，你${battle.player.hp}点气血，他${battle.enemy.hp}点气血。`;
+  // 联机换视角后对手没有名字，统一叫「对手」，别再念成「你的对手是对手」
+  const opponent = battle.enemy.name === '对手' ? '' : `你的对手是${battle.enemy.name}，`;
+  return `对决开始，${opponent}${first}，你${battle.player.hp}点气血，他${battle.enemy.hp}点气血。`;
 }
 
 /** 没有对局、临时开局的提示，会拼在回合播报前面 */

@@ -265,3 +265,79 @@ describe('意图模型兜底', () => {
     assert.equal(store.get(KEY), undefined);
   });
 });
+
+describe('统一入口与局面快照', () => {
+  const KEY_B = 'device-b#agent-1';
+
+  it('战况问句只播当前局面，不推进回合', async () => {
+    const { service } = setup();
+    await service.start(KEY);
+
+    const result = await service.say(KEY, '战况如何');
+    assert.equal(result.battle?.round, 1);
+    assert.equal(result.battle?.history.length, 0);
+    assert.match(result.text, /第1轮/);
+  });
+
+  it('玩法问句不需要对局', async () => {
+    const { service } = setup();
+    const result = await service.say(KEY, '怎么玩');
+    assert.equal(result.battle, null);
+    assert.match(result.text, /普攻/);
+  });
+
+  it('开局句真的开局，开房句真的开房', async () => {
+    const { service, rooms } = setup();
+
+    const solo = await service.say(KEY, '来一局');
+    assert.equal(solo.battle?.mode, 'solo');
+    assert.match(solo.text, /对决开始/);
+
+    const pvp = await service.say(KEY, '开房间');
+    const code = /房间(\d{4})/.exec(pvp.text)?.[1];
+    assert.ok(code, `应播报四位房间号：${pvp.text}`);
+    assert.equal(rooms.byPlayer(KEY)?.code, code);
+  });
+
+  it('招式照常结算，认不出的句子不推进', async () => {
+    const { service } = setup();
+    await service.start(KEY);
+
+    // 「公鸡」是 ASR 对「攻击」的常见误识别，必须仍能出招
+    const hit = await service.say(KEY, '公鸡');
+    assert.equal(hit.battle?.history.length, 1);
+    assert.match(hit.text, /普攻/);
+
+    const miss = await service.say(KEY, '今天天气不错');
+    assert.equal(miss.battle?.history.length, 1);
+    assert.match(miss.text, /没听清/);
+  });
+
+  it('双人房里两位玩家的快照互为镜像', async () => {
+    const { service } = setup();
+    const opened = await service.say(KEY, '开房间');
+    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
+    // 对手还没进来：房主快照要告诉界面「等对手」，而不是「轮到你出招」
+    assert.equal(service.snapshot(KEY)?.state.waiting, true);
+
+    await service.say(KEY_B, `加入房间${code}`);
+
+    const host = service.snapshot(KEY);
+    assert.equal(host?.state.waiting, false, '对手进来后不再等待');
+    const guest = service.snapshot(KEY_B);
+    assert.equal(host?.room, code);
+    assert.equal(guest?.room, code);
+    assert.equal(host?.state.side, 'player');
+    assert.equal(guest?.state.side, 'enemy');
+    assert.equal(host?.state.you.hp, guest?.state.opponent.hp);
+    assert.equal(host?.state.opponent.hp, guest?.state.you.hp);
+    assert.equal(host?.state.firstMover === 'player', guest?.state.firstMover === 'enemy');
+    // 取快照不改动对局
+    assert.equal(host?.state.round, service.snapshot(KEY)?.state.round);
+  });
+
+  it('不在任何对局里时快照为 null', () => {
+    const { service } = setup();
+    assert.equal(service.snapshot(KEY), null);
+  });
+});
