@@ -110,9 +110,12 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
 | `choices` | string[] | `move` / `respond` | 现在真正做得到的招式中文名，服务端已按阶段、能量、大招次数过滤 |
 | `events` | object[] | 有变化 | 本次发生了什么，按时间顺序 |
 | `text` | string | 少数 | 需要照说的原文（玩法说明、规则外问答） |
+| `say` | string | 部分 `ok: false` | 服务端写好的确定性短句（结果未知、服务异常时给），照它的意思说，不要改事实 |
 | `reason` | enum | `ok: false` | 为什么没生效 |
 
 `you` / `foe` 都是**结算后的最新值**，不是增量。`choices` 由服务端算好，智能体不需要懂能量规则，也不会引导玩家说一个做不到的招。
+
+`failed` 与 `unknown` 的切分点是「状态有没有可能已经改了」：异常发生在写状态之前给 `failed`，写完之后才出错给 `unknown`。后者必须带最新局面和 `say`，因为网络或服务异常时先核实局面、不把重复攻击当通用恢复方式是产品要求（[语音与信息反馈](../product/voice-and-feedback.md)、[玩家旅程](../product/player-journey.md)）。
 
 ### 6.2 `phase` × `need`
 
@@ -169,7 +172,8 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
 | `room_missing` | 房间号不存在或已过期 | 确认四位房间号 |
 | `room_full` | 房间满员 | 自己开一局或换号 |
 | `room_bad` | 房间号不是四位数字 | 房间号要四位数字 |
-| `error` | 服务异常 | 这一手没生效，请再说一次 |
+| `failed` | 确定没生效：入参非法、动状态之前就失败 | 这一手没打出去，直接说招式 |
+| `unknown` | 执行中途出错，可能已经生效 | 先报当前局面，让玩家自己决定；不要让他重说同一个招 |
 
 ### 6.5 示例
 
@@ -215,6 +219,16 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
  "choices":["普攻","强攻","蓄力"],"events":[]}
 ```
 
+服务异常，结果未知（带局面与兜底句）：
+
+```json
+{"v":2,"ok":false,"reason":"unknown","phase":"battle","mode":"solo","round":2,"need":"move",
+ "you":{"hp":13,"maxHp":14,"ap":2,"maxAp":5,"ult":1},
+ "foe":{"name":"守擂教头","hp":15,"maxHp":18,"ap":2,"ult":1},
+ "choices":["普攻","强攻","蓄力"],"events":[],
+ "say":"这一手不确定成没成，我先报现在的局面。"}
+```
+
 不说话：
 
 ```json
@@ -237,7 +251,7 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
 
 【调用规则】
 - 玩家一开口就调 game_say(text=原话)。哪怕他只说「嗯」「等一下」，也原样传。
-- 返回的 need 是 wait_guest 或 wait_foe，且这一轮还没调过 wait_event：立刻调 wait_event，没有参数。
+- 返回的 need 是 wait_guest 或 wait_foe，且这一轮还没调过 wait_event：把这一句说完，再调 wait_event，没有参数。
 - 其他 need 一律不再调工具，直接开口。
 - 一轮最多调一次 wait_event。
 - speaker 由平台填，你不要填。
@@ -245,6 +259,7 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
 【怎么读返回】
 - silent 为 true：只输出一个零宽空格（U+200B），什么也别说，不要解释。
 - 有 text：照着 text 的意思说。事实、规则、房间号、数字一律不许改，最多加一句自己的语气。
+- 有 say：照它的意思说，不要自己判断这一手成没成，也不要加未结算的伤害或剩余生命值。
 - 其余：只依据 events、need、you、foe、pending、choices 说话。
 
 【说话】
@@ -254,7 +269,7 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
 phase：idle 没开局 / room 房间等人 / battle 打着 / victory 我赢 / defeat 我输。
 need：
   move       该玩家出招：问他要打哪一招，可以提 choices 里的
-  respond    对手打过来了：pending 是它的招式和伤害，让他选 choices
+  respond    对手打过来了：pending 是它的招式和基准伤害，让他选 choices
   wait_guest 等人进房间：说房间号，然后调 wait_event
   wait_foe   等对手出招：pending.by 是我，就说我这招已经压上去；说一声等着，然后调 wait_event
   none       没别的事了
@@ -287,7 +302,8 @@ ended        这一局完了：报结果，再邀请他开新局
 room_missing 房间不存在：让他确认四位房间号
 room_full    房间满了：让他自己开一局或换个号
 room_bad     房间号不对：房间号要四位数字
-error        服务抖了：说这一手没生效，请再说一次
+failed       确定没生效：说这一手没打出去，让他直接说招式
+unknown      不确定成没成：先报现在的局面，别让他重说同一个招
 
 【你的说话方式】
 {{这里随便写：傲、损、热血、冷淡都行。写你怎么称呼玩家、爱用哪些说法、赢输时怎么反应。这一段是唯一影响风格的地方。}}
@@ -299,8 +315,8 @@ error        服务抖了：说这一手没生效，请再说一次
 玩家「强攻」，events 里有 {"t":"hit","by":"you","mv":"heavy","r":"guard","dmg":3}，foe.hp 是 12：
 → 强攻砸上去，他架住了，还是掉了 3 点，对手剩 12。要不要补一脚？
 
-玩家「打他」，need 是 respond，pending 是 {"by":"foe","mv":"ult","dmg":11}，you.hp 是 13：
-→ 他大招压上来了，11 点，硬吃我就剩 2 点。格挡、闪避，还是硬接？
+玩家「打他」，need 是 respond，pending 是 {"by":"foe","mv":"ult","dmg":11}：
+→ 他大招压上来了，就等你这一手。格挡、闪避，还是硬接？
 
 不要说这种话：「第 3 轮，我 14 点生命值、2 点能量，对手 7 点生命值。」——这是播报，不是同伴。
 ```
@@ -317,7 +333,8 @@ error        服务抖了：说这一手没生效，请再说一次
 | 阶段提示 | 写死在播报里 | `phase` + `need` |
 | 拒绝原因 | 中文文案分支 | `reason` 枚举 |
 | 补账 | 服务端加「刚才那一手。」 | 事件按序返回，智能体自己衔接 |
-| 回灌识别 | 播报句式正则（`crosstalk.ts`） | **失效**，需换判定方式，见第 10 节 |
+| 异常与不确定 | 一律「没生效，请再说一次」 | `failed` / `unknown` 分开，`unknown` 先报局面 |
+| 回灌识别 | 播报句式正则（`crosstalk.ts`） | 覆盖变窄：句式自由后旧词表只命中一部分，需补时间窗，见第 10 节 |
 
 ## 9. 落地清单
 
@@ -327,7 +344,8 @@ error        服务抖了：说这一手没生效，请再说一次
 | 返回结构 | `src/game/service.ts`：`ServiceResult` 从 `{text, battle}` 改为 `{reply}` 事实对象 |
 | 事件到 JSON | 复用 `BattleEvent`，补 `room` / `join` / `timeout` / `chant` |
 | 状态字段 | 复用 `src/game/state.ts` 的 `BattleState`，字段名对齐本文 |
-| 播报层 | `src/game/narrator.ts` 收缩到只剩 `text` 类文案（玩法说明、规则外问答、服务异常） |
+| 播报层 | `src/game/narrator.ts` 只保留 `text` 与 `say` 两类文案（玩法说明、规则外问答、异常兜底），战斗台词全部交给智能体 |
+| 异常边界 | `src/game/service.ts`：写状态之前抛错给 `failed`，写回之后抛错给 `unknown` 并重新读出局面 |
 | 测试 | `test/tools.test.ts` 的工具清单断言、`mcp.e2e.test.ts` 的出参断言 |
 
 过渡：服务端可保留一个 `MCP_PROTOCOL=text|json` 开关，但**开关与平台提示词必须成对切换**——v2 提示词配 v1 文本会被当成台词复读，v1 提示词配 v2 JSON 会把 JSON 念出来。建议一次只切一台设备，验完再全量。
@@ -336,9 +354,10 @@ error        服务抖了：说这一手没生效，请再说一次
 
 | 项 | 现状 | 影响 |
 | --- | --- | --- |
-| 回灌识别 | v1 靠播报句式正则；演绎后句式自由，规则不再命中 | **演示前必须处理**：改为「最近一次返回的时刻 + 与原话的相似度」在服务端判定，N 秒内近似则回 `silent` |
+| 回灌识别 | v1 靠 `crosstalk.ts` 的播报句式正则；演绎后句式自由，同一张表只能命中一部分 | 第一道防线在平台：设备自己的 TTS 没有注册声纹，「只回应已添加说话人」应能挡掉（推断，见[平台语音能力](platform-voice-capabilities.md)，需真机验）。服务端只做降级网：时间窗 + 招式名/数字集合，宁可漏判也不吞真指令；服务端看不到最终播报文本，别指望「相似度」 |
+| 挂起前后的播报顺序 | 未验证：平台会不会在工具返回前把上一句播出去 | 不播则房间号、「等我一下」会迟到 30 秒；真机验，必要时改成先挂起、返回后再补说 |
 | `speaker` 是否真被平台自动填入 | 官方文档写「平台不会填入工具入参」，实测经验相反（见[平台语音能力](platform-voice-capabilities.md)） | 填不进来则说话人门禁失效，只能挡不住串音；需真机日志确认 |
-| 模型是否稳定照做 | 未验证 | 风险：念 JSON、编数字、漏说暴击。保底是 `text` 字段与日志回放，先以 10 局真机对比 v1 观感 |
+| 模型是否稳定照做 | 未验证 | 风险：念 JSON、编数字、漏说暴击。保底是 `text` / `say` 字段与日志回放，先以 10 局真机对比 v1 观感 |
 | `structuredContent` 是否传给模型 | 未确认 | v2 不依赖它，结论不受影响 |
-| 提示词长度上限 | 未知 | 第 7 节提示词约 2.1k 字（4.3KB，约 2.5k token），超限需先砍字段表后砍示例 |
+| 提示词长度上限 | 未知 | 第 7 节提示词约 2.2k 字（4.5KB），超限需先砍字段表后砍示例 |
 | 端到端延迟 | 未实测 | 多一次模型生成（约 0.5~2 秒），`wait_event` 唤醒后尤其明显，演示前实测体感 |
