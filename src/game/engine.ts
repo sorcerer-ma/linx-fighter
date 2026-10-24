@@ -198,6 +198,7 @@ function actionView(draft: Draft) {
     bonus: roundDamageBonus(battle.round),
     self: fighterView(battle.enemy),
     enemy: fighterView(battle.player),
+    history: [...battle.history],
   };
 }
 
@@ -215,6 +216,7 @@ function responseView(draft: Draft, defenderSide: Side): ResponseView {
     damage: pending.damage,
     critChance: spec.critChance,
     dodgeChance: spec.dodgeChance,
+    history: [...battle.history],
   };
 }
 

@@ -15,12 +15,14 @@ import type { Logger } from '../log.js';
 import { ENEMY_AI } from './enemy.js';
 import { ATTACKS, CRIT_BONUS, RESPONSES, RULES } from './rules.js';
 import type {
+  ActionId,
   ActionView,
   ActiveActionId,
   AttackMove,
   BattleAI,
   ResponseMove,
   ResponseView,
+  TurnRecord,
 } from './types.js';
 
 /** OpenRouter 上的 JEV 决策模型 */
@@ -33,6 +35,20 @@ const MOVE_LABELS: Record<AttackMove, string> = {
   heavy: '强攻',
   ult: '大招',
 };
+
+/** 七种招式的短名，战报里给模型看 */
+const ACTION_LABELS: Record<ActionId, string> = {
+  light: '普攻',
+  heavy: '强攻',
+  ult: '大招',
+  charge: '蓄力',
+  guard: '格挡',
+  dodge: '闪避',
+  take: '硬扛',
+};
+
+/** 最近几条战报放进题干；太多会稀释关键信息 */
+const HISTORY_LIMIT = 6;
 
 export interface JevEnemyOptions {
   apiKey: string;
@@ -81,7 +97,53 @@ export function legalResponses(view: ResponseView): ResponseMove[] {
   return responses;
 }
 
-/** 主动阶段的题干：把双方数值与局面写进 state，选项只列合法招式 */
+/** 一条战报的口语化描述：谁出的手、对方怎么接、结果如何 */
+export function describeHistory(record: TurnRecord): string {
+  const actor = record.actor === 'enemy' ? '你' : '玩家';
+  const action = ACTION_LABELS[record.action];
+  if (!record.response) return `第${record.round}轮 ${actor}${action}`;
+  const defender = record.actor === 'enemy' ? '玩家' : '你';
+  if (record.dodged) return `第${record.round}轮 ${actor}${action}，${defender}闪开`;
+  const crit = record.crit ? '暴击' : '';
+  const damage = record.damage ?? 0;
+  return `第${record.round}轮 ${actor}${action}，${defender}${ACTION_LABELS[record.response]}，${crit}掉${damage}`;
+}
+
+/** 玩家出招与应对的计数，让模型直接看到习惯 */
+export function historySummary(history: readonly TurnRecord[]): string {
+  const active = new Map<string, number>();
+  const responses = new Map<string, number>();
+  for (const record of history) {
+    if (record.actor === 'player') {
+      active.set(record.action, (active.get(record.action) ?? 0) + 1);
+    } else if (record.response) {
+      responses.set(record.response, (responses.get(record.response) ?? 0) + 1);
+    }
+  }
+  const activeText = (['light', 'heavy', 'ult', 'charge'] as const)
+    .filter((id) => (active.get(id) ?? 0) > 0)
+    .map((id) => `${ACTION_LABELS[id]}${active.get(id)}`)
+    .join('、');
+  const responseText = (['guard', 'dodge', 'take'] as const)
+    .filter((id) => (responses.get(id) ?? 0) > 0)
+    .map((id) => `${ACTION_LABELS[id]}${responses.get(id)}`)
+    .join('、');
+  const parts: string[] = [];
+  if (activeText) parts.push(`主动 ${activeText}`);
+  if (responseText) parts.push(`应对 ${responseText}`);
+  return parts.length > 0 ? `玩家习惯：${parts.join('；')}。` : '';
+}
+
+/** 最近战报与习惯统计，拼成题干的补充行 */
+function historyLines(history: readonly TurnRecord[]): string[] {
+  if (history.length === 0) return [];
+  const lines = [`最近战报：${history.slice(-HISTORY_LIMIT).map(describeHistory).join('；')}。`];
+  const summary = historySummary(history);
+  if (summary) lines.push(summary);
+  return lines;
+}
+
+/** 主动阶段的题干：把双方数值、最近战报与习惯写进 state，选项只列合法招式 */
 export function activeQuestion(view: ActionView): { state: string; question: ChoiceQuestion } {
   const { bonus, round, self, enemy } = view;
   const criteria: Record<string, string> = {
@@ -96,9 +158,11 @@ export function activeQuestion(view: ActionView): { state: string; question: Cho
       `第 ${round} 轮，当前伤害加成 +${bonus}。`,
       `你（守擂方）：气血 ${self.hp}，真气 ${self.ap}，大招剩 ${self.ultLeft} 次。`,
       `玩家：气血 ${enemy.hp}，真气 ${enemy.ap}。`,
+      ...historyLines(view.history),
     ].join(' '),
     question: {
-      instructions: '你是守擂教头，正在和玩家对战。只从给出的选项里选一招，目标是最大化胜率。',
+      instructions:
+        '你是守擂教头，正在和玩家对战。结合双方数值、最近战报与玩家习惯，预判玩家下一步，只从给出的选项里选一招，目标是最大化胜率。',
       criteria,
     },
   };
@@ -119,9 +183,11 @@ export function responseQuestion(view: ResponseView): { state: string; question:
       `你（守擂方）：气血 ${self.hp}，真气 ${self.ap}。`,
       `玩家：气血 ${attacker.hp}，真气 ${attacker.ap}。`,
       `玩家刚锁定${MOVE_LABELS[move]}，基础伤害 ${damage}；暴击率 ${Math.round(critChance * 100)}%（再多 ${CRIT_BONUS} 点），你的闪避成功率 ${Math.round(dodgeChance * 100)}%。`,
+      ...historyLines(view.history),
     ].join(' '),
     question: {
-      instructions: '你是守擂教头，正在和玩家对战。只从给出的应对里选一个，先保证别被打死，再考虑省真气。',
+      instructions:
+        '你是守擂教头，正在和玩家对战。结合双方数值、最近战报与玩家习惯，只从给出的应对里选一个，先保证别被打死，再考虑省真气。',
       criteria,
     },
   };

@@ -39,6 +39,7 @@ function activeView(
     bonus: roundDamageBonus(round),
     self: { hp: 18, ap: 3, ultLeft: 1, ...parts.self },
     enemy: { hp: 18, ap: 3, ultLeft: 1, ...parts.enemy },
+    history: [],
   };
 }
 
@@ -63,6 +64,7 @@ function responseView(
     damage: parts.damage ?? spec.damage + roundDamageBonus(round),
     critChance: spec.critChance,
     dodgeChance: spec.dodgeChance,
+    history: [],
   };
 }
 
@@ -260,6 +262,7 @@ function playerActionView(battle: Battle): ActionView {
     bonus: roundDamageBonus(battle.round),
     self: fighterView(battle.player),
     enemy: fighterView(battle.enemy),
+    history: [...battle.history],
   };
 }
 
@@ -276,6 +279,7 @@ function playerResponseView(battle: Battle): ResponseView {
     damage: pending.damage,
     critChance: spec.critChance,
     dodgeChance: spec.dodgeChance,
+    history: [],
   };
 }
 

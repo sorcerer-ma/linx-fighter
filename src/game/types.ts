@@ -100,6 +100,8 @@ export interface ActionView {
   bonus: number;
   self: FighterView;
   enemy: FighterView;
+  /** 已结算的公开战报（旧→新），供决策模型判断玩家习惯；本地 AI 可忽略 */
+  history: TurnRecord[];
 }
 
 /** 对手 AI 决定如何应对攻击时能看到的信息 */
@@ -113,6 +115,8 @@ export interface ResponseView {
   damage: number;
   critChance: number;
   dodgeChance: number;
+  /** 已结算的公开战报（旧→新），供决策模型判断玩家习惯；本地 AI 可忽略 */
+  history: TurnRecord[];
 }
 
 /** 本地对手 AI：纯函数，同一局面必然同一选择，便于单测与仿真复现 */

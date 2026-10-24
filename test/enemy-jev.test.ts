@@ -4,24 +4,35 @@ import { ENEMY_AI } from '../src/game/enemy.js';
 import {
   activeQuestion,
   createJevEnemyAI,
+  describeHistory,
+  historySummary,
   legalActiveActions,
   legalResponses,
   parseEnemyDecision,
   responseQuestion,
 } from '../src/game/enemy-jev.js';
-import type { ActionView, BattleAI, ResponseView } from '../src/game/types.js';
+import type { ActionView, BattleAI, ResponseView, TurnRecord } from '../src/game/types.js';
 
 const logger = { info: () => {}, warn: () => {}, debug: () => {} };
 
 /** 主动阶段视角：默认对手（enemy 侧）满血、3 真气、1 次大招；玩家 14 血 */
 function actionViewFixture(
-  overrides: Partial<{ round: number; bonus: number; hp: number; ap: number; ultLeft: number; enemyHp: number }> = {},
+  overrides: Partial<{
+    round: number;
+    bonus: number;
+    hp: number;
+    ap: number;
+    ultLeft: number;
+    enemyHp: number;
+    history: TurnRecord[];
+  }> = {},
 ): ActionView {
   return {
     round: overrides.round ?? 1,
     bonus: overrides.bonus ?? 0,
     self: { hp: overrides.hp ?? 18, ap: overrides.ap ?? 3, ultLeft: overrides.ultLeft ?? 1 },
     enemy: { hp: overrides.enemyHp ?? 14, ap: 3, ultLeft: 1 },
+    history: overrides.history ?? [],
   };
 }
 
@@ -36,6 +47,7 @@ function responseViewFixture(
     damage: number;
     critChance: number;
     dodgeChance: number;
+    history: TurnRecord[];
   }> = {},
 ): ResponseView {
   return {
@@ -47,6 +59,7 @@ function responseViewFixture(
     damage: overrides.damage ?? 3,
     critChance: overrides.critChance ?? 0.2,
     dodgeChance: overrides.dodgeChance ?? 0.5,
+    history: overrides.history ?? [],
   };
 }
 
@@ -117,6 +130,76 @@ describe('JEV 对手 AI：合法选项与题干', () => {
       fetchImpl: (async () => decision('heavy', 0.3)) as typeof fetch,
     });
     assert.equal(await ai.chooseAction(actionViewFixture({ ap: 3 })), 'heavy');
+  });
+});
+
+describe('JEV 对手 AI：战报与习惯输入', () => {
+  const history: TurnRecord[] = [
+    { round: 1, actor: 'player', action: 'light', response: 'guard', damage: 1, guarded: true, createdAt: 100 },
+    { round: 1, actor: 'enemy', action: 'heavy', response: 'take', damage: 5, createdAt: 200 },
+    { round: 2, actor: 'player', action: 'charge', createdAt: 300 },
+  ];
+
+  it('战报转成带结果的短句', () => {
+    assert.equal(describeHistory(history[0]!), '第1轮 玩家普攻，你格挡，掉1');
+    assert.equal(
+      describeHistory({ round: 2, actor: 'player', action: 'heavy', response: 'dodge', dodged: true, createdAt: 0 }),
+      '第2轮 玩家强攻，你闪开',
+    );
+    assert.equal(
+      describeHistory({ round: 3, actor: 'enemy', action: 'ult', response: 'take', damage: 11, crit: true, createdAt: 0 }),
+      '第3轮 你大招，玩家硬扛，暴击掉11',
+    );
+    assert.equal(describeHistory({ round: 4, actor: 'enemy', action: 'charge', createdAt: 0 }), '第4轮 你蓄力');
+  });
+
+  it('习惯统计只看玩家出招与玩家应对', () => {
+    assert.equal(historySummary(history), '玩家习惯：主动 普攻1、蓄力1；应对 硬扛1。');
+    assert.equal(historySummary([]), '');
+  });
+
+  it('题干带上最近战报与习惯，空历史不提', () => {
+    const { state } = activeQuestion(actionViewFixture({ history }));
+    assert.match(state, /最近战报：第1轮 玩家普攻，你格挡，掉1；/);
+    assert.match(state, /玩家习惯：主动 普攻1、蓄力1；应对 硬扛1。/);
+
+    const empty = activeQuestion(actionViewFixture()).state;
+    assert.doesNotMatch(empty, /最近战报/);
+    assert.doesNotMatch(empty, /玩家习惯/);
+
+    const responseState = responseQuestion(responseViewFixture({ history })).state;
+    assert.match(responseState, /最近战报/);
+  });
+
+  it('请求体里带上战报与习惯', async () => {
+    let capturedBody = '';
+    const ai = createJevEnemyAI({
+      apiKey: 'sk-test',
+      logger,
+      fetchImpl: (async (_url: string | URL | Request, init?: RequestInit) => {
+        capturedBody = String(init?.body);
+        return decision('heavy', 0.8);
+      }) as typeof fetch,
+    });
+    await ai.chooseAction(actionViewFixture({ ap: 3, history }));
+    const body = JSON.parse(capturedBody);
+    assert.match(body.state.situation, /最近战报/);
+    assert.match(body.state.situation, /玩家习惯：主动 普攻1、蓄力1/);
+  });
+
+  it('最近战报最多带 6 条，旧战报仍计入习惯', () => {
+    const many: TurnRecord[] = Array.from({ length: 10 }, (_, i) => ({
+      round: Math.floor(i / 2) + 1,
+      actor: 'player' as const,
+      action: 'light' as const,
+      response: 'guard' as const,
+      damage: 1,
+      createdAt: i,
+    }));
+    const { state } = activeQuestion(actionViewFixture({ history: many }));
+    const recent = state.match(/最近战报：([^。]*)。/)?.[1]?.split('；') ?? [];
+    assert.equal(recent.length, 6);
+    assert.match(historySummary(many), /普攻10/);
   });
 });
 
