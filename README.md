@@ -158,7 +158,7 @@ flowchart LR
 
 [![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
 
-`node:test` + 内置覆盖率，不引入额外测试框架。当前 **176 个用例**，行覆盖 **98.9%**、分支覆盖 **93.9%**、函数覆盖 **99.1%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
+`node:test` + 内置覆盖率，不引入额外测试框架。当前 **178 个用例**，行覆盖 **98.9%**、分支覆盖 **93.9%**、函数覆盖 **99.1%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
