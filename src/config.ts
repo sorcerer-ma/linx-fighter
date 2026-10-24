@@ -3,7 +3,12 @@
  * 这里只做取值解析与兜底，不包含业务判断。
  */
 
+import type { ChatReasoning } from './game/commandcode.js';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/** 座位归属策略：off 保持原行为；strict 时双人房按座位口令过滤原话 */
+export type AttributionMode = 'off' | 'strict';
 
 export interface AppConfig {
   /** HTTP 监听端口，默认 8000 */
@@ -17,12 +22,18 @@ export interface AppConfig {
   enableDebugEndpoints: boolean;
   /** Command Code API Key；为空时不启用命令路由与规则外问答，只用规则匹配 */
   commandCodeApiKey?: string;
-  /** Command Code Provider 根地址；换代理或自建网关时覆盖 */
+  /** Provider 根地址；换代理、自建网关或换厂商时覆盖 */
   commandCodeBaseUrl?: string;
+  /** 决策模型路径，默认 /systemone；OpenRouter 这类厂商用 /alpha/decisions */
+  commandCodeDecisionPath?: string;
+  /** 语言模型路径，默认 /chat/completions */
+  commandCodeChatPath?: string;
   /** 决策模型名，默认 typesafe/jev（System One 接口） */
   commandCodeDecisionModel: string;
   /** 规则外问答模型名，默认 deepseek/deepseek-v4.1-flash */
   commandCodeChatModel: string;
+  /** 问答模型的推理开关；推理模型不关会只输出思考、正文为空 */
+  commandCodeChatReasoning?: ChatReasoning;
   /** 命令路由模型超时（毫秒），超时按没认出来处理 */
   routerTimeoutMs: number;
   /** 问答超时（毫秒），超时回固定话术 */
@@ -31,9 +42,27 @@ export interface AppConfig {
   enemyAi: 'jev' | 'local';
   /** 对手单次决策超时（毫秒），超时回退本地 */
   enemyTimeoutMs: number;
+  /** 座位归属策略：双人房里按座位口令把指令算到对的机器上，默认 off */
+  attribution: AttributionMode;
+  /**
+   * 后台监控页口令；为空时 /admin 公开可见（演示现场方便围观）。
+   * 配置后访问必须带 ?token= 或 Authorization: Bearer。
+   */
+  adminToken?: string;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
+/** 只认 off / low 两个值，写错就当没配 */
+function parseChatReasoning(raw: string | undefined): ChatReasoning | undefined {
+  const value = raw?.trim().toLowerCase();
+  if (value === 'off' || value === 'low') return value;
+  return undefined;
+}
+
+function parseAttributionMode(raw: string | undefined): AttributionMode {
+  return (raw ?? '').trim().toLowerCase() === 'strict' ? 'strict' : 'off';
+}
 
 function parseInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -58,11 +87,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableDebugEndpoints: parseBoolean(env.ENABLE_DEBUG_ENDPOINTS, env.NODE_ENV !== 'production'),
     commandCodeApiKey: env.COMMAND_CODE_API_KEY?.trim() || undefined,
     commandCodeBaseUrl: env.COMMAND_CODE_BASE_URL?.trim() || undefined,
+    commandCodeDecisionPath: env.COMMAND_CODE_DECISION_PATH?.trim() || undefined,
+    commandCodeChatPath: env.COMMAND_CODE_CHAT_PATH?.trim() || undefined,
     commandCodeDecisionModel: env.COMMAND_CODE_DECISION_MODEL?.trim() || 'typesafe/jev',
     commandCodeChatModel: env.COMMAND_CODE_CHAT_MODEL?.trim() || 'deepseek/deepseek-v4.1-flash',
+    commandCodeChatReasoning: parseChatReasoning(env.COMMAND_CODE_CHAT_REASONING),
     routerTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ROUTER_TIMEOUT_MS, 1500))),
     chatTimeoutMs: Math.max(500, Math.min(8000, parseInteger(env.CHAT_TIMEOUT_MS, 3000))),
     enemyAi: (env.ENEMY_AI ?? '').trim().toLowerCase() === 'local' ? 'local' : 'jev',
     enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 1200))),
+    attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
+    adminToken: env.ADMIN_TOKEN?.trim() || undefined,
   };
 }

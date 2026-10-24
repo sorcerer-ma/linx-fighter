@@ -12,13 +12,30 @@ describe('配置解析', () => {
       enableDebugEndpoints: true,
       commandCodeApiKey: undefined,
       commandCodeBaseUrl: undefined,
+      commandCodeDecisionPath: undefined,
+      commandCodeChatPath: undefined,
+      commandCodeChatReasoning: undefined,
       commandCodeDecisionModel: 'typesafe/jev',
       commandCodeChatModel: 'deepseek/deepseek-v4.1-flash',
       routerTimeoutMs: 1500,
       chatTimeoutMs: 3000,
       enemyAi: 'jev',
       enemyTimeoutMs: 1200,
+      attribution: 'off',
+      adminToken: undefined,
     });
+  });
+
+  it('座位归属只认 strict，其余一律 off', () => {
+    assert.equal(loadConfig({ ATTRIBUTION_MODE: 'strict' }).attribution, 'strict');
+    assert.equal(loadConfig({ ATTRIBUTION_MODE: ' STRICT ' }).attribution, 'strict');
+    assert.equal(loadConfig({ ATTRIBUTION_MODE: 'on' }).attribution, 'off');
+    assert.equal(loadConfig({ ATTRIBUTION_MODE: '' }).attribution, 'off');
+  });
+
+  it('监控页口令去空白，空串等于公开', () => {
+    assert.equal(loadConfig({ ADMIN_TOKEN: '  s3cret ' }).adminToken, 's3cret');
+    assert.equal(loadConfig({ ADMIN_TOKEN: '   ' }).adminToken, undefined);
   });
 
   it('端口钳制在合法范围，非法值回退默认端口', () => {
@@ -55,6 +72,17 @@ describe('配置解析', () => {
     assert.equal(loadConfig({}).commandCodeApiKey, undefined);
     assert.equal(loadConfig({ COMMAND_CODE_BASE_URL: ' http://127.0.0.1:9999/v1 ' }).commandCodeBaseUrl, 'http://127.0.0.1:9999/v1');
     assert.equal(loadConfig({}).commandCodeBaseUrl, undefined);
+    assert.equal(
+      loadConfig({ COMMAND_CODE_DECISION_PATH: ' /alpha/decisions ' }).commandCodeDecisionPath,
+      '/alpha/decisions',
+    );
+    assert.equal(loadConfig({}).commandCodeDecisionPath, undefined);
+    assert.equal(loadConfig({ COMMAND_CODE_CHAT_PATH: '/v1/chat/completions' }).commandCodeChatPath, '/v1/chat/completions');
+    assert.equal(loadConfig({}).commandCodeChatPath, undefined);
+    assert.equal(loadConfig({ COMMAND_CODE_CHAT_REASONING: ' OFF ' }).commandCodeChatReasoning, 'off');
+    assert.equal(loadConfig({ COMMAND_CODE_CHAT_REASONING: 'low' }).commandCodeChatReasoning, 'low');
+    assert.equal(loadConfig({ COMMAND_CODE_CHAT_REASONING: 'high' }).commandCodeChatReasoning, undefined);
+    assert.equal(loadConfig({}).commandCodeChatReasoning, undefined);
     assert.equal(loadConfig({ COMMAND_CODE_DECISION_MODEL: ' typesafe/jev-1.14.0 ' }).commandCodeDecisionModel, 'typesafe/jev-1.14.0');
     assert.equal(loadConfig({}).commandCodeDecisionModel, 'typesafe/jev');
     assert.equal(loadConfig({ COMMAND_CODE_CHAT_MODEL: ' deepseek/deepseek-v4-flash ' }).commandCodeChatModel, 'deepseek/deepseek-v4-flash');

@@ -42,6 +42,24 @@ export class BattleStore {
     return this.battles.delete(sessionKey);
   }
 
+  /**
+   * 只读枚举当前所有未过期对局，带上存储键（后台监控页要按键区分房间与单人局）。
+   *
+   * 顺手清掉过期对局，和 `get` 一样：枚举到的就是此刻还活着的对局。
+   * 返回的是存储里的对象本身，调用方只读，不要改。
+   */
+  list(): Array<{ key: string; battle: Battle }> {
+    const entries: Array<{ key: string; battle: Battle }> = [];
+    for (const [key, battle] of this.battles) {
+      if (this.isExpired(battle)) {
+        this.battles.delete(key);
+        continue;
+      }
+      entries.push({ key, battle });
+    }
+    return entries;
+  }
+
   /** 清理过期对局，返回清理数量。每次写入顺带扫一遍，不额外起定时器 */
   sweep(): number {
     let removed = 0;

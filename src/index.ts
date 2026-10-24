@@ -20,6 +20,7 @@ const router = config.commandCodeApiKey
   ? createCommandRouter({
       apiKey: config.commandCodeApiKey,
       baseUrl: config.commandCodeBaseUrl,
+      decisionPath: config.commandCodeDecisionPath,
       model: config.commandCodeDecisionModel,
       timeoutMs: config.routerTimeoutMs,
       logger,
@@ -31,6 +32,7 @@ const ai =
     ? createJevEnemyAI({
         apiKey: config.commandCodeApiKey,
         baseUrl: config.commandCodeBaseUrl,
+        decisionPath: config.commandCodeDecisionPath,
         model: config.commandCodeDecisionModel,
         timeoutMs: config.enemyTimeoutMs,
         logger,
@@ -41,14 +43,25 @@ const chat = config.commandCodeApiKey
   ? createChatAnswerer({
       apiKey: config.commandCodeApiKey,
       baseUrl: config.commandCodeBaseUrl,
+      chatPath: config.commandCodeChatPath,
       model: config.commandCodeChatModel,
+      reasoning: config.commandCodeChatReasoning,
       timeoutMs: config.chatTimeoutMs,
       logger,
     })
   : undefined;
 // 补账消息跟对局一起过期：玩家一直不开口，错过的结算也没必要再念
 const echoes = new EchoStore({ ttlMs: config.battleTtlMs });
-const service = new GameService({ store, rooms, logger, router, ai, chat, echo: echoes });
+const service = new GameService({
+  store,
+  rooms,
+  logger,
+  router,
+  ai,
+  chat,
+  echo: echoes,
+  attribution: config.attribution,
+});
 const app = createApp({ config, logger, store, rooms, service });
 
 const server = app.listen(config.port, config.host, () => {
@@ -61,6 +74,7 @@ const server = app.listen(config.port, config.host, () => {
     routerModel: router ? config.commandCodeDecisionModel : 'disabled',
     enemyAi: ai ? `jev(${config.commandCodeDecisionModel})` : 'local',
     chatModel: chat ? config.commandCodeChatModel : 'disabled',
+    attribution: config.attribution,
   });
 });
 

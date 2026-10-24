@@ -3,10 +3,20 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { AppConfig } from '../config.js';
+import { extractAdminToken, isAdminAllowed } from '../admin/access.js';
+import { buildAdminOverview } from '../admin/overview.js';
+import { ADMIN_PAGE_HTML, adminDeniedPage } from '../admin/page.js';
+import { createRateLimiter } from '../admin/ratelimit.js';
 import type { GameService } from '../game/service.js';
 import type { BattleState } from '../game/state.js';
 import type { Logger } from '../log.js';
-import { applyRequestContext, battleKey, createDeviceContext, type DeviceContext } from '../mcp/context.js';
+import {
+  applyRequestContext,
+  battleKey,
+  createDeviceContext,
+  identityHeaders,
+  type DeviceContext,
+} from '../mcp/context.js';
 import { createMcpServer } from '../mcp/server.js';
 import { registerGameTools } from '../mcp/tools.js';
 import type { BattleStore } from '../store/battles.js';
@@ -20,6 +30,37 @@ export interface AppDependencies {
   service: GameService;
 }
 
+/** 请求里的 JSON-RPC 报文：只取排查用得到的字段，其余原样交给传输层 */
+interface RpcMessage {
+  method?: string;
+  params?: {
+    name?: string;
+    clientInfo?: { name?: string; version?: string };
+    /** MCP 允许客户端在 _meta 里带任意上下文，平台若下发说话人就可能在这里 */
+    _meta?: Record<string, unknown>;
+  };
+}
+
+/** 原始报文日志上限：够看清平台传了什么，又不至于把一整轮对话刷满屏 */
+const BODY_LOG_LIMIT = 4000;
+
+/**
+ * 调试用：把 JSON-RPC 原始报文原样带进日志，超长截断。
+ *
+ * 平台的头与 `_meta` 没有公开文档，与其猜字段名，不如把报文打出来看。
+ * 只影响日志，不改任何请求处理。
+ */
+function previewBody(body: unknown): unknown {
+  let text: string;
+  try {
+    text = JSON.stringify(body) ?? '';
+  } catch {
+    return '<无法序列化>';
+  }
+  if (text.length <= BODY_LOG_LIMIT) return body;
+  return `${text.slice(0, BODY_LOG_LIMIT)}…（共 ${text.length} 字）`;
+}
+
 /** 一条 SSE 连接对应一个 MCP 会话 */
 interface McpSession {
   transport: SSEServerTransport;
@@ -31,10 +72,39 @@ const EVENTS_POLL_MS = 400;
 /** 心跳间隔：防止中间代理把空闲长连接掐掉 */
 const EVENTS_HEARTBEAT_MS = 15_000;
 
+/** 后台页与接口共同的响应头：不对搜索引擎收录，也不让浏览器猜类型 */
+const ADMIN_HEADERS: Record<string, string> = {
+  'X-Robots-Tag': 'noindex, nofollow',
+  'X-Content-Type-Options': 'nosniff',
+};
+
+/** 后台页面额外收紧：内联脚本与内联样式之外什么都不加载 */
+const ADMIN_PAGE_HEADERS: Record<string, string> = {
+  ...ADMIN_HEADERS,
+  'Cache-Control': 'no-store',
+  'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy':
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+};
+
 export function createApp(deps: AppDependencies): express.Express {
   const { config, logger, store, rooms, service } = deps;
   const app = express();
   app.disable('x-powered-by');
+
+  // 平台会把设备、会话，可能还有说话人等上下文放进请求头。头名没有公开文档，
+  // 所以每个进程对「不同的头组合」只记一次快照，用来确认平台到底下发了什么。
+  const loggedIdentity = new Set<string>();
+  const snapshotIdentity = (headers: Parameters<typeof identityHeaders>[0]) => {
+    const identity = identityHeaders(headers);
+    const signature = Object.keys(identity).sort().join(',');
+    if (loggedIdentity.has(signature)) return;
+    loggedIdentity.add(signature);
+    logger.info('请求身份头快照', { headers: identity });
+  };
+  // 只信任 loopback 上的反向代理给出的 X-Forwarded-For：nginx 同机反代时 req.ip 才是真实来源，
+  // 否则恒为 127.0.0.1，按来源限速会退化成全局限速。
+  app.set('trust proxy', 'loopback');
 
   // 记下每一个入站请求：接入阶段用来看"平台到底有没有打过来、打的是哪个路径"
   app.use((req, res, next) => {
@@ -57,6 +127,13 @@ export function createApp(deps: AppDependencies): express.Express {
 
   const sessions = new Map<string, McpSession>();
 
+  // 监控接口按来源限速：3 秒轮询只占 20 次/分钟，留足余量；进程内 Map，重启即清空
+  const adminLimiter = createRateLimiter();
+  if (!config.adminToken) {
+    // 装配即启动：只在这里提示一次，提醒演示环境监控页是公开的
+    logger.warn('后台监控页未配置 ADMIN_TOKEN，/admin 对所有人可见', { path: '/admin' });
+  }
+
   app.get('/', (_req, res) => {
     res.json({
       service: 'linx-fighter',
@@ -67,6 +144,7 @@ export function createApp(deps: AppDependencies): express.Express {
         health: '/health',
         events: '/events',
         state: '/state',
+        admin: '/admin',
       },
     });
   });
@@ -148,6 +226,37 @@ export function createApp(deps: AppDependencies): express.Express {
     res.on('error', close);
   });
 
+  // 后台监控页：只读围观双人房与单人局，不提供开局、出招、改数值任何写操作
+  app.get('/admin', (req, res) => {
+    if (!adminLimiter.allow(req.ip ?? 'unknown')) {
+      res.status(429).set(ADMIN_PAGE_HEADERS).type('html').send(adminDeniedPage('请求太频繁，请稍后再试。'));
+      return;
+    }
+    const denied = adminDenied(req, config);
+    if (denied) {
+      res.status(401).set(ADMIN_PAGE_HEADERS).type('html').send(adminDeniedPage(denied.message));
+      return;
+    }
+    res.set(ADMIN_PAGE_HEADERS).type('html').send(ADMIN_PAGE_HTML);
+  });
+
+  // 监控数据：房间为主、单人局单列，字段全部来自 admin/overview 的只读读模型
+  app.get('/admin/api/rooms', (req, res) => {
+    res.set(ADMIN_HEADERS);
+    // 先限速再校验口令：错误口令也占配额，不能拿来无限试
+    if (!adminLimiter.allow(req.ip ?? 'unknown')) {
+      res.status(429).json({ ok: false, error: 'rate_limited', message: '请求太频繁，请稍后再试' });
+      return;
+    }
+    const denied = adminDenied(req, config);
+    if (denied) {
+      res.status(401).json({ ok: false, error: 'unauthorized', message: denied.message });
+      return;
+    }
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...buildAdminOverview({ rooms: rooms.list(), battles: store.list() }) });
+  });
+
   // 平台用 GET 建立 SSE 长连接，并在后续 POST 请求里带上设备与会话头
   // /sse 是平台文档示例里的路径，一并接受，减少控制台地址写法带来的困扰
   app.get(['/mcp', '/sse'], async (req, res) => {
@@ -189,12 +298,11 @@ export function createApp(deps: AppDependencies): express.Express {
   app.post('/mcp', async (req, res) => {
     const ctx = createDeviceContext(randomUUID());
     applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
+    snapshotIdentity(req.headers);
 
     // 每条 JSON-RPC 都记下方法名与身份头：排查「谁在调、为什么状态对不上」时先看这行
-    const body = req.body as
-      | { method?: string; params?: { name?: string; clientInfo?: { name?: string; version?: string } } }
-      | Array<{ method?: string; params?: { name?: string; clientInfo?: { name?: string; version?: string } } }>
-      | undefined;
+    const body = req.body as RpcMessage | RpcMessage[] | undefined;
+    logger.debug('MCP 原始报文', { body: previewBody(body) });
     const message = Array.isArray(body) ? body[0] : body;
     logger.info('MCP 请求', {
       method: message?.method ?? '',
@@ -205,6 +313,8 @@ export function createApp(deps: AppDependencies): express.Express {
       deviceId: ctx.deviceId,
       agentId: ctx.agentId,
       sessionId: ctx.sessionId,
+      speaker: ctx.speakerName || undefined,
+      meta: message?.params?._meta,
     });
 
     const server = createMcpServer();
@@ -256,6 +366,8 @@ export function createApp(deps: AppDependencies): express.Express {
 
     // 平台每次调用都会带上设备头，这里刷新上下文，兼容 GET 建连时拿不到头的实现
     applyRequestContext(session.ctx, req.headers, req.query as Record<string, unknown>);
+    snapshotIdentity(req.headers);
+    logger.debug('MCP 原始报文', { body: previewBody(req.body) });
     await session.transport.handlePostMessage(req, res, req.body);
   });
 
@@ -325,6 +437,19 @@ function snapshotBody(
   };
 }
 
+/**
+ * 后台页与接口的访问判定：没配 ADMIN_TOKEN 默认公开，配了就校验查询参数或 Bearer。
+ * 返回 null 表示放行；不对时只给一句人话，不回显期望的口令。
+ */
+function adminDenied(req: Request, config: AppConfig): { message: string } | null {
+  const presented = extractAdminToken({
+    query: req.query as Record<string, unknown>,
+    authorization: req.headers.authorization,
+  });
+  if (isAdminAllowed(config.adminToken, presented)) return null;
+  return { message: '口令不对：请带 ?token=… 或 Authorization: Bearer <ADMIN_TOKEN> 访问。' };
+}
+
 /** 调试接口按 device/agent 查询参数定位对局，默认值方便本地 curl 直接跑 */
 function debugBattleKey(req: Request): string {
   const ctx: DeviceContext = {
@@ -332,6 +457,8 @@ function debugBattleKey(req: Request): string {
     agentId: asText(req.query.agent) || 'debug-agent',
     sessionId: '',
     display: 'voice',
+    speakerName: '',
+    speakerId: '',
     anonymousId: 'debug',
   };
   return battleKey(ctx);

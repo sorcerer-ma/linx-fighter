@@ -1,4 +1,5 @@
 import { matchAction, matchActionIds } from './actions.js';
+import { looksLikeAssistantEcho } from './crosstalk.js';
 import { roomCodeFromPhrase, wantsOpenRoom } from './pvp.js';
 import type { ActionId } from './types.js';
 
@@ -31,6 +32,8 @@ export type Command =
   | { kind: 'open-room' }
   | { kind: 'join-room'; code: string }
   | { kind: 'refused'; why: RefuseReason }
+  /** 串音/回灌：这句话不是冲本机说的，只回极短应答，不推进对局 */
+  | { kind: 'echo' }
   /** 规则外的问题：本地播报答不了，原话交给语言模型 */
   | { kind: 'ask'; text: string }
   /** 本地规则没定下来：原话交给模型路由，由它决定是哪一类 */
@@ -53,7 +56,7 @@ const HELP_RULES = ['怎么玩', '怎么打', '怎么出招', '怎么操作', '�
  */
 const STATUS_RULES = [
   '战况', '局面', '什么情况', '生命值', '能量', '多少血', '还剩', '剩多少', '几次',
-  '真气', '行动点', '第几轮', '几回合', '谁赢', '我赢了',
+  '真气', '行动点', '第几轮', '几回合', '谁赢', '我赢了', '轮到',
 ];
 
 /** 明确说「开始」的整句；单字「开」不算，避免误判 */
@@ -61,6 +64,34 @@ const START_EXACT = ['开始', '开始吧', '开打', '开战', '开局', '来�
 
 /** 开局意图的长句说法：开房、联机这类还要再判一次，看是不是真的要开房 */
 const START_RULES = ['开始游戏', '开始对战', '开房间', '开个房', '开房', '建房间', '新建房间', '创建房间', '联机', '双人对战'];
+
+/**
+ * 叙述对手的子句：「对手放大招，」不是本机的招。
+ * 统计歧义与选招只看剥掉之后自己那半句，否则玩家自报应对会被对手的招式带成「两种招式」。
+ * 只剥两种形态：以标点收尾的完整子句，以及「对手的大招」这类名词短语。
+ *
+ * 目标介词后面的「对手」不算叙述：那里是我这一手打向谁，不是那句话的主语。
+ * 「我要对对手强攻」剥掉就成了没人称的「我要对」，既读不出招式、也数不出两种招式。
+ */
+const OPPONENT_CLAUSE =
+  /(?:(?:对手|对面|对方)[^，,。！!？?；;、]*[，,。！!？?；;、]|(?:对手|对面|对方)的?(?:普攻|强攻|大招|蓄力))/g;
+
+/**
+ * 目标介词：多字介词（朝着、冲着、对着、向着）与 ASR 插进来的空白都要认，
+ * 「我要朝着对手强攻」「我要对 对手普攻」里的「对手」同样是打击对象，不能剥。
+ * 单靠定长后顾只能看一个字符，「着」或空格就把判断让过去了，所以改看匹配位置之前的原文。
+ */
+const TARGET_PREPOSITION = /(?:对|向|朝|冲|跟|和|与|给|把|替|帮|为|同)(?:着)?\s*$/;
+
+/**
+ * 去掉叙述对手的部分，只留玩家自己那半句。
+ * 匹配串没有捕获组，replacer 的第二、三个参数才是偏移与整段原文。
+ */
+function withoutOpponent(raw: string): string {
+  return raw.replace(OPPONENT_CLAUSE, (match, offset, source) =>
+    TARGET_PREPOSITION.test(source.slice(0, offset)) ? match : ' ',
+  );
+}
 
 /** 反问式疑问：玩家在商量要不要出手，不是已经决定出手 */
 const QUESTION_RULES = ['能不能', '可不可以', '要不要', '该不该', '是不是', '够不够'];
@@ -138,6 +169,10 @@ function blockReason(raw: string, text: string): BlockReason | null {
 export function readCommand(raw: string): Command {
   const text = compactText(raw);
 
+  // 回灌判定最先做：平台会把我们的播报也转成一句「玩家原话」送回来，
+  // 这类句子哪怕含招式和房间号，也不能当新指令执行。
+  if (text && looksLikeAssistantEcho(raw)) return { kind: 'echo' };
+
   // 带房间号的加入最明确：已经在房间里的玩家也要能凭这句话换房
   const code = text ? roomCodeFromPhrase(raw) : null;
   if (code) return { kind: 'join-room', code };
@@ -147,7 +182,9 @@ export function readCommand(raw: string): Command {
   // 语音链路常把整句话塞进参数，「开房 / 联机」这类说法在这里兜底
   if (text && wantsOpenRoom(text)) return { kind: 'open-room' };
 
-  const block = blockReason(raw, text);
+  // 判断出招前先剥掉叙述对手的子句，只留玩家自己那一手
+  const own = withoutOpponent(raw);
+  const block = blockReason(own, compactText(own));
   if (block === 'negated' || block === 'ambiguous') return { kind: 'refused', why: block };
   if (block === 'query') {
     // 问的是对局里的数字，本地直接查：战况不消耗资源，不必等模型
@@ -155,7 +192,7 @@ export function readCommand(raw: string): Command {
     return { kind: 'route', question: true };
   }
 
-  const match = text ? matchAction(raw) : null;
+  const match = compactText(own) ? matchAction(own) : null;
   if (match) return { kind: 'turn', action: match.id, chant: match.chant };
 
   if (text && includesAny(text, STATUS_RULES)) return { kind: 'status' };

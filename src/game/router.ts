@@ -41,6 +41,8 @@ export interface CommandRouterOptions {
   timeoutMs?: number;
   /** 默认官方地址，测试或代理时覆盖 */
   baseUrl?: string;
+  /** 决策模型路径；换 Provider 时覆盖 */
+  decisionPath?: string;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
   logger?: Pick<Logger, 'warn' | 'debug'>;
@@ -48,19 +50,19 @@ export interface CommandRouterOptions {
 
 /** 每个选项的说明；模型只在这个集合里选 */
 const CRITERIA = {
-  light: '普攻：试探性的轻攻击，花费 1 点能量，造成 3 点伤害。',
-  heavy: '强攻：全力重击，花费 2 点能量，造成 5 点伤害。',
-  ult: '大招：绝招或必杀，花费 4 点能量，造成 9 点伤害，整局只能用一次。',
-  charge: '蓄力：这一轮不出手，积攒 1 点能量。',
-  guard: '格挡：挡下对手这一击，伤害减 2 点，花费 1 点能量。',
-  dodge: '闪避：尝试躲开对手这一击，一半概率完全躲掉，花费 1 点能量。',
-  take: '承受：不格挡也不闪避，硬吃这一击，不花能量。',
+  light: '普攻：试探性的轻攻击，花费 1 点能量，造成 3 点伤害；「轻轻来一下」「试探一下」也算。',
+  heavy: '强攻：全力重击，花费 2 点能量，造成 5 点伤害；口语里的狠话（「给他点颜色看看」「搞他」「弄他」「揍他」「往死里打」）算强攻。',
+  ult: '大招：绝招或必杀，花费 4 点能量，造成 9 点伤害，整局只能用一次；「开大」「放个大招」「来个大的」也算。',
+  charge: '蓄力：这一轮不出手，积攒 1 点能量；「攒一下」「回口气」「憋一下」也算。',
+  guard: '格挡：挡下对手这一击，伤害减 2 点，花费 1 点能量；「挡住」「顶一下」也算。',
+  dodge: '闪避：尝试躲开对手这一击，一半概率完全躲掉，花费 1 点能量；「躲一下」「闪开」也算。',
+  take: '承受：不格挡也不闪避，硬吃这一击，不花能量；「硬扛」「挺住」「挨一下」也算。',
   status: '查询战况：生命值、能量、大招剩余次数、轮次、当前局面。',
   help: '询问玩法规则：怎么出招、怎么应对、游戏怎么玩。',
   start: '要开始一局新对局（单人练习或再来一局）。',
   'open-room': '要开房间、联机、双人对战。',
   outside: '与游戏无关的提问或闲聊：天气、算数、翻译、讲故事、推荐、常识。',
-  unknown: '听不清、不是完整指令，或只是语气词。',
+  unknown: '听不清、不是完整指令、只是语气词，或这一轮做不了的动作。',
 } as const;
 
 type Choice = keyof typeof CRITERIA;
@@ -82,11 +84,16 @@ const STAGE_TEXT: Record<RouterStage, { stage: string; instructions: string }> =
   },
   active: {
     stage: '轮到玩家出招',
-    instructions: '判断这句话想做什么：出哪一招，或是在查战况、问玩法、闲聊；只能选给定选项。',
+    instructions:
+      '判断这句话想做什么：出哪一招，或是在查战况、问玩法、闲聊；只能选给定选项。' +
+      '玩家用口语、狠话表达进攻时就按语气强弱选一个招式，不要因为说法不标准而选 unknown。' +
+      '玩家说的是格挡、闪避、承受这类应对动作时选 unknown（现在还没到应对的时候），不要改判成别的招式。',
   },
   response: {
     stage: '对手已经出招，正等玩家应对',
-    instructions: '判断这句话想做什么：用哪种方式应对，或是在查战况、问玩法、闲聊；只能选给定选项。',
+    instructions:
+      '判断这句话想做什么：用哪种方式应对，或是在查战况、问玩法、闲聊；只能选给定选项。' +
+      '玩家说的是出招（普攻、强攻、大招、蓄力）时选 unknown（现在轮到他应对，不该出招），不要改判成别的应对。',
   },
   waiting: {
     stage: '玩家已经出招，正在等对手应对',
@@ -193,6 +200,7 @@ export function createCommandRouter(options: CommandRouterOptions): CommandRoute
         {
           apiKey: options.apiKey,
           baseUrl: options.baseUrl,
+        decisionPath: options.decisionPath,
           timeoutMs,
           fetchImpl: options.fetchImpl,
           logger: options.logger,

@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { GameService } from '../src/game/service.js';
 import { createLogger } from '../src/log.js';
-import { applyRequestContext, createDeviceContext } from '../src/mcp/context.js';
+import { applyRequestContext, createDeviceContext, type DeviceContext } from '../src/mcp/context.js';
 import { registerGameTools } from '../src/mcp/tools.js';
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<{
@@ -11,25 +11,58 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<{
   isError?: boolean;
 }>;
 
-/** 只实现 registerTool 的假 server，直接拿到注册进来的处理函数 */
-function registerWith(service: GameService): Map<string, ToolHandler> {
+/** 只实现 registerTool 的假 server，直接拿到注册进来的定义与处理函数 */
+function registerWith(
+  service: GameService,
+  logger = createLogger('error'),
+): { handlers: Map<string, ToolHandler>; definitions: Map<string, Record<string, unknown>>; ctx: DeviceContext } {
   const handlers = new Map<string, ToolHandler>();
+  const definitions = new Map<string, Record<string, unknown>>();
   const fakeServer = {
-    registerTool: (name: string, _definition: unknown, handler: ToolHandler) => {
+    registerTool: (name: string, definition: Record<string, unknown>, handler: ToolHandler) => {
       handlers.set(name, handler);
+      definitions.set(name, definition);
     },
   } as unknown as McpServer;
 
   const ctx = createDeviceContext('conn-tools');
   applyRequestContext(ctx, { 'x-linx-device-id': 'dev-tools', 'x-linx-agent-id': 'agent-tools' });
-  registerGameTools(fakeServer, { service, logger: createLogger('error'), ctx });
-  return handlers;
+  registerGameTools(fakeServer, { service, logger, ctx });
+  return { handlers, definitions, ctx };
 }
 
 describe('工具层', () => {
   it('注册五个游戏工具', () => {
-    const handlers = registerWith({} as GameService);
+    const { handlers } = registerWith({} as GameService);
     assert.deepEqual([...handlers.keys()].sort(), ['game_action', 'game_help', 'game_say', 'game_start', 'game_status']);
+  });
+
+  it('每个工具都声明 speaker 参数，平台才肯把声纹结果带上', () => {
+    const { definitions } = registerWith({} as GameService);
+    for (const [name, definition] of definitions) {
+      const schema = definition.inputSchema as Record<string, unknown>;
+      assert.ok(schema.speaker, `${name} 应声明 speaker 参数`);
+    }
+  });
+
+  it('参数里的说话人写回上下文并进日志', async () => {
+    const records: Array<Record<string, unknown>> = [];
+    const logger = {
+      debug: () => {},
+      info: (message: string, fields?: Record<string, unknown>) => records.push({ message, ...fields }),
+      warn: () => {},
+      error: () => {},
+    };
+    const service = {
+      say: async () => ({ text: '嗯。', battle: null }),
+    } as unknown as GameService;
+    const { handlers, ctx } = registerWith(service, logger);
+
+    await handlers.get('game_say')!({ text: '普攻', speaker: '小林' });
+
+    const call = records.find((record) => record.message === '工具调用');
+    assert.equal(call?.speaker, '小林');
+    assert.equal(ctx.speakerName, '小林');
   });
 
   it('业务异常转成可朗读的失败播报，不抛给协议层', async () => {
@@ -37,7 +70,7 @@ describe('工具层', () => {
       throw new Error('底层服务炸了');
     };
     const service = { start: boom, act: boom, status: boom, help: boom, say: boom } as unknown as GameService;
-    const handlers = registerWith(service);
+    const { handlers } = registerWith(service);
 
     for (const name of ['game_start', 'game_action', 'game_status', 'game_help', 'game_say']) {
       const result = await handlers.get(name)!({ action: '攻击', opponent: '木人', text: '攻击' });

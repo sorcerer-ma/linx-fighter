@@ -92,6 +92,23 @@ describe('命令路由客户端', () => {
     assert.ok(criteria.includes('status'));
   });
 
+  it('换厂商时可以改决策路径', async () => {
+    let url = '';
+    const fetchImpl = (async (seen: string | URL | Request) => {
+      url = String(seen);
+      return new Response(JSON.stringify(decision('light')), { status: 200 });
+    }) as typeof fetch;
+
+    const router = createCommandRouter({
+      apiKey: 'k',
+      fetchImpl,
+      baseUrl: 'https://openrouter.ai/api',
+      decisionPath: '/alpha/decisions',
+    });
+    assert.deepEqual(await router.resolve('打他', 'active'), { kind: 'turn', action: 'light' });
+    assert.equal(url, 'https://openrouter.ai/api/alpha/decisions');
+  });
+
   it('提问阶段的菜单里没有招式选项', async () => {
     let body = '';
     const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {

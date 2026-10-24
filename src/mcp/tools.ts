@@ -11,7 +11,18 @@ export interface ToolDependencies {
   ctx: DeviceContext;
 }
 
+// 平台侧的声纹识别结果：在工具参数里声明了这个字段，灵犀才会把说话人带上。
+// 只用来记日志与以后判断归属，不参与招式裁决。
+const speakerField = z
+  .string()
+  .trim()
+  .min(1)
+  .max(20)
+  .optional()
+  .describe('说话人的名字，由平台声纹填入；没识别出来就不传，不要自己编一个');
+
 const startInput = {
+  speaker: speakerField,
   opponent: z.string().trim().min(1).max(20).optional().describe('单人模式的对手名字，可不填，由系统安排'),
   mode: z
     .enum(['solo', 'pvp'])
@@ -34,6 +45,7 @@ const startInput = {
 };
 
 const actionInput = {
+  speaker: speakerField,
   action: z
     .string()
     .trim()
@@ -44,6 +56,7 @@ const actionInput = {
 };
 
 const sayInput = {
+  speaker: speakerField,
   text: z
     .string()
     .trim()
@@ -68,6 +81,9 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     args: Record<string, unknown>,
     run: () => ServiceResult | Promise<ServiceResult>,
   ) => {
+    // 平台把声纹结果放在工具参数里，比头更贴近这一次发言；头里没有时以它为准
+    const spoken = typeof args.speaker === 'string' ? args.speaker.trim() : '';
+    if (spoken) ctx.speakerName = spoken;
     try {
       // 入参、身份头与返回文案都进日志：平台侧模型传了什么、系统回了什么，都能逐轮回放
       logger.info('工具调用', {
@@ -75,12 +91,14 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         sessionKey: battleKey(ctx),
         deviceId: ctx.deviceId,
         agentId: ctx.agentId,
+        speaker: ctx.speakerName || undefined,
         args: previewArgs(args),
       });
       const result = await run();
       logger.info('工具返回', {
         tool,
         sessionKey: battleKey(ctx),
+        speaker: ctx.speakerName || undefined,
         text: result.text,
         round: result.battle?.round ?? 0,
         phase: result.battle?.phase ?? null,
@@ -108,11 +126,11 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '玩家说了什么',
       description:
-        '玩家说完话就调用它，把原话一字不改地放进 text，不要自己判断这是开局、出招还是提问。服务端会识别招式与同音误识别、战况、玩法、开局、开房间与加入房间，并返回一句可以直接朗读的播报。不确定该用哪个工具时，永远用这个。',
+        '玩家说完话就调用它，把原话一字不改地放进 text。不管听起来像不像游戏指令——闲聊、念诗、问天气、骂人都一样，先递过来由服务端判断，不要自己回答，也不要说「这跟游戏无关」。服务端会识别招式与同音误识别、战况、玩法、开局、开房间与加入房间，游戏规则之外的问题由语言模型回答；返回的 text 可以直接朗读。不确定该用哪个工具时，永远用这个。',
       inputSchema: sayInput,
     },
-    async ({ text }) =>
-      invoke('game_say', { text }, () => service.say(battleKey(ctx), text, speakOptions())),
+    async ({ text, speaker }) =>
+      invoke('game_say', { text, speaker }, () => service.say(battleKey(ctx), text, speakOptions())),
   );
 
   server.registerTool(
@@ -123,8 +141,8 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         '开一局新的灵犀对决。默认和 AI 对手单挑；玩家说要「联机」「双人对战」「开房间」时必须传 mode=pvp，会开房并拿到四位房间号；另一位玩家说「加入房间1234」时传 room=1234。拿不准参数就把玩家原话放进 text。会覆盖当前未结束的对局。',
       inputSchema: startInput,
     },
-    async ({ opponent, mode, room, text }) =>
-      invoke('game_start', { opponent, mode, room, text }, () =>
+    async ({ opponent, mode, room, text, speaker }) =>
+      invoke('game_start', { opponent, mode, room, text, speaker }, () =>
         service.start(battleKey(ctx), { opponent, mode, room, text }),
       ),
   );
@@ -137,8 +155,10 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         '执行玩家这一手的招式或应对。轮到玩家主动时可以用普攻、强攻、大招、蓄力；对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。玩家说「开房间」「联机」「加入房间1234」也原样传进 action，服务端会按联机处理。操作不合法时不会推进回合，返回里会说明原因并给可选说法。',
       inputSchema: actionInput,
     },
-    async ({ action }) =>
-      invoke('game_action', { action }, () => service.say(battleKey(ctx), action, speakOptions())),
+    async ({ action, speaker }) =>
+      invoke('game_action', { action, speaker }, () =>
+        service.say(battleKey(ctx), action, speakOptions()),
+      ),
   );
 
   server.registerTool(
@@ -147,9 +167,10 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
       title: '查看战况',
       description:
         '查看当前对局双方的生命值、能量、大招剩余次数和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我的生命值还剩多少」时调用。',
-      inputSchema: {},
+      inputSchema: { speaker: speakerField },
     },
-    async () => invoke('game_status', {}, () => service.status(battleKey(ctx), speakOptions())),
+    async ({ speaker }) =>
+      invoke('game_status', { speaker }, () => service.status(battleKey(ctx), speakOptions())),
   );
 
   server.registerTool(
@@ -157,9 +178,9 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '玩法说明',
       description: '说明玩法与可用指令。玩家问「怎么玩」「你能做什么」时调用。',
-      inputSchema: {},
+      inputSchema: { speaker: speakerField },
     },
-    async () => invoke('game_help', {}, () => service.help()),
+    async ({ speaker }) => invoke('game_help', { speaker }, () => service.help()),
   );
 }
 

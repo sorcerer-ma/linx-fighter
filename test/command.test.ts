@@ -131,6 +131,50 @@ describe('不该出手的表达', () => {
     }
   });
 
+  it('点名的对手是打击目标，不是叙述对手的那半句', () => {
+    // 目标介词后面的「对手」不是这句话的主语，剥掉就成了没人称的「我要对」
+    for (const [text, action] of [
+      ['我要对对手强攻。', 'heavy'],
+      ['我要对对手普攻', 'light'],
+      ['我要对对手格挡', 'guard'],
+    ] as const) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应照常出招`);
+      if (command.kind === 'turn') assert.equal(command.action, action, `「${text}」读成了 ${command.action}`);
+    }
+    // 两招并存仍旧拦下：剥掉目标只剩强攻，会让歧义句直接打出强攻
+    assert.deepEqual(readCommand('我要对对手普攻，还是强攻'), { kind: 'refused', why: 'ambiguous' });
+    // 以对手为主语的子句照旧剥掉，只看自己那半句
+    for (const text of ['对手放大招，我格挡', '格挡对手的强攻']) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应照常出招`);
+      if (command.kind === 'turn') assert.equal(command.action, 'guard', `「${text}」读成了 ${command.action}`);
+    }
+  });
+
+  it('多字介词与 ASR 空白后面的对手同样只算打击目标', () => {
+    // 「朝着 / 冲着 / 对着 / 向着」是多字介词，只看前一个字符会漏成叙述对手
+    for (const [text, action] of [
+      ['我要朝着对手强攻。', 'heavy'],
+      ['我要冲着对手普攻。', 'light'],
+      ['我要对着对手放大招。', 'ult'],
+      ['我要向着对手格挡。', 'guard'],
+    ] as const) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应照常出招`);
+      if (command.kind === 'turn') assert.equal(command.action, action, `「${text}」读成了 ${command.action}`);
+    }
+    // ASR 在介词后插一个空白，这一手仍是打向对手：两招并存要照样拦下
+    for (const text of [
+      '我要对 对手普攻，还是强攻',
+      '我要朝着对手用普攻，还是强攻',
+      '我要冲着对手普攻，还是强攻',
+      '我要向着对手普攻，还是强攻',
+    ]) {
+      assert.deepEqual(readCommand(text), { kind: 'refused', why: 'ambiguous' }, `「${text}」应拦住两招并存`);
+    }
+  });
+
   it('问号在去掉标点之前就要认出来', () => {
     for (const text of ['大招？', '大招?']) {
       const command = readCommand(text);
