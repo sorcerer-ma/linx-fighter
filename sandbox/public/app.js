@@ -1,3 +1,5 @@
+import { companionView, newSettlement, renderCompanion } from './companion.js';
+
 /*
  * 共鸣 · 闻声对决 —— 沙箱页面脚本（极简游戏画面版）
  *
@@ -15,7 +17,6 @@
   var PLAYER_RE = /^[A-Za-z0-9_-]{1,16}$/;
   var DEVICE_RE = /^web-[A-Za-z0-9_-]{1,16}$/;
   var STORE_PLAYER = 'linx.sandbox.playerId';
-  var STORE_TTS = 'linx.sandbox.tts';
   var MIC_NO_HTTPS = '当前页面不是 HTTPS，浏览器不给麦克风，用文字输入继续';
   var REPLY_LIMIT = 2; // 播报只留最近两条，不做聊天记录
   var TTS_RATE = 1.05;
@@ -34,7 +35,6 @@
   var el = {
     round: $('round'),
     dot: $('dot'),
-    players: $('players'),
     status: $('status'),
     alert: $('alert'),
     replies: $('replies'),
@@ -42,20 +42,9 @@
     text: $('text'),
     send: $('send'),
     mic: $('mic'),
-    kb: $('kb'),
-    sound: $('sound'),
-    youName: $('you-name'),
-    youHpNum: $('you-hp-num'),
-    youHpBar: $('you-hp-bar'),
-    youHpFill: $('you-hp-fill'),
-    youDots: $('you-dots'),
-    youUlt: $('you-ult'),
-    foeName: $('foe-name'),
-    foeHpNum: $('foe-hp-num'),
-    foeHpBar: $('foe-hp-bar'),
-    foeHpFill: $('foe-hp-fill'),
-    foeDots: $('foe-dots'),
-    foeUlt: $('foe-ult')
+    transcript: $('transcript'),
+    micStatus: $('mic-status')
+
   };
 
   /* ---------------- 状态 ---------------- */
@@ -70,10 +59,16 @@
   var busy = false; // 正在等 /api/say
   var replies = []; // [{ text, tone }]，最多 REPLY_LIMIT 条
   var lastReply = '';
-  var ttsOn = readFlag(STORE_TTS, true);
+
   var rec = null; // 正在进行的识别
   var recText = '';
   var recFailed = false;
+  var connected = false;
+  var unconfirmed = false;
+  var settlement = null;
+  var settlementTimer = null;
+  var previousBattle = null;
+  var listening = false;
 
   /* ---------------- 身份 ---------------- */
 
@@ -126,13 +121,6 @@
     }
   }
 
-  function readFlag(key, fallback) {
-    var raw = readSession(key);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-    return fallback;
-  }
-
   /* ---------------- 播报区 ---------------- */
 
   function pushReply(text, tone) {
@@ -158,6 +146,9 @@
   /* ---------------- 连接状态 ---------------- */
 
   function setConn(kind) {
+    connected = kind === 'connected';
+    if (!connected) { settlement = null; clearTimeout(settlementTimer); }
+    render();
     el.dot.dataset.state = kind;
     var label = CONN_LABEL[kind] || CONN_LABEL.connecting;
     el.dot.setAttribute('title', label);
@@ -207,6 +198,7 @@
     source.onopen = function () {
       // revision 每条连接内自增，重连后必须从头接受
       state.revision = -2;
+      previousBattle = null;
       setConn('connected');
     };
     source.onerror = function () {
@@ -226,6 +218,7 @@
       if (payload.revision <= state.revision) return; // 丢弃乱序/重复
       state.revision = payload.revision;
     }
+    unconfirmed = false;
     applyBattle(payload.battle);
   }
 
@@ -235,8 +228,11 @@
     var value = String(text == null ? '' : text).trim();
     if (!value || busy) return;
     busy = true;
+    el.transcript.textContent = '已发送：' + value;
+    el.micStatus.textContent = '等待伙伴回复';
     el.mic.disabled = true;
     closeComposer();
+    render();
     fetch('/api/say', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -249,16 +245,20 @@
       })
       .then(function (data) {
         if (!data) throw new Error('bad response');
+        unconfirmed = data.ok === false;
         if (data.state) applyBattle(data.state.battle === undefined ? null : data.state.battle);
         pushReply(data.reply, data.ok === false ? 'warn' : 'normal');
         speak(data.reply);
       })
       .catch(function () {
-        pushReply('连不上沙箱，确认 pnpm sandbox 在跑。', 'warn');
+        unconfirmed = true;
+        pushReply('连接出了问题，刚才的结果未确认。恢复后先询问战况。', 'warn');
       })
       .then(function () {
         busy = false;
         el.mic.disabled = false;
+        el.micStatus.textContent = '点按或按住说话';
+        render();
       });
   }
 
@@ -270,60 +270,54 @@
       return;
     }
     el.composer.hidden = false;
-    el.kb.setAttribute('aria-expanded', 'true');
     if (focus) el.text.focus();
   }
 
   function closeComposer() {
     if (el.composer.hidden) return;
     el.composer.hidden = true;
-    el.kb.setAttribute('aria-expanded', 'false');
     el.text.value = '';
-  }
-
-  function toggleComposer() {
-    if (el.composer.hidden) openComposer(true);
-    else closeComposer();
   }
 
   /* ---------------- 渲染 ---------------- */
 
   function applyBattle(battle) {
-    state.battle = battle || null;
+    const event = newSettlement(previousBattle, battle);
+    previousBattle = battle;
+    state.battle = battle;
+    if (event) {
+      settlement = event;
+      clearTimeout(settlementTimer);
+      settlementTimer = setTimeout(() => { settlement = null; render(); }, 1100);
+    } else if (!battle) {
+      settlement = null;
+      clearTimeout(settlementTimer);
+    }
     render();
   }
 
   function render() {
-    var battle = state.battle;
-    var has = !!battle;
-
-    if (has) {
-      el.round.hidden = false;
-      el.round.textContent = '第 ' + battle.round + ' 轮';
-    } else {
-      el.round.hidden = true;
-    }
-
-    el.players.hidden = !has;
-    if (has) {
-      renderPlayer('you', battle.you, battle.round, battle.history);
-      renderPlayer('foe', battle.opponent, battle.round, battle.history);
-    }
-
-    var status = describeStatus(battle);
+    const battle = state.battle;
+    const view = companionView(battle, connected && !unconfirmed, settlement);
+    // Recording is a browser event, never an inferred successful command.
+    if (connected && !unconfirmed && listening) view.visual = 'listening';
+    if (busy) view.ultimate = 'unknown';
+    renderCompanion($('app'), battle, view);
+    el.round.hidden = !battle;
+    if (battle) el.round.textContent = '第 ' + battle.round + ' 轮';
+    const status = describeStatus(battle);
     el.status.textContent = status.text;
     el.status.dataset.tone = status.tone || 'normal';
-
-    var alert = describeAlert(battle);
+    const alert = describeAlert(battle);
     el.alert.hidden = !alert;
-    el.alert.textContent = alert || '';
+    el.alert.textContent = alert;
   }
 
   function describeStatus(battle) {
     if (!battle) return { text: '还没有对局，说「开始」或「开房间」', tone: 'idle' };
     if (battle.waiting) return { text: '等对手加入', tone: 'wait' };
-    if (battle.phase === 'victory') return { text: '你赢了', tone: 'win' };
-    if (battle.phase === 'defeat') return { text: '你输了', tone: 'lose' };
+    if (battle.phase === 'victory') return { text: '伙伴赢了', tone: 'win' };
+    if (battle.phase === 'defeat') return { text: '伙伴被击倒了', tone: 'lose' };
     var pending = battle.pending;
     if (pending && pending.actor === 'enemy') return { text: '等你应对', tone: 'alert' };
     if (pending && pending.actor === 'player') return { text: '等对手应招', tone: 'wait' };
@@ -341,53 +335,6 @@
     return text;
   }
 
-  function renderPlayer(key, side, round, history) {
-    var data = side || {};
-    var name = data.name || (key === 'you' ? '你' : '对手');
-    var hp = numberOr(data.hp, 0);
-    var maxHp = Math.max(1, numberOr(data.maxHp, 1));
-    var ap = numberOr(data.ap, 0);
-    var maxAp = Math.max(1, numberOr(data.maxAp, 5));
-    var ultLeft = numberOr(data.ultLeft, 0);
-
-    var nameEl = key === 'you' ? el.youName : el.foeName;
-    var numEl = key === 'you' ? el.youHpNum : el.foeHpNum;
-    var barEl = key === 'you' ? el.youHpBar : el.foeHpBar;
-    var fillEl = key === 'you' ? el.youHpFill : el.foeHpFill;
-    var dotsEl = key === 'you' ? el.youDots : el.foeDots;
-    var ultEl = key === 'you' ? el.youUlt : el.foeUlt;
-
-    nameEl.textContent = name;
-    numEl.textContent = hp + '/' + maxHp;
-    var pct = Math.max(0, Math.min(100, Math.round((hp / maxHp) * 100)));
-    fillEl.style.width = pct + '%';
-    fillEl.dataset.low = pct <= 30 ? 'true' : 'false';
-    barEl.setAttribute('aria-valuemax', String(maxHp));
-    barEl.setAttribute('aria-valuenow', String(hp));
-
-    // 能量：一共 5 个点，亮起来的是当前能量
-    if (dotsEl.childElementCount !== maxAp) {
-      var dots = [];
-      for (var i = 0; i < maxAp; i++) {
-        var dot = document.createElement('i');
-        dots.push(dot);
-      }
-      dotsEl.replaceChildren.apply(dotsEl, dots);
-    }
-    for (var j = 0; j < dotsEl.children.length; j++) {
-      dotsEl.children[j].dataset.on = j < ap ? 'true' : 'false';
-    }
-    dotsEl.setAttribute('aria-label', '能量 ' + ap + '/' + maxAp);
-
-    var ready = ultLeft > 0;
-    ultEl.textContent = ready ? '大招可用' : '大招已用';
-    ultEl.dataset.used = ready ? 'false' : 'true';
-  }
-
-  function numberOr(value, fallback) {
-    return typeof value === 'number' && isFinite(value) ? value : fallback;
-  }
-
   /* ---------------- 播报（TTS） ---------------- */
 
   function canSpeak() {
@@ -395,14 +342,16 @@
   }
 
   function speak(text) {
-    if (!ttsOn || !canSpeak()) return;
+    if (!canSpeak()) return;
     var value = String(text == null ? '' : text).trim();
     if (!value) return;
     try {
-      window.speechSynthesis.cancel(); // 每次新回复前打断上一条
+      stopSpeaking(); // 每次新回复前打断上一条
       var utter = new window.SpeechSynthesisUtterance(value);
       utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
       utter.rate = TTS_RATE;
+      utter.onstart = function () { el.replies.setAttribute('aria-label', '伙伴回复，正在朗读'); };
+      utter.onend = utter.onerror = function () { el.replies.setAttribute('aria-label', '最近伙伴回复'); };
       window.speechSynthesis.speak(utter);
     } catch (err) {
       /* TTS 不可用时静默降级 */
@@ -410,18 +359,13 @@
   }
 
   function stopSpeaking() {
+    el.replies.setAttribute('aria-label', '最近伙伴回复');
     if (!canSpeak()) return;
     try {
       window.speechSynthesis.cancel();
     } catch (err) {
       /* 忽略 */
     }
-  }
-
-  function renderSound() {
-    el.sound.dataset.on = ttsOn ? 'true' : 'false';
-    el.sound.setAttribute('aria-pressed', ttsOn ? 'true' : 'false');
-    el.sound.setAttribute('aria-label', ttsOn ? '语音播报开' : '语音播报关');
   }
 
   /* ---------------- 语音识别 ---------------- */
@@ -431,6 +375,9 @@
   }
 
   function setListening(on) {
+    listening = on;
+    el.micStatus.textContent = on ? '正在倾听，再点停止' : '点按或按住说话';
+    render();
     el.mic.dataset.listening = on ? 'true' : 'false';
     el.mic.setAttribute('aria-pressed', on ? 'true' : 'false');
     el.mic.setAttribute('aria-label', on ? '正在聆听，再点一下停止' : '按住或点击说话');
@@ -441,6 +388,7 @@
     if (!micAvailable()) {
       // 内网 HTTP 页面拿不到麦克风：麦克风留着，点到就在播报区说清楚
       pushReply(MIC_NO_HTTPS, 'warn');
+      openComposer(false);
       return;
     }
     stopListening(); // 上一轮没结束就重开
@@ -451,6 +399,7 @@
       instance = new SpeechRecognitionCtor();
     } catch (err) {
       pushReply(MIC_NO_HTTPS, 'warn');
+      openComposer(false);
       return;
     }
     instance.lang = 'zh-CN';
@@ -458,25 +407,33 @@
     instance.continuous = false;
     instance.maxAlternatives = 1;
 
+    instance.onstart = function () { if (rec === instance) setListening(true); };
     instance.onresult = function (event) {
+      if (rec !== instance) return;
       var text = '';
+      var finalText = '';
       for (var i = 0; i < event.results.length; i++) {
         text += event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
       }
-      recText = text.replace(/\s+/g, ' ').trim();
-      setInputText(recText); // 边说边填进输入框
+      recText = finalText.replace(/\s+/g, ' ').trim();
+      setInputText(text.replace(/\s+/g, ' ').trim());
+      el.transcript.textContent = (event.results[event.results.length - 1].isFinal ? '已识别：' : '识别中：') + text; // 边说边填进输入框
     };
     instance.onerror = function (event) {
+      if (rec !== instance) return;
       recFailed = true;
       var code = event && event.error;
       if (code === 'not-allowed' || code === 'service-not-allowed') {
         pushReply(MIC_NO_HTTPS, 'warn');
+      openComposer(false);
       } else if (code !== 'no-speech' && code !== 'aborted') {
         pushReply('没听清，再说一次。', 'warn');
       }
     };
     instance.onend = function () {
-      if (rec === instance) rec = null;
+      if (rec !== instance) return;
+      rec = null;
       setListening(false);
       var text = recText.trim();
       recText = '';
@@ -491,6 +448,7 @@
     };
 
     rec = instance;
+    el.micStatus.textContent = '正在启动麦克风';
     try {
       instance.start();
     } catch (err) {
@@ -499,8 +457,6 @@
       pushReply('麦克风没启动起来，用文字输入继续。', 'warn');
       return;
     }
-    openComposer(false);
-    setListening(true);
   }
 
   function stopListening() {
@@ -516,7 +472,7 @@
   }
 
   function toggleListening() {
-    if (rec) stopListening();
+    if (rec) rec.stop();
     else startListening();
   }
 
@@ -535,7 +491,7 @@
       if (event.button !== undefined && event.button !== 0) return;
       event.preventDefault();
       if (rec) {
-        stopListening();
+        rec.stop();
         return;
       }
       startListening();
@@ -551,7 +507,7 @@
         clearTimeout(holdTimer);
         holdTimer = null;
       }
-      if (held && rec) stopListening();
+      if (held && rec) rec.stop();
       held = false;
     });
 
@@ -569,18 +525,6 @@
       if (event.detail === 0) toggleListening();
     });
   })();
-
-  el.kb.addEventListener('click', function () {
-    toggleComposer();
-  });
-
-  el.sound.addEventListener('click', function () {
-    ttsOn = !ttsOn;
-    writeSession(STORE_TTS, ttsOn ? '1' : '0');
-    renderSound();
-    if (!ttsOn) stopSpeaking();
-    else if (lastReply) speak(lastReply);
-  });
 
   el.composer.addEventListener('submit', function (event) {
     event.preventDefault();
@@ -605,13 +549,15 @@
     if (document.hidden) {
       stopSpeaking();
       stopListening();
+      settlement = null;
+      clearTimeout(settlementTimer);
+      render();
     }
   });
   window.addEventListener('pagehide', stopSpeaking);
 
   /* ---------------- 启动 ---------------- */
 
-  renderSound();
   render();
   setConn('connecting');
   loadConfig();
