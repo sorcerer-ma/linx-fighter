@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 /**
  * 后台监控页的口令校验。
  *
- * 默认公开：没配 ADMIN_TOKEN 时任何人可访问，方便演示现场围观；
+ * 默认公开：没配 ADMIN_TOKEN 时任何人可访问，便于现场查看局面；
  * 一旦配置，就必须带 `?token=` 或 `Authorization: Bearer <token>`，否则 401。
  */
 

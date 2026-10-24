@@ -307,7 +307,6 @@ flowchart TB
 | `DECISION_MODEL` | `typesafe/jev-1.14` | 决策模型名（命令路由与对手决策共用） |
 | `CHAT_MODEL` | `deepseek/deepseek-v4-flash` | 规则外问答的语言模型 |
 | `ATTRIBUTION_MODE` | `off` | 双人房的座位归属：`off` 按轮次仲裁，`strict` 时句子要带「红方／蓝方」；两种模式下回灌判定都生效 |
-| `ALLOWED_SPEAKERS` | 空（不设限） | 只回应这些说话人，逗号分隔，名字来自平台声纹（工具参数 `speaker`）；不在名单里或声纹没认出来的一律静默 |
 | `ADMIN_TOKEN` | 空 | `/admin` 与 `/admin/api/rooms` 的口令；为空时公开，仅适合演示环境 |
 | `ROUTER_TIMEOUT_MS` | `2000` | 命令路由超时，超时按没认出来处理 |
 | `CHAT_TIMEOUT_MS` | `6000` | 规则外问答超时，超时回固定话术 |

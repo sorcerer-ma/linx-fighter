@@ -74,7 +74,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
   const { service, logger, ctx } = deps;
 
   // 有屏客户端自己能看到局面，不需要补账播报；无屏终端（平台默认）保留。
-  // 说话人一并带上：演示阶段服务端只回应名单里的人
+  // 说话人一并带上：服务端据此过滤非本机的请求
   const speakOptions = () => ({
     catchUp: ctx.display !== 'screen',
     speaker: ctx.speakerName || undefined,

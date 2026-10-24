@@ -6,7 +6,7 @@ import { BattleStore } from '../src/store/battles.js';
 import { RoomStore } from '../src/store/rooms.js';
 
 /**
- * 演示阶段的说话人闸门：只回应名单里的人，且只有轮到自己的人能出手。
+ * 说话人校验：没登记的声音不回应，已登记的也只在轮到自己时接话。
  * 名单为空时完全等于引入前行为，这条由其它用例继续兜着。
  */
 
@@ -34,12 +34,12 @@ function assertSilent(text: string, hint: string): void {
   assert.equal(text, SILENT, `${hint}：应静默（实际「${text}」）`);
 }
 
-describe('演示阶段的说话人闸门', () => {
+describe('说话人校验与轮次归属', () => {
   it('名单外的人说招式、查战况都不回应', async () => {
     const { service } = setup(['主人', '张朔铭']);
 
-    assertSilent((await service.say(HOST, '普攻', { speaker: '围观群众' })).text, '路人说招');
-    assertSilent(service.status(HOST, { speaker: '围观群众' }).text, '路人查战况');
+    assertSilent((await service.say(HOST, '普攻', { speaker: '陌生人' })).text, '名单外的人说招');
+    assertSilent(service.status(HOST, { speaker: '陌生人' }).text, '名单外的人查战况');
     // 静默不等于偷偷开局或推进
     assert.equal(service.snapshot(HOST), null);
   });

@@ -75,7 +75,7 @@ export interface StartOptions {
 export interface SayOptions {
   /** 默认 true，保持硬件端的原有体验；有屏客户端传 false */
   catchUp?: boolean;
-  /** 这一次是谁在说（平台声纹给的名字）；演示阶段用来挡掉围观的人 */
+  /** 这一次是谁在说，由平台声纹给出；用来判断是不是已登记的人 */
   speaker?: string;
 }
 
@@ -115,7 +115,7 @@ export interface GameServiceDeps {
   attribution?: AttributionMode;
   /** 端侧同音纠错；不传用 asr.ts 的实现，传 null 关掉这一层 */
   fuzzy?: SpokenMatcher | null;
-  /** 只回应这些说话人（平台声纹给的名字）；空数组表示不设限 */
+  /** 已登记的说话人，用来挡掉环境里其他人的声音；空数组表示不限制 */
   speakers?: string[];
 }
 
@@ -149,7 +149,7 @@ export class GameService {
   private readonly echo: EchoStore;
   private readonly attribution: AttributionMode;
   private readonly fuzzy: SpokenMatcher | null;
-  /** 演示阶段的说话人名单：名单外的人不回应 */
+  /** 已登记的说话人；未登记的不回应，避免旁人声音误触发；为空表示不限制 */
   private readonly speakers: string[];
   /** 每个座位绑定的是谁的声音；键是桌子的存储键（单人局玩家键，双人局 pvp:房间号） */
   private readonly seatSpeakers = new Map<string, { player?: string; enemy?: string }>();
@@ -264,7 +264,7 @@ export class GameService {
     options: SayOptions,
     routed?: RoutedHand,
   ): ServiceResult | Promise<ServiceResult> {
-    // 演示阶段的说话人闸门：名单外的人、没轮到自己的人都不回应
+    // 说话人闸门：名单外的人、没轮到自己的人都不回应
     if (this.speakerGate(sessionKey, command, options.speaker) === 'silent') {
       return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
     }
@@ -503,10 +503,12 @@ export class GameService {
   }
 
   /**
-   * 说话人闸门（演示阶段）：名单外的人完全不回应；名单内但没轮到自己、
-   * 或者这句话的出招人不是本机座位绑定的人，也不回应。
+   * 说话人校验：没登记的声音不回应，挡掉环境里其他人的说话声、回声与
+   * 设备串音，避免它们被当成指令、把局面推进到对不上的状态。
    *
-   * 只有「会动用回合」的说法受轮次约束，查战况、问玩法、开局、加入房间照旧。
+   * 已登记的人也要看轮次：不是自己的回合、或者出招人不是本机座位绑定的
+   * 那个人，同样不回应。只有「会动用回合」的说法受轮次约束，
+   * 查战况、问玩法、开局、加入房间照旧。
    */
   private speakerGate(sessionKey: string, command: Command, speaker?: string): 'pass' | 'silent' {
     if (this.speakers.length === 0) return 'pass';
