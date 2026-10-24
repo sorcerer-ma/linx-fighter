@@ -45,6 +45,16 @@ describe('路由结果解析', () => {
     assert.equal(parseRouteDecision(decision('charge'), 'waiting', '蓄力'), null);
     // 没有对局时不能直接出招
     assert.equal(parseRouteDecision(decision('light'), 'none', '打他'), null);
+    // 上一局打完了也不能再出招，但可以再来一局或闲聊
+    for (const move of ['light', 'heavy', 'ult', 'charge', 'guard', 'dodge', 'take']) {
+      assert.equal(parseRouteDecision(decision(move), 'ended', '再来一下'), null, `结束状态不该认「${move}」`);
+    }
+    assert.deepEqual(parseRouteDecision(decision('start'), 'ended', '我还想接着玩'), { kind: 'start' });
+    assert.deepEqual(parseRouteDecision(decision('status'), 'ended', '刚才打得怎么样'), { kind: 'status' });
+    assert.deepEqual(parseRouteDecision(decision('outside', 0.8), 'ended', '讲个笑话'), {
+      kind: 'ask',
+      text: '讲个笑话',
+    });
     // 结构不对或字段缺失
     assert.equal(parseRouteDecision(null, 'active', '打他'), null);
     assert.equal(parseRouteDecision({}, 'active', '打他'), null);
@@ -98,6 +108,30 @@ describe('命令路由客户端', () => {
     );
     for (const move of ['light', 'heavy', 'ult', 'charge', 'guard', 'dodge', 'take']) {
       assert.ok(!criteria.includes(move), `提问阶段不该出现「${move}」`);
+    }
+  });
+
+  it('结束阶段的菜单里只剩开局、查询、玩法与闲聊', async () => {
+    let body = '';
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      body = String(init?.body ?? '');
+      return new Response(JSON.stringify(decision('start')), { status: 200 });
+    }) as typeof fetch;
+
+    const router = createCommandRouter({ apiKey: 'k', fetchImpl, baseUrl: 'http://router.test/v1' });
+    assert.deepEqual(await router.resolve('我还想接着玩', 'ended'), { kind: 'start' });
+
+    const parsed = JSON.parse(body) as {
+      state: { stage: string };
+      questions: { command: { criteria: Record<string, string> } };
+    };
+    assert.equal(parsed.state.stage, '上一局已经结束');
+    const criteria = Object.keys(parsed.questions.command.criteria);
+    for (const move of ['light', 'heavy', 'ult', 'charge', 'guard', 'dodge', 'take']) {
+      assert.ok(!criteria.includes(move), `结束状态不该出现「${move}」`);
+    }
+    for (const choice of ['start', 'open-room', 'status', 'help', 'outside']) {
+      assert.ok(criteria.includes(choice), `结束状态应该还能选「${choice}」`);
     }
   });
 

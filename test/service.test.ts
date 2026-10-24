@@ -4,6 +4,7 @@ import { createBattle } from '../src/game/engine.js';
 import type { CommandRouter, RouterStage } from '../src/game/router.js';
 import { pvpBattleKey } from '../src/game/pvp.js';
 import { GameService, type GameServiceDeps } from '../src/game/service.js';
+import type { BattleAI } from '../src/game/types.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
 import { RoomStore } from '../src/store/rooms.js';
@@ -609,6 +610,76 @@ describe('异步与状态的边界', () => {
     assert.deepEqual(current.history, []);
     assert.equal(rooms.get(code)?.guestKey, null);
   });
+
+  it('重开排在模型返回之前，旧局那一手不会落到新局', async () => {
+    // 第一次让对手应对时挂起，后面直接硬吃：串起「旧局出招占着事务、重开排在后面」的交错，
+    // 万一旧局那一手真落了新局，也不会在这里挂死，而是被下面的断言抓住
+    const gate: { release: (() => void) | null } = { release: null };
+    const ai: BattleAI = {
+      chooseAction: () => 'light',
+      chooseResponse() {
+        if (gate.release) return 'take';
+        return new Promise((resolve) => {
+          gate.release = () => resolve('take');
+        });
+      },
+    };
+    const intent = gatedIntent();
+    const { service, store } = setup({ router: intent.resolver, ai });
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+
+    // 1. 一句只有模型认得的话进来，模型还在想（这一步不占事务）
+    const pending = service.say(KEY, '上去揍他');
+    await tick();
+
+    // 2. 普攻拿到事务，卡在等对手应对
+    const attack = service.say(KEY, '普攻');
+    await tick();
+
+    // 3. 重开排在普攻后面：旧局这时还在，模型返回时校验旧局是能过的
+    const restart = service.say(KEY, '开始游戏');
+    await tick();
+    assert.equal(store.get(KEY)?.id, before.id);
+
+    // 4. 模型这才回来：这一手只能排在重开之后执行，必须作废
+    intent.release('light');
+    assert.ok(gate.release);
+    gate.release();
+
+    const stale = await pending;
+    await attack;
+    const restarted = await restart;
+
+    assert.match(stale.text, /局面已经变了/);
+    assert.match(restarted.text, /对决开始/);
+
+    const fresh = store.get(KEY);
+    assert.ok(fresh);
+    assert.notEqual(fresh.id, before.id);
+    // 新局不背旧局的账：没有那条战报，也没有把能量从 3 扣到 2
+    assert.deepEqual(fresh.history, []);
+    assert.equal(fresh.player.ap, 3);
+    assert.equal(fresh.round, 1);
+  });
+
+  it('模型返回时对局已经过期，不会拿这一手另开一局', async () => {
+    const intent = gatedIntent();
+    const { service, store, advance } = setup({ router: intent.resolver });
+    await service.start(KEY);
+
+    const pending = service.say(KEY, '上去揍他');
+    await tick();
+    // 等模型的时间里对局过期：这句话说的是已经不在的那一局
+    advance(60_001);
+    intent.release('light');
+
+    const stale = await pending;
+    assert.match(stale.text, /局面已经变了/);
+    // 带着招式也不能顺手开一局：玩家说的不是新局
+    assert.equal(store.get(KEY), undefined);
+  });
 });
 
 describe('规则外问答', () => {
@@ -677,5 +748,82 @@ describe('规则外问答', () => {
     const result = await broken.service.say(KEY, '你是谁');
     assert.match(result.text, /暂时答不上来/);
     assert.equal(result.battle?.round, 1);
+  });
+});
+
+describe('打完一局之后', () => {
+  it('规则外问答照常回答，对局原样留着', async () => {
+    const stages: RouterStage[] = [];
+    const router: CommandRouter = {
+      async resolve(text, stage) {
+        stages.push(stage);
+        return { kind: 'ask', text };
+      },
+    };
+    const asked: string[] = [];
+    const chat = {
+      async answer(question: string): Promise<string | null> {
+        asked.push(question);
+        return '讲一个：包子和面条打架，包子被打得满身是馅。';
+      },
+    };
+    const { service, store } = setup({ router, chat });
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+    // 一局已经打完：不重开、不过期之前都停在这个状态
+    const ended = { ...before, phase: 'victory' as const };
+    store.set(KEY, ended);
+
+    const result = await service.say(KEY, '讲个笑话');
+    // 结束状态照样进路由，但菜单里只有查询、玩法、开局和闲聊
+    assert.deepEqual(stages, ['ended']);
+    assert.deepEqual(asked, ['讲个笑话']);
+    assert.equal(result.text, '讲一个：包子和面条打架，包子被打得满身是馅。');
+    // 问答不取补账、不推进、不改写
+    assert.ok(store.get(KEY) === ended);
+  });
+
+  it('模型认出「再来一局」之后真的重开', async () => {
+    const router: CommandRouter = {
+      async resolve(_text, stage) {
+        return stage === 'ended' ? { kind: 'start' } : null;
+      },
+    };
+    const { service, store } = setup({ router });
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+    store.set(KEY, { ...before, phase: 'defeat' as const });
+
+    const result = await service.say(KEY, '我还想接着玩');
+    assert.match(result.text, /对决开始/);
+
+    const fresh = store.get(KEY);
+    assert.ok(fresh);
+    assert.notEqual(fresh.id, before.id);
+    assert.equal(fresh.phase, 'battle');
+    assert.deepEqual(fresh.history, []);
+    assert.equal(fresh.player.ap, 3);
+  });
+
+  it('结束状态仍然不出招', async () => {
+    // 模型不按菜单来也要挡住：结束局不接受任何招式
+    const router: CommandRouter = {
+      async resolve() {
+        return { kind: 'turn', action: 'ult' };
+      },
+    };
+    const { service, store } = setup({ router });
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+    const ended = { ...before, player: { ...before.player, ap: 4 }, phase: 'victory' as const };
+    store.set(KEY, ended);
+
+    const result = await service.say(KEY, '给他来个大的');
+    assert.match(result.text, /我赢了/);
+    assert.match(result.text, /开始游戏/);
+    assert.ok(store.get(KEY) === ended);
   });
 });

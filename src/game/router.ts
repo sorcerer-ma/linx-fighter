@@ -25,9 +25,10 @@ export const ROUTER_CONFIDENCE_THRESHOLD = 0.6;
  * - active：轮到我出招；
  * - response：对手出了招，等我应对；
  * - waiting：轮不到我（已在等对手应对）；
+ * - ended：上一局已经结束，只能重开、开房、查询、玩法或闲聊；
  * - question：这句话是提问，只允许分到「问什么」，不允许出招。
  */
-export type RouterStage = 'none' | 'active' | 'response' | 'waiting' | 'question';
+export type RouterStage = 'none' | 'active' | 'response' | 'waiting' | 'ended' | 'question';
 
 export interface CommandRouter {
   /** 把一句话读到当前阶段的命令上；认不出或置信度不足返回 null */
@@ -64,12 +65,13 @@ const CRITERIA = {
 
 type Choice = keyof typeof CRITERIA;
 
-/** 每个阶段允许的选项；question 阶段没有任何招式选项 */
+/** 每个阶段允许的选项；ended 与 question 阶段都没有任何招式选项 */
 const MENUS: Record<RouterStage, Choice[]> = {
   none: ['start', 'open-room', 'status', 'help', 'outside', 'unknown'],
   active: ['light', 'heavy', 'ult', 'charge', 'status', 'help', 'start', 'outside', 'unknown'],
   response: ['guard', 'dodge', 'take', 'status', 'help', 'outside', 'unknown'],
   waiting: ['status', 'help', 'outside', 'unknown'],
+  ended: ['start', 'open-room', 'status', 'help', 'outside', 'unknown'],
   question: ['status', 'help', 'outside', 'unknown'],
 };
 
@@ -89,6 +91,10 @@ const STAGE_TEXT: Record<RouterStage, { stage: string; instructions: string }> =
   waiting: {
     stage: '玩家已经出招，正在等对手应对',
     instructions: '这一轮玩家不能再出手；判断这句话是想查战况、问玩法还是闲聊。',
+  },
+  ended: {
+    stage: '上一局已经结束',
+    instructions: '这一局已经结束，玩家不能再出手；判断这句话是想再来一局、开房间、查战况、问玩法，还是闲聊。',
   },
   question: {
     stage: '玩家在提问，不是在出手',

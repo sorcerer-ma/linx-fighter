@@ -69,6 +69,20 @@ export interface SayOptions {
   catchUp?: boolean;
 }
 
+/**
+ * 模型异步返回的一手：它只能落回模型开始思考时的那一局。
+ *
+ * 等模型的这段时间里玩家可能重开、换房，或者对局过期；光在排队之前比一次
+ * 挡不住「重开排在中间」这种交错。所以把当时那一局一起带进事务，取到锁之后
+ * 再核对一次（见 playOnTable），对不上就作废让玩家重说。
+ */
+interface RoutedHand {
+  /** 模型开始思考时这句话落在哪张桌上，这一手仍按这张桌子取锁 */
+  table: Table;
+  /** 当时那一局的 id；当时还没有对局则为 null */
+  battleId: string | null;
+}
+
 export interface GameServiceDeps {
   store: BattleStore;
   rooms: RoomStore;
@@ -240,12 +254,12 @@ export class GameService {
     direct: TurnIntent | null,
     raw: string,
     options: SayOptions,
-    table?: Table,
+    routed?: RoutedHand,
   ): Promise<ServiceResult> {
     // 先按当前所在的桌子取锁；进门之后再确认一次桌子没换
-    const queued = table ?? tableFor(this.tables, sessionKey);
+    const queued = routed?.table ?? tableFor(this.tables, sessionKey);
     return this.battles.run(queued.key, (tx) =>
-      this.playOnTable(sessionKey, queued, tx, direct, raw, options),
+      this.playOnTable(sessionKey, queued, tx, direct, raw, options, routed),
     );
   }
 
@@ -262,6 +276,7 @@ export class GameService {
     direct: TurnIntent | null,
     raw: string,
     options: SayOptions,
+    routed?: RoutedHand,
   ): Promise<ServiceResult> {
     const table = tableFor(this.tables, sessionKey);
     if (table.key !== tx.key) {
@@ -277,8 +292,21 @@ export class GameService {
     const seat = table.seat(sessionKey);
     if (!seat) return { text: narrateRoomMissing(table.room ?? ''), battle: null };
 
-    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
     let canonical = tx.load();
+    // 排到队时已经是另一局（这中间重开、换房或过期）：这一手说的是旧局面，
+    // 落到新局上就是凭空出招。只能在这里核——进队后加载的是最新那一局，
+    // tx.alive() 保护的也只是这一份快照，排队前比一次挡不住重开抢在中间。
+    if (routed && routed.battleId !== (canonical?.id ?? null)) {
+      this.logger.info('排到队时已经是另一局，丢弃这一手', {
+        sessionKey,
+        room: table.room,
+        expected: routed.battleId,
+        current: canonical?.id ?? null,
+      });
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+    }
+
+    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
     let prefix = '';
 
     if (!canonical) {
@@ -556,7 +584,8 @@ export class GameService {
    * 混合路由：本地规则没定下来的句子，按当前阶段交给模型挑一类命令。
    *
    * 阶段由对局状态决定：没有对局只允许开局、查询或闲聊；轮到自己才给招式；
-   * 待应对只给防守；提问只给「问什么」——问句永远不会被判成出手。
+   * 待应对只给防守；上一局结束了只给查询、玩法、开局和闲聊；提问只给「问什么」
+   * ——问句和结束局都不会被判成出手。
    * 模型没配、超时或认不出，一律按「没听清」处理，不消耗资源、不推进对局。
    */
   private async routeCommand(
@@ -565,16 +594,11 @@ export class GameService {
     raw: string,
     options: SayOptions,
   ): Promise<ServiceResult> {
-    const view = this.viewFor(sessionKey);
-    if (view && view.phase !== 'battle') {
-      // 已经结束：仍然走一遍流水线，把补账带上，只播结束提示
-      return this.play(sessionKey, null, raw, options);
-    }
     // 先记住这句话落在哪张桌上、当时是哪一局：模型思考期间换房或重开，
-    // 这一手要按旧局丢弃，不能写进新局
-    const queued = tableFor(this.tables, sessionKey);
-    const before = queued.battle();
-    const stage = routeStage(view, question);
+    // 这一手要按旧局丢弃，不能写进新局（核对在进事务之后，见 playOnTable）
+    const table = tableFor(this.tables, sessionKey);
+    const routed: RoutedHand = { table, battleId: table.battle()?.id ?? null };
+    const stage = routeStage(table.view(sessionKey), question);
     let command: Command | null = null;
     if (this.router) {
       try {
@@ -590,17 +614,7 @@ export class GameService {
       // 交给招式流水线收尾：带上补账，播「没听清」，对局原样不动
       return this.play(sessionKey, null, raw, options);
     }
-    // 模型返回时局面已经不是原来那一局：这一手作废，让玩家重说
-    const now = tableFor(this.tables, sessionKey);
-    if (now.key !== queued.key || now.battle()?.id !== before?.id) {
-      this.logger.info('模型返回时局面已变，丢弃这一手', {
-        sessionKey,
-        from: queued.key,
-        to: now.key,
-      });
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
-    }
-    if (command.kind === 'turn') return this.play(sessionKey, command, raw, options, queued);
+    if (command.kind === 'turn') return this.play(sessionKey, command, raw, options, routed);
     return this.execute(sessionKey, command, raw, options);
   }
 
@@ -649,10 +663,12 @@ export class GameService {
   }
 }
 
-/** 当前视角所处的路由阶段：提问优先，其次看有没有对局、等谁动 */
+/** 当前视角所处的路由阶段：提问优先，其次看有没有对局、打没打完、等谁动 */
 function routeStage(battle: Battle | null, question: boolean): RouterStage {
   if (question) return 'question';
   if (!battle) return 'none';
+  // 上一局已经结束：只允许重开、开房、查询、玩法与闲聊，菜单里没有任何招式
+  if (battle.phase !== 'battle') return 'ended';
   if (battle.pending) return battle.pending.actor === 'player' ? 'waiting' : 'response';
   return battle.active === 'player' ? 'active' : 'waiting';
 }
