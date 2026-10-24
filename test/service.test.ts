@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createBattle } from '../src/game/engine.js';
+import type { Command } from '../src/game/command.js';
 import type { CommandRouter, RouterStage } from '../src/game/router.js';
 import { pvpBattleKey } from '../src/game/pvp.js';
 import { GameService, type GameServiceDeps } from '../src/game/service.js';
@@ -489,6 +490,25 @@ function gatedIntent(): { resolver: CommandRouter; release(id: 'light' | null): 
   };
 }
 
+/** 可手动放行的命令路由：放行时给出模型判出的命令，用来挂住开局、开房这类非招式命令 */
+function gatedCommand(): { resolver: CommandRouter; release(command: Command | null): void } {
+  let release: ((command: Command | null) => void) | null = null;
+  const resolver: CommandRouter = {
+    resolve() {
+      return new Promise((resolve) => {
+        release = (command) => resolve(command);
+      });
+    },
+  };
+  return {
+    resolver,
+    release(command) {
+      assert.ok(release, '模型应该已经被问过一次');
+      release(command);
+    },
+  };
+}
+
 describe('异步与状态的边界', () => {
   const HOST = 'device-b#agent-1';
   const GUEST = 'device-c#agent-2';
@@ -679,6 +699,85 @@ describe('异步与状态的边界', () => {
     assert.match(stale.text, /局面已经变了/);
     // 带着招式也不能顺手开一局：玩家说的不是新局
     assert.equal(store.get(KEY), undefined);
+  });
+
+  it('重开已经完成之后，旧路由返回的开局不会把新局再重置一次', async () => {
+    const intent = gatedCommand();
+    const { service, store } = setup({ router: intent.resolver });
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+
+    // 一局打完，「我还想接着玩」规则认不出，交给模型
+    store.set(KEY, { ...before, phase: 'victory' as const });
+    const pending = service.say(KEY, '我还想接着玩');
+    await tick();
+
+    // 玩家等不及，自己重开并出了一招：新局已经有了一条战报
+    const restarted = await service.say(KEY, '开始游戏');
+    assert.match(restarted.text, /对决开始/);
+    await service.say(KEY, '普攻');
+    const played = store.get(KEY);
+    assert.ok(played);
+    assert.ok(played.history.length > 0);
+
+    // 旧路由这才回来：它认出的开局不能再执行，否则刚打的那一手会被清掉
+    intent.release({ kind: 'start' });
+    const stale = await pending;
+    assert.match(stale.text, /局面已经变了/);
+
+    const after = store.get(KEY);
+    assert.ok(after);
+    assert.equal(after.id, played.id);
+    assert.equal(after.history.length, played.history.length);
+  });
+
+  it('等模型期间进了别人的房间，旧路由返回的开局不会把那间房撤掉', async () => {
+    const intent = gatedCommand();
+    const { service, store, rooms } = setup({ router: intent.resolver });
+
+    const opened = await service.start(HOST, { mode: 'pvp' });
+    const code = roomCodeOf(opened.text);
+    const key = pvpBattleKey(code);
+    const battleId = store.get(key)?.id;
+    assert.ok(battleId);
+
+    const pending = service.say(GUEST, '我还想接着玩');
+    await tick();
+    // 模型还没回，玩家先凭语音进了朋友的房间
+    await service.say(GUEST, `加入房间${code}`);
+    assert.equal(rooms.byPlayer(GUEST)?.code, code);
+
+    // 旧路由返回的开局会走 dropRoom：核对不过就不能执行，两个人都还能接着打
+    intent.release({ kind: 'start' });
+    const stale = await pending;
+    assert.match(stale.text, /局面已经变了/);
+
+    assert.equal(rooms.get(code)?.guestKey, GUEST);
+    assert.equal(store.get(key)?.id, battleId);
+  });
+
+  it('等模型期间进了别人的房间，旧路由返回的开房也不会把那间房撤掉', async () => {
+    const intent = gatedCommand();
+    const { service, store, rooms } = setup({ router: intent.resolver });
+
+    const opened = await service.start(HOST, { mode: 'pvp' });
+    const code = roomCodeOf(opened.text);
+    const key = pvpBattleKey(code);
+    const battleId = store.get(key)?.id;
+    assert.ok(battleId);
+
+    const pending = service.say(GUEST, '咱们一起玩吧');
+    await tick();
+    await service.say(GUEST, `加入房间${code}`);
+    assert.equal(rooms.byPlayer(GUEST)?.code, code);
+
+    intent.release({ kind: 'open-room' });
+    const stale = await pending;
+    assert.match(stale.text, /局面已经变了/);
+
+    assert.equal(rooms.get(code)?.guestKey, GUEST);
+    assert.equal(store.get(key)?.id, battleId);
   });
 });
 

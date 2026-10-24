@@ -198,24 +198,28 @@ export class GameService {
    *
    * 「在不在房间」只决定这一手记到哪张桌上，不再影响这句话怎么理解——
    * 所以已经在房间里的玩家说「加入房间1234」照样能换房。
+   *
+   * `routed` 只有模型路由回来的命令才带：开局、开房会改对局归属，执行前要
+   * 核对还是不是问模型时那一局（见 discardIfStale）。
    */
   private execute(
     sessionKey: string,
     command: Command,
     raw: string,
     options: SayOptions,
+    routed?: RoutedHand,
   ): ServiceResult | Promise<ServiceResult> {
     switch (command.kind) {
       case 'join-room':
         return this.joinRoom(sessionKey, command.code);
       case 'open-room':
-        return this.openRoom(sessionKey);
+        return this.openRoom(sessionKey, routed);
       case 'help':
         return this.help();
       case 'status':
         return this.status(sessionKey, options);
       case 'start':
-        return this.startSolo(sessionKey);
+        return this.startSolo(sessionKey, undefined, routed);
       case 'refused':
         return this.refuse(sessionKey, command.why, options);
       case 'ask':
@@ -441,11 +445,20 @@ export class GameService {
   }
 
   /** 单人开局：与出招共用同一把钥匙，对手先手时不会有人插进来读改写 */
-  private startSolo(sessionKey: string, opponent?: string): Promise<ServiceResult> {
-    return this.battles.runExclusive(sessionKey, () => this.startSoloLocked(sessionKey, opponent));
+  private startSolo(sessionKey: string, opponent?: string, routed?: RoutedHand): Promise<ServiceResult> {
+    return this.battles.runExclusive(sessionKey, () => this.startSoloLocked(sessionKey, opponent, routed));
   }
 
-  private async startSoloLocked(sessionKey: string, opponent?: string): Promise<ServiceResult> {
+  private async startSoloLocked(
+    sessionKey: string,
+    opponent?: string,
+    routed?: RoutedHand,
+  ): Promise<ServiceResult> {
+    // 模型回来时玩家可能自己重开过、进了别人的房间：这时再开局会把刚开的新局重置，
+    // 下面的 dropRoom 甚至会把别人房间里的那一局一起撤掉
+    const stale = this.discardIfStale(sessionKey, routed, '开局');
+    if (stale) return stale;
+
     // 单人重新开局：撤掉仍在的房间，避免对手对着已失效的局面出招
     const existing = this.rooms.byPlayer(sessionKey);
     if (existing) dropRoom(this.tables, existing, '重新开局');
@@ -472,7 +485,12 @@ export class GameService {
    * 已经在等人时又喊一次「开房」就复用原房间号，别让玩家每说一次就换一个码；
    * 已经开打则撤掉旧房重开——旧房里等着的对手不会对着作废的局面继续出招。
    */
-  private openRoom(sessionKey: string): ServiceResult {
+  private openRoom(sessionKey: string, routed?: RoutedHand): ServiceResult {
+    // 同开局：模型回来时已经不是当时那一局（多半是刚进了别人的房间），
+    // 这时再开房会把玩家从原来的房间里撤出来，连对手那一局一起清掉
+    const stale = this.discardIfStale(sessionKey, routed, '开房');
+    if (stale) return stale;
+
     const existing = this.rooms.byPlayer(sessionKey);
     if (existing && existing.hostKey === sessionKey && existing.guestKey === null) {
       return {
@@ -595,7 +613,8 @@ export class GameService {
     options: SayOptions,
   ): Promise<ServiceResult> {
     // 先记住这句话落在哪张桌上、当时是哪一局：模型思考期间换房或重开，
-    // 这一手要按旧局丢弃，不能写进新局（核对在进事务之后，见 playOnTable）
+    // 这一手要按旧局丢弃，不能写进新局——出招在进事务之后核对（见 playOnTable），
+    // 开局、开房在真正动手之前核对（见 discardIfStale）
     const table = tableFor(this.tables, sessionKey);
     const routed: RoutedHand = { table, battleId: table.battle()?.id ?? null };
     const stage = routeStage(table.view(sessionKey), question);
@@ -615,7 +634,33 @@ export class GameService {
       return this.play(sessionKey, null, raw, options);
     }
     if (command.kind === 'turn') return this.play(sessionKey, command, raw, options, routed);
-    return this.execute(sessionKey, command, raw, options);
+    // 开局、开房会改对局归属，也要带着当时那一局过去核对（见 discardIfStale）
+    return this.execute(sessionKey, command, raw, options, routed);
+  }
+
+  /**
+   * 模型回来时已经不是当时那一局，就作废这一手；返回 null 表示还能照做。
+   *
+   * 开局与开房都会改对局归属：等模型的这段时间里玩家可能已自己重开、换房，
+   * 或者进了别人的双人房，此时再执行会把刚开的新局重置，甚至把两个人的房间
+   * 一起撤掉。查询与闲聊只是回答当前局面，不走这一关。
+   */
+  private discardIfStale(
+    sessionKey: string,
+    routed: RoutedHand | undefined,
+    action: string,
+  ): ServiceResult | null {
+    if (!routed) return null;
+    const table = tableFor(this.tables, sessionKey);
+    const battleId = table.battle()?.id ?? null;
+    if ((table.room ?? null) === (routed.table.room ?? null) && battleId === routed.battleId) return null;
+    this.logger.info('排到队时已经不是当时那一局，丢弃这一手', {
+      sessionKey,
+      action,
+      expected: routed.battleId,
+      current: battleId,
+    });
+    return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
   }
 
   /**
