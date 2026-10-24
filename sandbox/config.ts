@@ -22,7 +22,7 @@ export interface SandboxConfig {
   agentId: string;
   /** 强制指定页面用的状态流地址；不填则按页面 Host 推导 */
   eventsUrl?: string;
-  /** 单次 MCP 请求超时：意图模型与对手决策都在服务端，要留够余量 */
+  /** 单次 MCP 请求超时：命令路由与对手决策都在服务端，要留够余量 */
   timeoutMs: number;
   logLevel: LogLevel;
   /**

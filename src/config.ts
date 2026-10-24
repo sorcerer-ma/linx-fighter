@@ -15,7 +15,7 @@ export interface AppConfig {
   battleTtlMs: number;
   /** 是否暴露 /debug/* 调试端点，生产环境建议关闭 */
   enableDebugEndpoints: boolean;
-  /** Command Code API Key；为空时不启用意图模型与规则外问答，只用规则匹配 */
+  /** Command Code API Key；为空时不启用命令路由与规则外问答，只用规则匹配 */
   commandCodeApiKey?: string;
   /** Command Code Provider 根地址；换代理或自建网关时覆盖 */
   commandCodeBaseUrl?: string;
@@ -23,8 +23,8 @@ export interface AppConfig {
   commandCodeDecisionModel: string;
   /** 规则外问答模型名，默认 deepseek/deepseek-v4.1-flash */
   commandCodeChatModel: string;
-  /** 意图模型超时（毫秒），超时按没认出来处理 */
-  intentTimeoutMs: number;
+  /** 命令路由模型超时（毫秒），超时按没认出来处理 */
+  routerTimeoutMs: number;
   /** 问答超时（毫秒），超时回固定话术 */
   chatTimeoutMs: number;
   /** 对手 AI：jev 走 JEV 决策接口，local 用内置决策模型；未配 Key 时自动回落 local */
@@ -60,7 +60,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     commandCodeBaseUrl: env.COMMAND_CODE_BASE_URL?.trim() || undefined,
     commandCodeDecisionModel: env.COMMAND_CODE_DECISION_MODEL?.trim() || 'typesafe/jev',
     commandCodeChatModel: env.COMMAND_CODE_CHAT_MODEL?.trim() || 'deepseek/deepseek-v4.1-flash',
-    intentTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.INTENT_TIMEOUT_MS, 1500))),
+    routerTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ROUTER_TIMEOUT_MS, 1500))),
     chatTimeoutMs: Math.max(500, Math.min(8000, parseInteger(env.CHAT_TIMEOUT_MS, 3000))),
     enemyAi: (env.ENEMY_AI ?? '').trim().toLowerCase() === 'local' ? 'local' : 'jev',
     enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 1200))),

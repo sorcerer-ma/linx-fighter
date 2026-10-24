@@ -5,7 +5,6 @@ import type { Room, RoomStore } from '../store/rooms.js';
 import type { ChatAnswerer } from './chat.js';
 import { readCommand, type Command, type RefuseReason, type TurnIntent } from './command.js';
 import { advanceBattle, createBattle, resolveTurn } from './engine.js';
-import type { IntentResolver, IntentStage } from './intent.js';
 import {
   narrateActionBlocked,
   narrateAutoStart,
@@ -30,6 +29,7 @@ import {
   narrateWaitingRoom,
 } from './narrator.js';
 import { mirrorEvents, normalizeRoomCode, pvpBattleKey, viewAs } from './pvp.js';
+import type { CommandRouter, RouterStage } from './router.js';
 import { BattleTransactions, type BattleTx } from './serialize.js';
 import { battleState, type BattleState } from './state.js';
 import { dropRoom, tableFor, type Table, type TableDeps } from './table.js';
@@ -76,8 +76,8 @@ export interface GameServiceDeps {
   /** 便于单测注入固定时间与随机数，生产用默认值 */
   now?: () => number;
   random?: () => number;
-  /** JEV 意图模型；不传则只走规则匹配 */
-  intent?: IntentResolver;
+  /** 混合路由的模型侧；不传则规则认不出时报没听清 */
+  router?: CommandRouter;
   /** 对手 AI；不传则用内置的本地决策模型（JEV 决策模型从 index 注入） */
   ai?: BattleAI;
   /** 规则外问答；不传则回固定话术（语言模型从 index 注入） */
@@ -102,7 +102,7 @@ export class GameService {
   private readonly logger: Logger;
   private readonly now: () => number;
   private readonly random: () => number;
-  private readonly intent?: IntentResolver;
+  private readonly router?: CommandRouter;
   private readonly ai?: BattleAI;
   private readonly chat?: ChatAnswerer;
   private readonly echo: EchoStore;
@@ -117,7 +117,7 @@ export class GameService {
     this.logger = deps.logger;
     this.now = deps.now ?? Date.now;
     this.random = deps.random ?? Math.random;
-    this.intent = deps.intent;
+    this.router = deps.router;
     this.ai = deps.ai;
     this.chat = deps.chat;
     this.echo = deps.echo ?? new EchoStore({ now: this.now });
@@ -208,8 +208,8 @@ export class GameService {
         return this.askOutside(sessionKey, command.text);
       case 'turn':
         return this.play(sessionKey, command, raw, options);
-      case 'unknown':
-        return this.play(sessionKey, null, raw, options);
+      case 'route':
+        return this.routeCommand(sessionKey, command.question, raw, options);
     }
   }
 
@@ -240,9 +240,10 @@ export class GameService {
     direct: TurnIntent | null,
     raw: string,
     options: SayOptions,
+    table?: Table,
   ): Promise<ServiceResult> {
     // 先按当前所在的桌子取锁；进门之后再确认一次桌子没换
-    const queued = tableFor(this.tables, sessionKey);
+    const queued = table ?? tableFor(this.tables, sessionKey);
     return this.battles.run(queued.key, (tx) =>
       this.playOnTable(sessionKey, queued, tx, direct, raw, options),
     );
@@ -266,9 +267,11 @@ export class GameService {
     if (table.key !== tx.key) {
       // 排队期间换桌或撤房：这一手不落到别的桌子上
       this.logger.debug('排到队时已经换桌', { sessionKey, from: queued.key, to: table.key });
-      return queued.room
-        ? { text: narrateRoomMissing(queued.room), battle: null }
-        : { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+      // 人还在别的房间：那句话说的是旧局面，让他重说；旧房彻底没了才报房间不在
+      if (queued.room && !this.rooms.byPlayer(sessionKey)) {
+        return { text: narrateRoomMissing(queued.room), battle: null };
+      }
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
     }
 
     const seat = table.seat(sessionKey);
@@ -313,7 +316,7 @@ export class GameService {
       return { text: `${catchUp}${prefix}${narrateEnded(view)}`, battle: view };
     }
 
-    const match = direct ?? (await this.resolveWithIntent(raw, view, 'player'));
+    const match = direct;
     if (!match) {
       this.logger.debug('招式无法识别', { sessionKey, room: table.room, raw });
       return { text: `${catchUp}${prefix}${narrateUnknownAction(view)}`, battle: view };
@@ -549,23 +552,56 @@ export class GameService {
     return { text: opening, battle: view };
   }
 
-  /** 规则没认出来时，交给 JEV 模型归一化；不在自己的回合就不打扰模型 */
-  private async resolveWithIntent(raw: string, battle: Battle, side: Side): Promise<TurnIntent | null> {
-    if (!this.intent) return null;
-    const stage = stageFor(battle, side);
-    if (!stage) return null;
-    let id: Awaited<ReturnType<IntentResolver['resolve']>>;
-    try {
-      id = await this.intent.resolve(raw, stage);
-    } catch (error) {
-      this.logger.warn('意图模型调用异常，按没认出来处理', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
+  /**
+   * 混合路由：本地规则没定下来的句子，按当前阶段交给模型挑一类命令。
+   *
+   * 阶段由对局状态决定：没有对局只允许开局、查询或闲聊；轮到自己才给招式；
+   * 待应对只给防守；提问只给「问什么」——问句永远不会被判成出手。
+   * 模型没配、超时或认不出，一律按「没听清」处理，不消耗资源、不推进对局。
+   */
+  private async routeCommand(
+    sessionKey: string,
+    question: boolean,
+    raw: string,
+    options: SayOptions,
+  ): Promise<ServiceResult> {
+    const view = this.viewFor(sessionKey);
+    if (view && view.phase !== 'battle') {
+      // 已经结束：仍然走一遍流水线，把补账带上，只播结束提示
+      return this.play(sessionKey, null, raw, options);
     }
-    if (!id) return null;
-    this.logger.info('意图模型归一化', { text: raw, action: id, stage });
-    return { action: id };
+    // 先记住这句话落在哪张桌上、当时是哪一局：模型思考期间换房或重开，
+    // 这一手要按旧局丢弃，不能写进新局
+    const queued = tableFor(this.tables, sessionKey);
+    const before = queued.battle();
+    const stage = routeStage(view, question);
+    let command: Command | null = null;
+    if (this.router) {
+      try {
+        command = await this.router.resolve(raw, stage);
+      } catch (error) {
+        this.logger.warn('命令路由调用异常，按没认出来处理', {
+          stage,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (!command) {
+      // 交给招式流水线收尾：带上补账，播「没听清」，对局原样不动
+      return this.play(sessionKey, null, raw, options);
+    }
+    // 模型返回时局面已经不是原来那一局：这一手作废，让玩家重说
+    const now = tableFor(this.tables, sessionKey);
+    if (now.key !== queued.key || now.battle()?.id !== before?.id) {
+      this.logger.info('模型返回时局面已变，丢弃这一手', {
+        sessionKey,
+        from: queued.key,
+        to: now.key,
+      });
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+    }
+    if (command.kind === 'turn') return this.play(sessionKey, command, raw, options, queued);
+    return this.execute(sessionKey, command, raw, options);
   }
 
   /**
@@ -613,9 +649,10 @@ export class GameService {
   }
 }
 
-/** 当前视角所处的阶段：等自己出招 → active，等自己应对 → response，其余 null */
-function stageFor(battle: Battle, side: Side): IntentStage | null {
-  if (battle.phase !== 'battle') return null;
-  if (battle.pending) return battle.pending.actor === side ? null : 'response';
-  return battle.active === side ? 'active' : null;
+/** 当前视角所处的路由阶段：提问优先，其次看有没有对局、等谁动 */
+function routeStage(battle: Battle | null, question: boolean): RouterStage {
+  if (question) return 'question';
+  if (!battle) return 'none';
+  if (battle.pending) return battle.pending.actor === 'player' ? 'waiting' : 'response';
+  return battle.active === 'player' ? 'active' : 'waiting';
 }

@@ -2,7 +2,7 @@ import { loadConfig } from './config.js';
 import { GameService } from './game/service.js';
 import { createChatAnswerer } from './game/chat.js';
 import { createJevEnemyAI } from './game/enemy-jev.js';
-import { createIntentResolver } from './game/intent.js';
+import { createCommandRouter } from './game/router.js';
 import { createApp } from './http/app.js';
 import { createLogger } from './log.js';
 import { BattleStore } from './store/battles.js';
@@ -15,13 +15,13 @@ const logger = createLogger(config.logLevel);
 
 const store = new BattleStore({ ttlMs: config.battleTtlMs });
 const rooms = new RoomStore({ ttlMs: config.battleTtlMs });
-// 配了 Command Code Key 才启用模型层；没配时只走规则匹配，不影响可玩性
-const intent = config.commandCodeApiKey
-  ? createIntentResolver({
+// 配了 Command Code Key 才启用模型层；没配时规则认不出就回「没听清」
+const router = config.commandCodeApiKey
+  ? createCommandRouter({
       apiKey: config.commandCodeApiKey,
       baseUrl: config.commandCodeBaseUrl,
       model: config.commandCodeDecisionModel,
-      timeoutMs: config.intentTimeoutMs,
+      timeoutMs: config.routerTimeoutMs,
       logger,
     })
   : undefined;
@@ -48,7 +48,7 @@ const chat = config.commandCodeApiKey
   : undefined;
 // 补账消息跟对局一起过期：玩家一直不开口，错过的结算也没必要再念
 const echoes = new EchoStore({ ttlMs: config.battleTtlMs });
-const service = new GameService({ store, rooms, logger, intent, ai, chat, echo: echoes });
+const service = new GameService({ store, rooms, logger, router, ai, chat, echo: echoes });
 const app = createApp({ config, logger, store, rooms, service });
 
 const server = app.listen(config.port, config.host, () => {
@@ -58,7 +58,7 @@ const server = app.listen(config.port, config.host, () => {
     address: `http://${config.host}:${config.port}`,
     sse: '/mcp',
     debugEndpoints: config.enableDebugEndpoints,
-    intentModel: intent ? config.commandCodeDecisionModel : 'disabled',
+    routerModel: router ? config.commandCodeDecisionModel : 'disabled',
     enemyAi: ai ? `jev(${config.commandCodeDecisionModel})` : 'local',
     chatModel: chat ? config.commandCodeChatModel : 'disabled',
   });

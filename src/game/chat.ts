@@ -10,10 +10,17 @@
 
 import type { Logger } from '../log.js';
 import { askChat, DEFAULT_CHAT_MODEL } from './commandcode.js';
-import { outsideQuestion } from './questions.js';
 
 /** 和战斗播报同一套长度约束：一次最多两句、60 字 */
 const MAX_ANSWER_CHARS = 60;
+
+/** 交给模型的原话最多保留 200 字：语音指令通常很短，截断只为挡住极长输入 */
+const QUESTION_LIMIT = 200;
+
+/** 取出要透传的原话：去首尾空白并限长 */
+export function outsideQuestion(raw: string): string {
+  return raw.trim().slice(0, QUESTION_LIMIT);
+}
 
 export interface ChatAnswerer {
   /** 回答一个规则外问题；模型不可用或结果不可用时返回 null */

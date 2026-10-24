@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createBattle } from '../src/game/engine.js';
-import type { IntentResolver, IntentStage } from '../src/game/intent.js';
+import type { CommandRouter, RouterStage } from '../src/game/router.js';
 import { pvpBattleKey } from '../src/game/pvp.js';
 import { GameService, type GameServiceDeps } from '../src/game/service.js';
 import { createLogger } from '../src/log.js';
@@ -204,16 +204,16 @@ describe('游戏服务', () => {
   });
 });
 
-describe('意图模型兜底', () => {
+describe('模型路由兜底', () => {
   it('规则认不出时由模型补出主动招与应对招', async () => {
-    const calls: { text: string; stage: IntentStage }[] = [];
-    const intent: IntentResolver = {
+    const calls: { text: string; stage: RouterStage }[] = [];
+    const router: CommandRouter = {
       async resolve(text, stage) {
         calls.push({ text, stage });
-        return stage === 'active' ? 'heavy' : 'guard';
+        return stage === 'active' ? { kind: 'turn', action: 'heavy' } : { kind: 'turn', action: 'guard' };
       },
     };
-    const { service } = setup({ intent });
+    const { service } = setup({ router });
     await service.start(KEY);
 
     const first = await service.say(KEY, '给我狠狠地来一下');
@@ -230,12 +230,12 @@ describe('意图模型兜底', () => {
   });
 
   it('模型异常或认不出时回退为没听清，不推进回合', async () => {
-    const broken: IntentResolver = {
+    const broken: CommandRouter = {
       async resolve() {
         throw new Error('upstream down');
       },
     };
-    const { service } = setup({ intent: broken });
+    const { service } = setup({ router: broken });
     await service.start(KEY);
 
     const result = await service.say(KEY, '随便说一句');
@@ -243,24 +243,25 @@ describe('意图模型兜底', () => {
     assert.equal(result.battle?.round, 1);
     assert.equal(result.battle?.history.length, 0);
 
-    const quiet: IntentResolver = { async resolve() { return null; } };
-    const quietService = setup({ intent: quiet }).service;
+    const quiet: CommandRouter = { async resolve() { return null; } };
+    const quietService = setup({ router: quiet }).service;
     quietService.start(KEY);
     assert.match((await quietService.say(KEY, '再来一句')).text, /没听清/);
   });
 
-  it('没有对局时不调用模型，避免随便一句就开局', async () => {
-    let called = 0;
-    const intent: IntentResolver = {
-      async resolve() {
-        called += 1;
-        return 'light';
+  it('没有对局时只给开局类选项，认不出也不会随便开局', async () => {
+    const stages: RouterStage[] = [];
+    const router: CommandRouter = {
+      async resolve(_text, stage) {
+        stages.push(stage);
+        return null;
       },
     };
-    const { service, store } = setup({ intent });
+    const { service, store } = setup({ router });
 
     const result = await service.say(KEY, '今天天气不错');
-    assert.equal(called, 0);
+    // 没有对局时进 none 阶段：菜单里没有招式，模型也给不出这一手
+    assert.deepEqual(stages, ['none']);
     assert.match(result.text, /没听清/);
     assert.equal(result.battle, null);
     assert.equal(store.get(KEY), undefined);
@@ -468,13 +469,13 @@ function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** 可手动放行的意图模型：模拟「模型还没回，局面已经变了」 */
-function gatedIntent(): { resolver: IntentResolver; release(id: 'light' | null): void } {
+/** 可手动放行的命令路由：模拟「模型还没回，局面已经变了」 */
+function gatedIntent(): { resolver: CommandRouter; release(id: 'light' | null): void } {
   let release: ((id: 'light' | null) => void) | null = null;
-  const resolver: IntentResolver = {
+  const resolver: CommandRouter = {
     resolve() {
       return new Promise((resolve) => {
-        release = resolve;
+        release = (id) => resolve(id ? { kind: 'turn', action: id } : null);
       });
     },
   };
@@ -563,7 +564,7 @@ describe('异步与状态的边界', () => {
 
   it('模型还在想的时候进了房间，旧的这一手不再结算', async () => {
     const intent = gatedIntent();
-    const { service, store, rooms } = setup({ intent: intent.resolver });
+    const { service, store, rooms } = setup({ router: intent.resolver });
 
     await service.start(KEY);
     const opened = await service.start(HOST, { mode: 'pvp' });
@@ -585,7 +586,7 @@ describe('异步与状态的边界', () => {
 
   it('房主重开时，还在等模型的旧一手不会写进新局', async () => {
     const intent = gatedIntent();
-    const { service, store, rooms } = setup({ intent: intent.resolver });
+    const { service, store, rooms } = setup({ router: intent.resolver });
 
     const opened = await service.start(HOST, { mode: 'pvp' });
     const code = roomCodeOf(opened.text);
@@ -611,6 +612,13 @@ describe('异步与状态的边界', () => {
 });
 
 describe('规则外问答', () => {
+  // 模型路由把这句话判成「规则外」，随后交给语言模型作答
+  const askRouter: CommandRouter = {
+    async resolve(text) {
+      return { kind: 'ask', text };
+    },
+  };
+
   it('交给语言模型回答，不推进对局、不记战报', async () => {
     const asked: string[] = [];
     const chat = {
@@ -619,7 +627,7 @@ describe('规则外问答', () => {
         return '今天多云，傍晚有雨。';
       },
     };
-    const { service, store } = setup({ chat });
+    const { service, store } = setup({ router: askRouter, chat });
     const started = await service.start(KEY);
     const before = store.get(KEY);
     assert.ok(before);
@@ -635,15 +643,15 @@ describe('规则外问答', () => {
 
   it('还没开局时也能问答，不会顺手开一局', async () => {
     const chat = { async answer(): Promise<string | null> { return '今天多云。'; } };
-    const { service, store } = setup({ chat });
+    const { service, store } = setup({ router: askRouter, chat });
     const asked = await service.say(KEY, '今天天气怎么样？');
     assert.equal(asked.text, '今天多云。');
     assert.equal(asked.battle, null);
     assert.equal(store.get(KEY), undefined);
   });
 
-  it('没配模型时回固定话术，对局同样不动', async () => {
-    const { service, store } = setup();
+  it('没配问答模型时回固定话术，对局同样不动', async () => {
+    const { service, store } = setup({ router: askRouter });
     await service.start(KEY);
     const before = store.get(KEY);
 
@@ -653,11 +661,12 @@ describe('规则外问答', () => {
   });
 
   it('模型返回空或抛异常时都回固定话术，不把错误抛给玩家', async () => {
-    const empty = setup({ chat: { async answer() { return null; } } });
+    const empty = setup({ router: askRouter, chat: { async answer() { return null; } } });
     await empty.service.start(KEY);
     assert.match((await empty.service.say(KEY, '现在几点')).text, /暂时答不上来/);
 
     const broken = setup({
+      router: askRouter,
       chat: {
         async answer(): Promise<string | null> {
           throw new Error('boom');

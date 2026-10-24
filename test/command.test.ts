@@ -68,12 +68,12 @@ describe('一句话读成命令', () => {
     assert.deepEqual(readCommand('天倾共此声'), { kind: 'turn', action: 'ult', chant: '天倾共此声' });
   });
 
-  it('认不出来的句子读成 unknown', () => {
+  it('认不出来的句子交给模型路由', () => {
     for (const text of ['', '   ', '今天天气不错', '开', '打开菜单']) {
-      expectKind(text, 'unknown');
+      expectKind(text, 'route');
     }
-    // 规则外的提问不算「认不出来」，走问答
-    expectKind('你是谁', 'ask');
+    // 规则外的提问同样交给模型：本地不再用关键词猜问的是游戏内还是游戏外
+    expectKind('你是谁', 'route');
   });
 
   it('标点与大小写不影响判断', () => {
@@ -84,15 +84,28 @@ describe('一句话读成命令', () => {
 });
 
 describe('不该出手的表达', () => {
-  it('问句读成 status，不按招式处理', () => {
-    for (const text of ['我的大招还剩几次', '能放大招吗', '能不能放大招', '还剩多少能量', '还剩多少真气', '大招还能用吗', '我还能放几次大招']) {
+  it('带招式词的问句不按招式处理', () => {
+    // 问的是资源与剩余次数：本地直接播战况，不消耗资源
+    for (const text of ['我的大招还剩几次', '还剩多少能量', '还剩多少真气', '我的能量还剩多少', '我还能放几次大招']) {
       expectKind(text, 'status');
+    }
+    // 问的是「能不能用」：交给模型分到查询或玩法，绝不出招
+    for (const text of ['能放大招吗', '能不能放大招', '大招还能用吗']) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'route', `「${text}」只是提问，不能出招`);
+      assert.equal(command.kind === 'route' ? command.question : false, true, `「${text}」应标记为提问`);
     }
   });
 
   it('反问式疑问优先于否定：「能不能」不算「不能」', () => {
-    for (const text of ['能不能放大招', '可不可以出招', '要不要放大招', '该不该放大招', '是不是该出大招', '够不够能量放大招', '够不够真气放大招']) {
+    // 问资源够不够：本地直接播战况
+    for (const text of ['够不够能量放大招', '够不够真气放大招']) {
       expectKind(text, 'status');
+    }
+    for (const text of ['能不能放大招', '可不可以出招', '要不要放大招', '该不该放大招', '是不是该出大招']) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'route', `「${text}」是问句，不能出招`);
+      assert.equal(command.kind === 'route' ? command.question : false, true, `「${text}」应标记为提问`);
     }
   });
 
@@ -114,43 +127,53 @@ describe('不该出手的表达', () => {
       expectKind(text, 'turn');
     }
     for (const text of ['区别', '告别']) {
-      expectKind(text, 'unknown');
+      expectKind(text, 'route');
     }
   });
 
   it('问号在去掉标点之前就要认出来', () => {
-    expectKind('大招？', 'status');
-    expectKind('大招?', 'status');
+    for (const text of ['大招？', '大招?']) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'route', `「${text}」是问句，不能出招`);
+      assert.equal(command.kind === 'route' ? command.question : false, true);
+    }
   });
 });
 
-describe('规则外的问题', () => {
-  it('问天气、算数、常识交给语言模型，原话带过去', () => {
-    for (const text of ['今天天气怎么样', '讲个笑话', '1加1等于几', '现在几点', '你是谁', '帮我翻译一下这句话']) {
+describe('问句与规则外的句子交给模型', () => {
+  it('带问号或查询口吻的句子一律不执行，由模型分到查询、玩法或闲聊', () => {
+    // 有明确疑问词：标记成提问，交给模型分
+    for (const text of ['今天天气怎么样', '现在几点', '你是谁', '为什么我输了', '帮我算一下强攻伤害', '能不能讲个笑话']) {
       const command = readCommand(text);
-      assert.equal(command.kind, 'ask', `「${text}」应交给语言模型`);
-      assert.equal(command.kind === 'ask' ? command.text : '', text, '原话要原样带给模型');
+      assert.equal(command.kind, 'route', `「${text}」不应被当作出招`);
+      assert.equal(command.kind === 'route' ? command.question : false, true, `「${text}」应标记为提问`);
+    }
+    // 没有疑问词的祈使句（讲个笑话、1加1等于几、帮我翻译一下这句话）也交给模型：
+    // 是不是提问由模型判断，本地不再用话题词表抢先分类
+    for (const text of ['讲个笑话', '1加1等于几', '帮我翻译一下这句话']) {
+      expectKind(text, 'route');
     }
   });
 
-  it('问句里带了游戏词就留在本地，不被模型接走', () => {
-    for (const text of ['我的能量还剩多少', '我的大招还剩几次', '为什么我输了', '帮我算一下强攻伤害', '现在第几轮', '怎么回能量']) {
+  it('纯查询不含招式词，本地直接播战况，省一次模型往返', () => {
+    for (const text of ['我的能量还剩多少', '现在第几轮', '战况如何', '能量够不够']) {
       expectKind(text, 'status');
     }
-    for (const text of ['怎么玩', '怎么放大招']) {
+  });
+
+  it('问玩法在出招与开房之前', () => {
+    for (const text of ['怎么玩', '怎么放大招', '怎么出招']) {
       expectKind(text, 'help');
     }
   });
 
-  it('「能不能」开头的非游戏问题也算规则外，否定仍优先于疑问', () => {
-    expectKind('能不能讲个笑话', 'ask');
+  it('否定仍优先于疑问', () => {
     expectKind('能不能别打', 'refused');
-    expectKind('要不要放大招', 'status');
   });
 
-  it('不是提问的闲聊不交给模型，仍按没听清处理', () => {
+  it('不是提问的闲聊也交给模型，由它决定是开局、查询还是闲聊', () => {
     for (const text of ['今天挺热', '我饿了', '随便聊聊']) {
-      expectKind(text, 'unknown');
+      expectKind(text, 'route');
     }
   });
 });

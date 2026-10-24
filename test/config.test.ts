@@ -14,7 +14,7 @@ describe('配置解析', () => {
       commandCodeBaseUrl: undefined,
       commandCodeDecisionModel: 'typesafe/jev',
       commandCodeChatModel: 'deepseek/deepseek-v4.1-flash',
-      intentTimeoutMs: 1500,
+      routerTimeoutMs: 1500,
       chatTimeoutMs: 3000,
       enemyAi: 'jev',
       enemyTimeoutMs: 1200,
@@ -59,9 +59,9 @@ describe('配置解析', () => {
     assert.equal(loadConfig({}).commandCodeDecisionModel, 'typesafe/jev');
     assert.equal(loadConfig({ COMMAND_CODE_CHAT_MODEL: ' deepseek/deepseek-v4-flash ' }).commandCodeChatModel, 'deepseek/deepseek-v4-flash');
     assert.equal(loadConfig({}).commandCodeChatModel, 'deepseek/deepseek-v4.1-flash');
-    assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '50' }).intentTimeoutMs, 200);
-    assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '9000' }).intentTimeoutMs, 5000);
-    assert.equal(loadConfig({ INTENT_TIMEOUT_MS: 'oops' }).intentTimeoutMs, 1500);
+    assert.equal(loadConfig({ ROUTER_TIMEOUT_MS: '50' }).routerTimeoutMs, 200);
+    assert.equal(loadConfig({ ROUTER_TIMEOUT_MS: '9000' }).routerTimeoutMs, 5000);
+    assert.equal(loadConfig({ ROUTER_TIMEOUT_MS: 'oops' }).routerTimeoutMs, 1500);
     assert.equal(loadConfig({ CHAT_TIMEOUT_MS: '100' }).chatTimeoutMs, 500);
     assert.equal(loadConfig({ CHAT_TIMEOUT_MS: '99999' }).chatTimeoutMs, 8000);
     assert.equal(loadConfig({ CHAT_TIMEOUT_MS: 'oops' }).chatTimeoutMs, 3000);
