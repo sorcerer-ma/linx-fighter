@@ -30,6 +30,17 @@ export interface AppDependencies {
   service: GameService;
 }
 
+/** 请求里的 JSON-RPC 报文：只取排查用得到的字段，其余原样交给传输层 */
+interface RpcMessage {
+  method?: string;
+  params?: {
+    name?: string;
+    clientInfo?: { name?: string; version?: string };
+    /** MCP 允许客户端在 _meta 里带任意上下文，平台若下发说话人就可能在这里 */
+    _meta?: Record<string, unknown>;
+  };
+}
+
 /** 一条 SSE 连接对应一个 MCP 会话 */
 interface McpSession {
   transport: SSEServerTransport;
@@ -270,10 +281,7 @@ export function createApp(deps: AppDependencies): express.Express {
     snapshotIdentity(req.headers);
 
     // 每条 JSON-RPC 都记下方法名与身份头：排查「谁在调、为什么状态对不上」时先看这行
-    const body = req.body as
-      | { method?: string; params?: { name?: string; clientInfo?: { name?: string; version?: string } } }
-      | Array<{ method?: string; params?: { name?: string; clientInfo?: { name?: string; version?: string } } }>
-      | undefined;
+    const body = req.body as RpcMessage | RpcMessage[] | undefined;
     const message = Array.isArray(body) ? body[0] : body;
     logger.info('MCP 请求', {
       method: message?.method ?? '',
@@ -285,6 +293,7 @@ export function createApp(deps: AppDependencies): express.Express {
       agentId: ctx.agentId,
       sessionId: ctx.sessionId,
       speaker: ctx.speakerName || undefined,
+      meta: message?.params?._meta,
     });
 
     const server = createMcpServer();
