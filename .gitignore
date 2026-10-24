@@ -6,3 +6,4 @@ dist/
 coverage/
 work/
 __pycache__/
+docs/xrobot-dev-spec/
