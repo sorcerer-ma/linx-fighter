@@ -66,7 +66,7 @@ function describeState(state: BattleSnapshot | null): string {
   if (battle.room) parts.push(`房间 ${battle.room}`);
   parts.push(`第${battle.round}轮`);
   parts.push(phaseText(battle));
-  parts.push(`你 ${battle.you.hp}/${battle.you.maxHp} 气${battle.you.ap}`);
+  parts.push(`你 ${battle.you.hp}/${battle.you.maxHp} 能量${battle.you.ap}`);
   parts.push(`${battle.opponent.name} ${battle.opponent.hp}/${battle.opponent.maxHp}`);
   return parts.join(' · ');
 }

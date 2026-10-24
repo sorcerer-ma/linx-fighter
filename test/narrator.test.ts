@@ -39,7 +39,7 @@ function assertSpeakable(text: string): void {
 }
 
 describe('开局与状态播报', () => {
-  it('开局说清对手、先手与初始气血', () => {
+  it('开局说清对手、先手与初始生命值', () => {
     const text = narrateBattleStart(battle());
     assert.match(text, /对决开始/);
     assert.match(text, /守擂教头/);
@@ -57,11 +57,11 @@ describe('开局与状态播报', () => {
     assert.match(narrateAutoStart(battle()), /先开一局/);
   });
 
-  it('战况说明轮次、双方气血真气', () => {
+  it('战况说明轮次、双方生命值能量', () => {
     const text = narrateStatus(battle());
     assert.match(text, /第1轮/);
-    assert.match(text, /气血14\/14/);
-    assert.match(text, /真气3/);
+    assert.match(text, /生命值14\/14/);
+    assert.match(text, /能量3/);
     assertSpeakable(text);
   });
 
@@ -105,10 +105,10 @@ describe('开局与状态播报', () => {
 });
 
 describe('回合播报', () => {
-  it('蓄力报真气涨到几点', () => {
+  it('蓄力报能量涨到几点', () => {
     const state = battle();
     const events: BattleEvent[] = [{ type: 'charge', round: 1, side: 'player', ap: 4 }];
-    assert.match(narrateTurn(state, events), /蓄力，真气涨到4/);
+    assert.match(narrateTurn(state, events), /蓄力，能量涨到4/);
   });
 
   it('攻击待应对时说明已锁定、只能三选一', () => {
@@ -120,7 +120,7 @@ describe('回合播报', () => {
     assertSpeakable(text);
   });
 
-  it('格挡掉血、闪避成功、闪避失败与硬扛各有说法', () => {
+  it('格挡损失生命值、闪避成功、闪避失败与硬扛各有说法', () => {
     const state = battle();
     const guarded: BattleEvent[] = [
       {
@@ -137,7 +137,7 @@ describe('回合播报', () => {
         targetHp: 15,
       },
     ];
-    assert.match(narrateTurn(state, guarded), /格挡，掉3点气血，剩15/);
+    assert.match(narrateTurn(state, guarded), /格挡，掉3点生命值，剩15/);
 
     const dodged: BattleEvent[] = [{ ...guarded[0], dodged: true, damage: 0 } as BattleEvent];
     assert.match(narrateTurn(state, dodged), /闪开了/);
@@ -150,7 +150,7 @@ describe('回合播报', () => {
     const forced: BattleEvent[] = [
       { ...guarded[0], response: 'take', forced: true, guarded: false, damage: 5, targetHp: 13 } as BattleEvent,
     ];
-    assert.match(narrateTurn(state, forced), /真气耗尽只能硬扛/);
+    assert.match(narrateTurn(state, forced), /能量耗尽只能硬扛/);
   });
 
   it('第 3 轮开头提示伤害加成', () => {
@@ -219,7 +219,7 @@ describe('提示与房间播报', () => {
     pending.pending = { actor: 'enemy', move: 'light', damage: 3 };
     assert.match(narrateRejection(pending, { reason: 'wrong-stage', action: 'light' }), /只能应对/);
     assert.match(narrateRejection(state, { reason: 'waiting-opponent', action: 'guard' }), /等对手应对/);
-    assert.match(narrateRejection(state, { reason: 'insufficient-ap', action: 'heavy' }), /真气不够/);
+    assert.match(narrateRejection(state, { reason: 'insufficient-ap', action: 'heavy' }), /能量不够/);
     assert.match(narrateRejection(state, { reason: 'no-ult', action: 'ult' }), /已经用过了/);
     assert.match(narrateRejection(state, { reason: 'full-ap', action: 'charge' }), /已经满了/);
     const ended = battle();
@@ -244,8 +244,8 @@ describe('提示与房间播报', () => {
 
 describe('补账播报', () => {
   it('把错过的结算串成一段，补一次就够', () => {
-    const text = narrateCatchUp(['你一记强攻，对手格挡，掉5点气血，剩13。']);
-    assert.equal(text, '刚才那一手。你一记强攻，对手格挡，掉5点气血，剩13。');
+    const text = narrateCatchUp(['你一记强攻，对手格挡，掉5点生命值，剩13。']);
+    assert.equal(text, '刚才那一手。你一记强攻，对手格挡，掉5点生命值，剩13。');
   });
 
   it('攒多了只补最近两段，不把播报拖长', () => {
@@ -258,7 +258,7 @@ describe('不该出手的表达', () => {
   it('否定与歧义都说清没出手，不报数值', () => {
     const negated = narrateActionBlocked('negated');
     assert.match(negated, /没打出去/);
-    assert.doesNotMatch(negated, /气血|真气/);
+    assert.doesNotMatch(negated, /生命值|能量/);
     assertSpeakable(negated);
 
     const ambiguous = narrateActionBlocked('ambiguous');

@@ -49,7 +49,7 @@ const sayInput = {
     .trim()
     .min(1)
     .max(120)
-    .describe('玩家原话，一字不改地传进来，例如「攻击」「我还剩多少血」「开房间」「加入房间1234」「怎么玩」'),
+    .describe('玩家原话，一字不改地传进来，例如「攻击」「我的生命值还剩多少」「开房间」「加入房间1234」「怎么玩」'),
 };
 
 /**
@@ -146,7 +146,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '查看战况',
       description:
-        '查看当前对局双方的气血、真气和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我还剩多少血」时调用。',
+        '查看当前对局双方的生命值、能量和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我的生命值还剩多少」时调用。',
       inputSchema: {},
     },
     async () => invoke('game_status', {}, () => service.status(battleKey(ctx), speakOptions())),

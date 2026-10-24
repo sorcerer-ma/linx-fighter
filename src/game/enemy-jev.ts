@@ -2,7 +2,7 @@
  * JEV 决策版对手 AI：每次出招、每次应对都请 JEV 做一道选择题。
  *
  * 与本地决策模型（enemy.ts）的分工：
- * - 合法选项由本地按行动点、大招次数先过滤，模型不会拿到做不到的选项；
+ * - 合法选项由本地按能量、大招次数先过滤，模型不会拿到做不到的选项；
  * - 模型只输出「选哪个 + 置信度」，不产出数值、不改对局状态；
  * - 超时、网络失败、返回值非法或选项越界，一律退回本地决策模型，保证回合不卡住；
  * - 置信度与概率只记日志，不作为拒绝依据（JEV 的 confidence 通常只有 0.3–0.5）。
@@ -78,7 +78,7 @@ interface ChoiceQuestion {
   criteria: Record<string, string>;
 }
 
-/** 当前行动点下合法的主动招式；顺序固定，便于日志与断言 */
+/** 当前能量下合法的主动招式；顺序固定，便于日志与断言 */
 export function legalActiveActions(view: ActionView): ActiveActionId[] {
   const actions: ActiveActionId[] = [];
   if (view.self.ap >= ATTACKS.light.apCost) actions.push('light');
@@ -88,7 +88,7 @@ export function legalActiveActions(view: ActionView): ActiveActionId[] {
   return actions;
 }
 
-/** 当前行动点下合法的应对方式；没有真气时只能承受 */
+/** 当前能量下合法的应对方式；没有能量时只能承受 */
 export function legalResponses(view: ResponseView): ResponseMove[] {
   const responses: ResponseMove[] = [];
   if (view.self.ap >= RESPONSES.guard.apCost) responses.push('guard');
@@ -147,17 +147,17 @@ function historyLines(history: readonly TurnRecord[]): string[] {
 export function activeQuestion(view: ActionView): { state: string; question: ChoiceQuestion } {
   const { bonus, round, self, enemy } = view;
   const criteria: Record<string, string> = {
-    light: `普攻：消耗 ${ATTACKS.light.apCost} 点真气，造成 ${ATTACKS.light.damage + bonus} 点伤害；暴击率 20%（再多 ${CRIT_BONUS} 点），对手闪避率 50%。`,
-    heavy: `强攻：消耗 ${ATTACKS.heavy.apCost} 点真气，造成 ${ATTACKS.heavy.damage + bonus} 点伤害；暴击率 20%（再多 ${CRIT_BONUS} 点），对手闪避率 50%。`,
-    ult: `大招：消耗 ${ATTACKS.ult.apCost} 点真气，造成 ${ATTACKS.ult.damage + bonus} 点伤害；暴击率 40%（再多 ${CRIT_BONUS} 点），对手闪避率 30%；整局只剩 ${self.ultLeft} 次。`,
-    charge: `蓄力：本回合不出手，真气 +1（当前 ${self.ap}，上限 ${RULES.maxAp}）。`,
+    light: `普攻：消耗 ${ATTACKS.light.apCost} 点能量，造成 ${ATTACKS.light.damage + bonus} 点伤害；暴击率 20%（再多 ${CRIT_BONUS} 点），对手闪避率 50%。`,
+    heavy: `强攻：消耗 ${ATTACKS.heavy.apCost} 点能量，造成 ${ATTACKS.heavy.damage + bonus} 点伤害；暴击率 20%（再多 ${CRIT_BONUS} 点），对手闪避率 50%。`,
+    ult: `大招：消耗 ${ATTACKS.ult.apCost} 点能量，造成 ${ATTACKS.ult.damage + bonus} 点伤害；暴击率 40%（再多 ${CRIT_BONUS} 点），对手闪避率 30%；整局只剩 ${self.ultLeft} 次。`,
+    charge: `蓄力：本回合不出手，能量 +1（当前 ${self.ap}，上限 ${RULES.maxAp}）。`,
   };
 
   return {
     state: [
       `第 ${round} 轮，当前伤害加成 +${bonus}。`,
-      `你（守擂方）：气血 ${self.hp}，真气 ${self.ap}，大招剩 ${self.ultLeft} 次。`,
-      `玩家：气血 ${enemy.hp}，真气 ${enemy.ap}。`,
+      `你（守擂方）：生命值 ${self.hp}，能量 ${self.ap}，大招剩 ${self.ultLeft} 次。`,
+      `玩家：生命值 ${enemy.hp}，能量 ${enemy.ap}。`,
       ...historyLines(view.history),
     ].join(' '),
     question: {
@@ -172,22 +172,22 @@ export function activeQuestion(view: ActionView): { state: string; question: Cho
 export function responseQuestion(view: ResponseView): { state: string; question: ChoiceQuestion } {
   const { bonus, round, self, attacker, move, damage, critChance, dodgeChance } = view;
   const criteria: Record<string, string> = {
-    guard: `格挡：消耗 ${RESPONSES.guard.apCost} 点真气，本次伤害减 ${RESPONSES.guard.reduction}；预计掉 ${Math.max(0, damage - RESPONSES.guard.reduction)} 点。`,
-    dodge: `闪避：消耗 ${RESPONSES.dodge.apCost} 点真气，有 ${Math.round(dodgeChance * 100)}% 概率完全躲开；躲不掉就吃满伤害。`,
-    take: `承受：不消耗真气，直接掉 ${damage} 点伤害。`,
+    guard: `格挡：消耗 ${RESPONSES.guard.apCost} 点能量，本次伤害减 ${RESPONSES.guard.reduction}；预计掉 ${Math.max(0, damage - RESPONSES.guard.reduction)} 点。`,
+    dodge: `闪避：消耗 ${RESPONSES.dodge.apCost} 点能量，有 ${Math.round(dodgeChance * 100)}% 概率完全躲开；躲不掉就吃满伤害。`,
+    take: `承受：不消耗能量，直接掉 ${damage} 点伤害。`,
   };
 
   return {
     state: [
       `第 ${round} 轮，当前伤害加成 +${bonus}。`,
-      `你（守擂方）：气血 ${self.hp}，真气 ${self.ap}。`,
-      `玩家：气血 ${attacker.hp}，真气 ${attacker.ap}。`,
+      `你（守擂方）：生命值 ${self.hp}，能量 ${self.ap}。`,
+      `玩家：生命值 ${attacker.hp}，能量 ${attacker.ap}。`,
       `玩家刚锁定${MOVE_LABELS[move]}，基础伤害 ${damage}；暴击率 ${Math.round(critChance * 100)}%（再多 ${CRIT_BONUS} 点），你的闪避成功率 ${Math.round(dodgeChance * 100)}%。`,
       ...historyLines(view.history),
     ].join(' '),
     question: {
       instructions:
-        '你是守擂教头，正在和玩家对战。结合双方数值、最近战报与玩家习惯，只从给出的应对里选一个，先保证别被打死，再考虑省真气。',
+        '你是守擂教头，正在和玩家对战。结合双方数值、最近战报与玩家习惯，只从给出的应对里选一个，先保证别被打死，再考虑省能量。',
       criteria,
     },
   };

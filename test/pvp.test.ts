@@ -242,7 +242,7 @@ describe('双人联机', () => {
 
     const status = service.status(HOST);
     assert.match(status.text, /还等着对手加入/);
-    assert.match(status.text, /气血/);
+    assert.match(status.text, /生命值/);
     assert.equal(service.status(GUEST).battle, null);
   });
 
@@ -446,7 +446,7 @@ describe('语音原话兜底开房与加入', () => {
 });
 
 describe('结算事件镜像', () => {
-  it('换视角只翻「谁做的」，伤害与掉血按原样', () => {
+  it('换视角只翻「谁做的」，伤害与损失生命值按原样', () => {
     const events: BattleEvent[] = [
       { type: 'round-start', round: 3, bonus: 4 },
       {
@@ -571,7 +571,7 @@ describe('房间与席位的边界', () => {
     assert.ok(armed);
 
     const asked = await service.say(HOST, '我的大招还剩几次');
-    assert.match(asked.text, /真气/);
+    assert.match(asked.text, /能量/);
     assert.equal(store.get(key), armed);
     assert.equal(armed.player.ap, 5);
     assert.equal(armed.player.ultLeft, 1);

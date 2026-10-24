@@ -32,7 +32,7 @@ export function roomCodeFromPhrase(text: string): string | null {
 
 /**
  * 把某一方视角的结算事件镜像到另一方。
- * 事件里的 side 是「谁做的」，换视角时只翻 side，伤害与掉血这些结果不动；
+ * 事件里的 side 是「谁做的」，换视角时只翻 side，伤害与损失生命值这些结果不动；
  * 逐轮增益（round-start）是对局共有的，不带视角，原样留着。
  */
 export function mirrorEvents(events: BattleEvent[]): BattleEvent[] {
@@ -58,7 +58,7 @@ export function mirrorEvents(events: BattleEvent[]): BattleEvent[] {
 /**
  * 把服务端基准对局镜像成某一方的视角。
  * 双人联机里两位玩家各自通过 deviceId#agentId 读状态，引擎只认 player/enemy，
- * 因此第二位玩家看到的是左右互换后的局面：气血、真气、先手、待应对一起翻转。
+ * 因此第二位玩家看到的是左右互换后的局面：生命值、能量、先手、待应对一起翻转。
  */
 export function viewAs(battle: Battle, side: Side): Battle {
   return side === 'player' ? battle : swapSides(battle);

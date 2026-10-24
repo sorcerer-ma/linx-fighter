@@ -11,13 +11,13 @@
  *   随机流跨对局连续消耗，所以这里也必须全程共用同一个 Mt19937 实例。
  *
  * 参考口径（见 /tmp/v02ref 与 docs/archive/v0.2/test-validation.md）：
- * 先手 14 血、后手 18 血；行动点初始 3、上限 5，各自首次主动阶段不回复，
+ * 先手 14点生命值、后手 18点生命值；能量初始 3、上限 5，各自首次主动阶段不回复，
  * 之后每个主动阶段 +2；蓄力 +1；大招每局一次；第 3 轮起每轮伤害 +2。
  * 防守方在攻击锁定后选择应对，伤害不因应对改变（引擎已保证）。
  *
  * 每一局用 createBattle(firstMover='player') 开局，玩家侧扮演参考仿真的
  * 先手策略 A，对手侧通过注入的 BattleAI 扮演后手策略 B。玩家先手，所以
- * 对手的 chooseAction 一定在玩家行动之后被引擎调用；玩家被攻击而还有行动点
+ * 对手的 chooseAction 一定在玩家行动之后被引擎调用；玩家被攻击而还有能量
  * 时引擎会留下 pending，由本模块按参考 defense 决策应对。
  */
 
@@ -93,7 +93,7 @@ export interface ChooseContext {
  *
  * 前 6 种来自 limited_ults.py，后 2 种来自 v02_validation.py 的扩展，
  * 其中 `finish` 的阈值 11 与 `adaptive_finish` 的「当轮大招伤害 + 2」是
- * 两套不同口径，不要合并：前者是固定血线，后者随轮次加成变化。
+ * 两套不同口径，不要合并：前者是固定生命值，后者随轮次加成变化。
  */
 export function choose(policy: Policy, ctx: ChooseContext): ActiveActionId {
   const { hp, enemyHp, ap, enemyAp, ultLeft, bonus } = ctx;
@@ -142,8 +142,8 @@ export function choose(policy: Policy, ctx: ChooseContext): ActiveActionId {
  *
  * 与引擎内置 ENEMY_AI 的思路一致，但这里必须独立实现，因为对拍的是参考
  * 算法而不是产品 AI：
- * - 没有行动点只能承受；
- * - save 风格在行动点不高于 2、且吃下这一下不会倒下时主动承受；
+ * - 没有能量只能承受；
+ * - save 风格在能量不高于 2、且吃下这一下不会倒下时主动承受；
  * - 其余情况下只在格挡与闪避之间选择（参考实现不把承受列为候选），
  *   先比「被打死的概率」，再比「期望承伤」，平手时取格挡。
  *

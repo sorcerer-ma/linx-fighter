@@ -25,7 +25,7 @@ interface DuelOptions {
   verbose: boolean;
 }
 
-/** 一方的气血与真气，用于复盘里画状态 */
+/** 一方的生命值与能量，用于复盘里画状态 */
 interface SideState {
   name: string;
   hp: number;
@@ -73,7 +73,7 @@ function playersFor(round: number): [string, string] {
 /**
  * 一次合法操作的选择：只依据服务端快照判断，不推算规则。
  * - 有待应对的攻击且不是自己打的 → 选一个应对；
- * - 没有待应对且轮到自己 → 按真气与剩余大招挑一招。
+ * - 没有待应对且轮到自己 → 按能量与剩余大招挑一招。
  */
 function decide(snapshot: BattleSnapshot | null, counter: number): string | null {
   const battle = snapshot?.battle;
@@ -81,7 +81,7 @@ function decide(snapshot: BattleSnapshot | null, counter: number): string | null
 
   if (battle.pending) {
     if (battle.pending.actor === 'player') return null; // 自己打出的，等对面应对
-    // 格挡与闪避各要 1 点真气，真气空了只能硬扛
+    // 格挡与闪避各要 1 点能量，能量空了只能硬扛
     if (battle.you.ap < 1) return '承受';
     const responses = ['格挡', '闪避', '承受'];
     return responses[counter % responses.length]!;
@@ -89,7 +89,7 @@ function decide(snapshot: BattleSnapshot | null, counter: number): string | null
 
   if (battle.active !== 'player') return null; // 轮到对面主动出招
 
-  // 招式真气价目：普攻 1 / 强攻 2 / 大招 4，真气不够就蓄力攒到能放大招
+  // 招式能量价目：普攻 1 / 强攻 2 / 大招 4，能量不够就蓄力攒到能放大招
   if (battle.you.ultLeft > 0 && battle.you.ap >= 4) return '大招';
   if (battle.you.ap >= 2) return '强攻';
   if (battle.you.ap >= 1) return '普攻';
@@ -108,10 +108,10 @@ function assertMirror(a: BattleSnapshot | null, b: BattleSnapshot | null): void 
   if (left.room !== right.room) fail(`房间 ${left.room} vs ${right.room}`);
   if (left.round !== right.round) fail(`轮次 ${left.round} vs ${right.round}`);
   if (left.phase !== flipPhase(right.phase)) fail(`阶段 ${left.phase} vs ${right.phase}`);
-  if (left.you.hp !== right.opponent.hp) fail(`气血 ${left.you.hp} vs ${right.opponent.hp}`);
-  if (left.opponent.hp !== right.you.hp) fail(`气血 ${left.opponent.hp} vs ${right.you.hp}`);
-  if (left.you.maxHp !== right.opponent.maxHp) fail('气血上限不一致');
-  if (left.you.ap !== right.opponent.ap) fail(`真气 ${left.you.ap} vs ${right.opponent.ap}`);
+  if (left.you.hp !== right.opponent.hp) fail(`生命值 ${left.you.hp} vs ${right.opponent.hp}`);
+  if (left.opponent.hp !== right.you.hp) fail(`生命值 ${left.opponent.hp} vs ${right.you.hp}`);
+  if (left.you.maxHp !== right.opponent.maxHp) fail('生命值上限不一致');
+  if (left.you.ap !== right.opponent.ap) fail(`能量 ${left.you.ap} vs ${right.opponent.ap}`);
   if (left.you.ultLeft !== right.opponent.ultLeft) fail('剩余大招不一致');
   if ((left.pending?.actor ?? null) !== flip(right.pending?.actor ?? null)) fail('待应对方向不一致');
   if (left.active !== flip(right.active)) fail('轮次归属不一致');
@@ -151,7 +151,7 @@ function stateLine(step: DuelStep): string {
     : step.phase === 'battle'
       ? ` · 轮到${step.active === 'player' ? '房主' : '访客'}出招`
       : '';
-  return `R${step.round} · 房主 ${step.host.hp}/${step.host.maxHp} 气${step.host.ap}${ult(step.host)} · 访客 ${step.guest.hp}/${step.guest.maxHp} 气${step.guest.ap}${ult(step.guest)}${pending}`;
+  return `R${step.round} · 房主 ${step.host.hp}/${step.host.maxHp} 能量${step.host.ap}${ult(step.host)} · 访客 ${step.guest.hp}/${step.guest.maxHp} 能量${step.guest.ap}${ult(step.guest)}${pending}`;
 }
 
 /** 打一局：开房 → 加入 → 轮流出手直到分出胜负 */

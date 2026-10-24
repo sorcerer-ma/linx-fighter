@@ -15,7 +15,7 @@ import type { ActionView, BattleAI, ResponseView, TurnRecord } from '../src/game
 
 const logger = { info: () => {}, warn: () => {}, debug: () => {} };
 
-/** 主动阶段视角：默认对手（enemy 侧）满血、3 真气、1 次大招；玩家 14 血 */
+/** 主动阶段视角：默认对手（enemy 侧）满生命值、3 能量、1 次大招；玩家 14点生命值 */
 function actionViewFixture(
   overrides: Partial<{
     round: number;
@@ -78,7 +78,7 @@ function decision(choice: string, confidence?: number, probabilities?: Record<st
 const fallback: BattleAI = { chooseAction: () => 'charge', chooseResponse: () => 'take' };
 
 describe('JEV 对手 AI：合法选项与题干', () => {
-  it('主动阶段先按行动点过滤合法招式', () => {
+  it('主动阶段先按能量过滤合法招式', () => {
     assert.deepEqual(legalActiveActions(actionViewFixture({ ap: 0 })), ['charge']);
     assert.deepEqual(legalActiveActions(actionViewFixture({ ap: 1 })), ['light', 'charge']);
     assert.deepEqual(legalActiveActions(actionViewFixture({ ap: 3 })), ['light', 'heavy', 'charge']);
@@ -87,7 +87,7 @@ describe('JEV 对手 AI：合法选项与题干', () => {
     assert.deepEqual(legalActiveActions(actionViewFixture({ ap: 5 })), ['light', 'heavy', 'ult']);
   });
 
-  it('应对阶段没有真气时只能承受', () => {
+  it('应对阶段没有能量时只能承受', () => {
     assert.deepEqual(legalResponses(responseViewFixture({ ap: 0 })), ['take']);
     assert.deepEqual(legalResponses(responseViewFixture({ ap: 1 })), ['guard', 'dodge', 'take']);
   });
@@ -97,10 +97,10 @@ describe('JEV 对手 AI：合法选项与题干', () => {
     const { state, question } = activeQuestion(view);
     assert.match(state, /第 3 轮/);
     assert.match(state, /伤害加成 \+2/);
-    assert.match(state, /气血 12/);
+    assert.match(state, /生命值 12/);
     assert.match(state, /大招剩 1 次/);
     assert.match(question.criteria.ult!, /造成 11 点伤害/);
-    assert.match(question.criteria.charge!, /真气 \+1/);
+    assert.match(question.criteria.charge!, /能量 \+1/);
   });
 
   it('应对题干带上攻击伤害与概率', () => {
@@ -220,7 +220,7 @@ describe('JEV 对手 AI：调用与回退', () => {
       }) as typeof fetch,
     });
 
-    // 只有 1 点真气：大招与强攻都不该出现在选项里
+    // 只有 1 点能量：大招与强攻都不该出现在选项里
     const view = actionViewFixture({ ap: 1 });
     assert.equal(await ai.chooseAction(view), 'light');
     const seen = captured as unknown as { url: string; init: RequestInit };
@@ -256,7 +256,7 @@ describe('JEV 对手 AI：调用与回退', () => {
     ];
     for (const makeFetch of cases) {
       const ai = createJevEnemyAI({ apiKey: 'sk-test', logger, fetchImpl: makeFetch(), fallback });
-      // 1 点真气下允许的只有 light/charge；ult 非法
+      // 1 点能量下允许的只有 light/charge；ult 非法
       assert.equal(await ai.chooseAction(actionViewFixture({ ap: 1 })), 'charge');
     }
   });

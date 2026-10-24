@@ -38,7 +38,7 @@ function firstAttack(events: BattleEvent[]): Extract<BattleEvent, { type: 'attac
 }
 
 describe('对局初始化', () => {
-  it('先手 14 血、后手 18 血，双方 3 点真气、1 次大招', async () => {
+  it('先手 14点生命值、后手 18点生命值，双方 3 点能量、1 次大招', async () => {
     const battle = playerFirst();
     assert.equal(battle.round, 1);
     assert.equal(battle.phase, 'battle');
@@ -57,7 +57,7 @@ describe('对局初始化', () => {
     assert.deepEqual(battle.history, []);
   });
 
-  it('后手时气血对调，先手方先动', async () => {
+  it('后手时生命值对调，先手方先动', async () => {
     const battle = enemyFirst();
     assert.equal(battle.firstMover, 'enemy');
     assert.equal(battle.active, 'enemy');
@@ -119,7 +119,7 @@ describe('主动阶段与应对结算', () => {
     );
   });
 
-  it('应对对手普攻：格挡后掉 1 点，进入第 2 轮并按规则回复真气', async () => {
+  it('应对对手普攻：格挡后掉 1 点，进入第 2 轮并按规则回复能量', async () => {
     const afterAttack = await turn(playerFirst(), 'light');
     const result = await resolveTurn(afterAttack, 'guard', 2, LOCKED);
     const next = result.battle;
@@ -147,7 +147,7 @@ describe('主动阶段与应对结算', () => {
     assert.equal(battle.enemy.hp, 15);
   });
 
-  it('闪避判定成功时不掉血，但照样消耗 1 点真气', async () => {
+  it('闪避判定成功时不损失生命值，但照样消耗 1 点能量', async () => {
     const result = await resolveTurn(playerFirst(), 'light', 1, { random: () => 0.1, ai: alwaysDodge });
     const next = result.battle;
     const attack = firstAttack(result.events);
@@ -172,7 +172,7 @@ describe('主动阶段与应对结算', () => {
     assert.equal(result.battle.enemy.hp, 13);
   });
 
-  it('防守方没有真气时强制硬扛，不等待应对', async () => {
+  it('防守方没有能量时强制硬扛，不等待应对', async () => {
     const battle = playerFirst();
     battle.enemy.ap = 0;
     const result = await resolveTurn(battle, 'light', 1, LOCKED);
@@ -182,7 +182,7 @@ describe('主动阶段与应对结算', () => {
     assert.equal(attack.forced, true);
     assert.equal(attack.damage, 3);
     assert.equal(result.battle.enemy.hp, 15);
-    // 对手真气耗尽后会先蓄力，对局仍可继续
+    // 对手能量耗尽后会先蓄力，对局仍可继续
     assert.equal(result.battle.round, 2);
     assert.equal(result.battle.pending, null);
     assert.ok(result.events.some((event) => event.type === 'charge'));
@@ -195,7 +195,7 @@ describe('主动阶段与应对结算', () => {
   });
 });
 
-describe('行动点与招式限制', () => {
+describe('能量与招式限制', () => {
   it('动作点不足时不出招、不推进回合', async () => {
     const battle = playerFirst();
     battle.player.ap = 1;
@@ -207,7 +207,7 @@ describe('行动点与招式限制', () => {
     assert.equal(result.battle.rngDraws, 0);
   });
 
-  it('真气满时不能再蓄力', async () => {
+  it('能量满时不能再蓄力', async () => {
     const battle = playerFirst();
     battle.player.ap = RULES.maxAp;
     const result = await resolveTurn(battle, 'charge', 1);
@@ -215,7 +215,7 @@ describe('行动点与招式限制', () => {
     assert.equal(result.battle.player.ap, RULES.maxAp);
   });
 
-  it('蓄力加 1 点真气并交出主动阶段', async () => {
+  it('蓄力加 1 点能量并交出主动阶段', async () => {
     const result = await resolveTurn(playerFirst(), 'charge', 1);
     assert.equal(result.battle.player.ap, 4);
     assert.equal(result.events[0]!.type, 'charge');
@@ -272,7 +272,7 @@ describe('回合与胜负', () => {
     assert.equal(result.battle, battle);
   });
 
-  it('把对手打到 0 血判胜，并写入终局事件', async () => {
+  it('把对手打到 0点生命值判胜，并写入终局事件', async () => {
     const battle = playerFirst();
     battle.enemy.hp = 1;
     const result = await resolveTurn(battle, 'light', 1, LOCKED);
@@ -348,7 +348,7 @@ describe('双人联机', () => {
     assert.equal(guestTurn.battle.round, 1);
     assert.equal(guestTurn.battle.active, 'player');
 
-    // 写回基准视角：房主是对手，掉血与轮次一致
+    // 写回基准视角：房主是对手，损失生命值与轮次一致
     const next = canonicalize(guestTurn.battle, 'enemy', hostTurn.battle);
     assert.equal(next.enemy.hp, 17);
     assert.equal(next.enemy.ap, 2);

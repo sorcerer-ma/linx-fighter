@@ -1,7 +1,7 @@
 /**
  * 游戏数据模型：对局状态、招式标识与结算事件。
  *
- * 服务端是唯一事实来源：命中、伤害、行动点、胜负都只在这里的数据上算，
+ * 服务端是唯一事实来源：命中、伤害、能量、胜负都只在这里的数据上算，
  * 平台侧模型只负责把玩家的原话交给工具、把工具返回的文字念出来。
  */
 
@@ -28,7 +28,7 @@ export interface Fighter {
   name: string;
   hp: number;
   maxHp: number;
-  /** 行动点：出招与格挡、闪避的消耗，每轮自己的主动阶段恢复 */
+  /** 能量：出招与格挡、闪避的消耗，每轮自己的主动阶段恢复 */
   ap: number;
   maxAp: number;
   /** 本局剩余大招次数 */
@@ -81,7 +81,7 @@ export interface Battle {
   firstMover: Side;
   /** 当前轮到哪一方主动出手 */
   active: Side;
-  /** 各方已经开始的主动阶段数：第一段不回行动点，之后每段恢复 */
+  /** 各方已经开始的主动阶段数：第一段不回能量，之后每段恢复 */
   activePhases: Record<Side, number>;
   /** 对手已经出手、等待玩家应对的攻击 */
   pending: PendingAttack | null;
@@ -165,7 +165,7 @@ export type BattleEvent =
       dodged: boolean;
       crit: boolean;
       guarded: boolean;
-      /** 防守方没有行动点，只能硬扛 */
+      /** 防守方没有能量，只能硬扛 */
       forced: boolean;
       damage: number;
       targetHp: number;

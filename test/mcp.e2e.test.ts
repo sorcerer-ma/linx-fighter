@@ -129,7 +129,7 @@ describe('MCP 协议链路', () => {
 
     const status = await callTool(client, 'game_status');
     assert.match(textOf(status), /第2轮/);
-    assert.match(textOf(status), /气血/);
+    assert.match(textOf(status), /生命值/);
   });
 
   it('招式认不出来不推进回合', async () => {
@@ -228,7 +228,7 @@ describe('MCP 协议链路', () => {
 
     const status = await callTool(client, 'game_say', { text: '战况如何' });
     assert.match(textOf(status), /第1轮/);
-    assert.match(textOf(status), /气血/);
+    assert.match(textOf(status), /生命值/);
 
     const help = await callTool(client, 'game_say', { text: '怎么玩' });
     assert.match(textOf(help), /普攻/);
