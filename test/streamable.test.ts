@@ -152,9 +152,15 @@ describe('Streamable HTTP 通道', () => {
 
   it('tools/list 能列出六个工具（含挂起等对手）', async () => {
     const result = await rpc('tools/list');
-    const payload = JSON.parse(result.text) as { result?: { tools?: Array<{ name: string }> } };
-    const names = (payload.result?.tools ?? []).map((tool) => tool.name).sort();
+    const payload = JSON.parse(result.text) as {
+      result?: { tools?: Array<{ name: string; description?: string }> };
+    };
+    const tools = payload.result?.tools ?? [];
+    const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, ['game_action', 'game_help', 'game_say', 'game_start', 'game_status', 'wait_event']);
+    // 超时续挂依赖模型读得到工具描述：锁住这段提示，避免以后改丢
+    const wait = tools.find((tool) => tool.name === 'wait_event');
+    assert.match(wait?.description ?? '', /续挂/);
   });
 
   it('工具调用在多次 POST 之间共享对局状态', async () => {
