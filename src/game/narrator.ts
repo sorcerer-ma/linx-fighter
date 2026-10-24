@@ -87,6 +87,16 @@ function pendingSentence(move: AttackMove, actor: Side): string {
   return `我出${ATTACK_NAME[move]}，接招！等对手应对`;
 }
 
+/**
+ * 同上，但我方已出手时压成一句。
+ *
+ * 「接招！等对手应对」本身是两句，和战况的资源句拼在一起会变成三句；
+ * 战况与开局要留出两句预算，这里只报「已出手、等对手应对」。
+ */
+function ownPendingSentence(move: AttackMove): string {
+  return `我出${ATTACK_NAME[move]}了，等对手应对`;
+}
+
 /** 一次攻击结算后的句子 */
 function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>): string {
   const attacker = sideName(event.side);
@@ -182,7 +192,9 @@ export function narrateBattleStart(battle: Battle): string {
 /** 单人开局：局面加下一手，恰好两句 */
 export function narrateOpening(battle: Battle): string {
   const next = battle.pending
-    ? pendingSentence(battle.pending.move, battle.pending.actor)
+    ? battle.pending.actor === 'player'
+      ? ownPendingSentence(battle.pending.move)
+      : pendingSentence(battle.pending.move, battle.pending.actor)
     : battle.active === 'player'
       ? '该我出招，说普攻、强攻、大招或蓄力，听你的'
       : turnHint(battle);
@@ -204,7 +216,12 @@ export function narrateStatus(battle: Battle, options: { waiting?: boolean } = {
   if (battle.phase !== 'battle') return narrateEnded(battle);
   const lines = [`第${battle.round}轮，${fighterLine(battle)}，${ultLine(battle)}`];
   if (battle.pending) {
-    lines.push(pendingSentence(battle.pending.move, battle.pending.actor));
+    // 战况只有两句预算：我方已出手时用单句说法
+    lines.push(
+      battle.pending.actor === 'player'
+        ? ownPendingSentence(battle.pending.move)
+        : pendingSentence(battle.pending.move, battle.pending.actor),
+    );
   } else if (!options.waiting) {
     lines.push(turnHint(battle));
   }

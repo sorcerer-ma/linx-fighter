@@ -29,6 +29,12 @@ describe('一句话读成命令', () => {
     }
   });
 
+  it('问蓄力要几回合仍读成 status，不能真去蓄力', () => {
+    for (const text of ['回满能量要几回合', '补满能量要几回合', '回能量要几轮', '攒点能量要多久', '怎么回能量']) {
+      expectKind(text, 'status');
+    }
+  });
+
   it('问玩法读成 help，且不会被「出招」抢成招式', () => {
     for (const text of ['怎么玩', '怎么出招', '规则是什么', '教我一下', '怎么才能赢']) {
       expectKind(text, 'help');

@@ -99,10 +99,13 @@ describe('开局与状态播报', () => {
     assertSpeakable(text);
   });
 
-  it('自己已出手、等对手应对时，战况不会说错方向', () => {
+  it('自己已出手、等对手应对时，战况不会说错方向，也不会超两句', () => {
     const state = battle('player', 'pvp');
     state.pending = { actor: 'player', move: 'light', damage: 3 };
-    assert.match(narrateStatus(state), /我出普攻，接招！等对手应对/);
+    const text = narrateStatus(state);
+    // 「接招！等对手应对」本身占两句，拼上资源句会变三句，战况这里要压成一句
+    assert.match(text, /我出普攻了，等对手应对/);
+    assertSpeakable(text);
   });
 
   it('房间还在等人时战况只报事实，不催出招', () => {

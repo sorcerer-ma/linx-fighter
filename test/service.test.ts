@@ -280,6 +280,22 @@ describe('统一入口与局面快照', () => {
     assert.match(result.text, /第1轮/);
   });
 
+  it('问蓄力要几回合不会把能量真的蓄上', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+
+    for (const text of ['回满能量要几回合', '补满能量要几回合', '回能量要几轮']) {
+      const result = await service.say(KEY, text);
+      assert.match(result.text, /第1轮/);
+      assert.equal(store.get(KEY), before, `「${text}」不该改动对局`);
+    }
+    assert.equal(before.player.ap, 3);
+    assert.equal(before.history.length, 0);
+    assert.equal(before.pending, null);
+  });
+
   it('玩法问句不需要对局', async () => {
     const { service } = setup();
     const result = await service.say(KEY, '怎么玩');
