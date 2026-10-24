@@ -76,35 +76,51 @@
 
       <details class="opponent-debug"><summary>对手状态 · 只读调试</summary><p id="opponent-debug" aria-live="polite">尚无对局</p></details>
 
-      <!-- 文字输入：默认收起，点键盘键展开一行 -->
-      <form class="composer" id="composer" hidden>
-        <input
-          class="text"
-          id="text"
-          type="text"
-          maxlength="200"
-          autocomplete="off"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          enterkeyhint="send"
-          placeholder="说句话，比如「强攻」"
-          aria-label="输入一句话"
-        />
-        <button class="send" id="send" type="submit">发送</button>
-      </form>
+      <!-- 输入区常驻视口底部：手机上滚动或对话变长后麦克风依然点得到，键盘展开时也在同一条底栏 -->
+      <footer class="dock">
+        <!-- 文字输入：默认收起，点键盘键展开一行；语音不可用时的降级入口 -->
+        <form class="composer" id="composer" hidden>
+          <input
+            class="text"
+            id="text"
+            type="text"
+            maxlength="200"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            enterkeyhint="send"
+            placeholder="说句话，比如「强攻」"
+            aria-label="输入一句话"
+          />
+          <button class="send" id="send" type="submit">发送</button>
+        </form>
 
-      <!-- 语音开房与加入沿用原话入口，主界面只留必要启麦控件 -->
-      <div class="bar">
-        <button class="mic" id="mic" type="button" aria-label="开启持续聆听" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4Z" />
-            <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
-            <path d="M12 17v3" />
-          </svg>
-        </button>
-<span id="mic-status" role="status">点击开启持续聆听</span>
-      </div>
+        <!-- 语音开房与加入沿用原话入口，主界面只留必要启麦控件与文字降级 -->
+        <div class="bar">
+          <button class="mic" id="mic" type="button" aria-label="开启持续聆听" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4Z" />
+              <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
+              <path d="M12 17v3" />
+            </svg>
+          </button>
+          <span id="mic-status" role="status">点击开启持续聆听</span>
+          <button
+            class="keyboard"
+            id="keyboard"
+            type="button"
+            aria-label="用键盘输入"
+            aria-controls="composer"
+            aria-expanded="false"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="2.5" y="6.5" width="19" height="11" rx="3" />
+              <path d="M6.5 10.5h.01M10 10.5h.01M13.5 10.5h.01M17 10.5h.01M7 14h10" />
+            </svg>
+          </button>
+        </div>
+      </footer>
     </div>
 
     <script type="module" src="/app.js"></script>

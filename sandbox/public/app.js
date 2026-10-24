@@ -19,8 +19,13 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var PLAYER_RE = /^[A-Za-z0-9_-]{1,16}$/;
   var DEVICE_RE = /^web-[A-Za-z0-9_-]{1,16}$/;
   var STORE_PLAYER = 'linx.sandbox.playerId';
-  var MIC_NO_HTTPS = '当前页面不是 HTTPS，浏览器不给麦克风，用文字输入继续';
+  var MIC_NO_HTTPS = '当前页面不是 HTTPS，浏览器不给麦克风，点右侧键盘输入继续';
+  var MIC_NO_API = '这个浏览器没有网页语音识别（iPhone 上的 Safari 和 Chrome 都这样），点右侧键盘输入继续';
   var TTS_RATE = 1.05;
+  // 朗读在 iOS 上可能一直不回调 onend，超时后自己收尾，否则聆听会一直停着
+  var TTS_TIMEOUT = 20000;
+  // /api/say 长时间无响应时主动断开，避免按钮一直等
+  var SAY_TIMEOUT = 25000;
 
   // 连接状态点：灰=连接中、绿=已连接、红=断开（点本身不显示文字）
   var CONN_LABEL = { connecting: '连接中', connected: '已连接', offline: '断开' };
@@ -39,10 +44,12 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     status: $('status'),
     alert: $('alert'),
     replies: $('replies'),
+    conversationScroll: $('conversation-scroll'),
     composer: $('composer'),
     text: $('text'),
     send: $('send'),
     mic: $('mic'),
+    keyboard: $('keyboard'),
     transcript: $('transcript'),
     micStatus: $('mic-status')
 
@@ -58,9 +65,10 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var config = null;
   var source = null;
   var busy = false; // 正在等 /api/say
-  var conversation = createConversation($('conversation-scroll'), el.replies, $('conversation-latest'));
+  var conversation = createConversation(el.conversationScroll, el.replies, $('conversation-latest'));
 
   var activeUtterance = null;
+  var ttsTimer = null;
   var connected = false;
   var unconfirmed = false;
   var settlement = null;
@@ -123,6 +131,15 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   function pushReply(text, tone, role = 'system') {
     conversation.append(role, text, tone);
+    revealLatest();
+  }
+
+  // 底栏常驻会盖住页面下半截：新消息到达后把它顶到低栏上方，不用再手动往下滚
+  function revealLatest() {
+    var dock = document.querySelector('.dock');
+    if (!dock) return;
+    var covered = el.conversationScroll.getBoundingClientRect().bottom - dock.getBoundingClientRect().top + 8;
+    if (covered > 0) window.scrollBy(0, covered);
   }
 
   /* ---------------- 连接状态 ---------------- */
@@ -217,10 +234,13 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     listener.pause();
     closeComposer();
     render();
+    var abort = typeof AbortController === 'function' ? new AbortController() : null;
+    var abortTimer = abort ? setTimeout(function () { abort.abort(); }, SAY_TIMEOUT) : null;
     fetch('/api/say', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ deviceId: deviceId, text: value })
+      body: JSON.stringify({ deviceId: deviceId, text: value }),
+      signal: abort ? abort.signal : undefined
     })
       .then(function (res) {
         return res.json().catch(function () {
@@ -240,15 +260,20 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
         pushReply('连接出了问题，刚才的结果未确认。恢复后先询问战况。', 'warn');
       })
       .then(function () {
+        clearTimeout(abortTimer);
         busy = false;
-        if (!activeUtterance) listener.resume();
+        // 文字输入还开着就别抢麦：键盘声会被当成指令
+        if (!activeUtterance && el.composer.hidden) listener.resume();
         render();
       });
   }
 
   /* ---------------- 输入行 ---------------- */
 
+  // 文字输入是语音的降级入口：展开时先停识别，免得把键盘声当指令
   function openComposer(focus) {
+    el.keyboard.setAttribute('aria-expanded', 'true');
+    if (listener && listener.enabled) listener.pause();
     if (!el.composer.hidden) {
       if (focus) el.text.focus();
       return;
@@ -260,7 +285,9 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   function closeComposer() {
     if (el.composer.hidden) return;
     el.composer.hidden = true;
+    el.keyboard.setAttribute('aria-expanded', 'false');
     el.text.value = '';
+    if (listener && !busy && !activeUtterance) listener.resume();
   }
 
   /* ---------------- 渲染 ---------------- */
@@ -338,22 +365,44 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     };
     function finish() {
       if (activeUtterance !== utter) return;
+      clearTimeout(ttsTimer);
+      ttsTimer = null;
       activeUtterance = null;
       el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
-      if (!busy) listener.resume();
+      if (!busy && el.composer.hidden && listener) listener.resume();
     }
     utter.onend = utter.onerror = finish;
+    // 有些浏览器（尤其 iOS）不会回调 onend：超时直接收尾并打断朗读
+    clearTimeout(ttsTimer);
+    ttsTimer = setTimeout(function () {
+      try { window.speechSynthesis.cancel(); } catch (err) { /* 忽略 */ }
+      finish();
+    }, TTS_TIMEOUT);
     try { window.speechSynthesis.speak(utter); }
     catch { finish(); }
   }
 
   function stopSpeaking() {
+    clearTimeout(ttsTimer);
+    ttsTimer = null;
     activeUtterance = null;
     el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
     if (canSpeak()) window.speechSynthesis.cancel();
   }
 
   /* ---------------- 持续聆听 ---------------- */
+
+  // 语音不可用时，底栏提示直接指向键盘入口，免得演示者以为按钮坏了
+  function speechReady() {
+    return Boolean(SpeechRecognitionCtor) && window.isSecureContext !== false;
+  }
+
+  function micPrompt(session) {
+    if (session.active) return '正在聆听，点击停止';
+    if (session.enabled) return session.paused ? '聆听已开启，等待伙伴回复' : '聆听已开启，正在接续收音';
+    if (speechReady()) return '点击开启持续聆听';
+    return SpeechRecognitionCtor ? '页面不是 HTTPS，点键盘输入' : '此浏览器不支持语音，点键盘输入';
+  }
 
   var listener = createListeningSession({
     Recognition: SpeechRecognitionCtor,
@@ -362,9 +411,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       el.mic.dataset.listening = session.active ? 'true' : 'false';
       el.mic.setAttribute('aria-pressed', String(session.enabled));
       el.mic.setAttribute('aria-label', session.enabled ? '停止持续聆听' : '开启持续聆听');
-      el.micStatus.textContent = session.active ? '正在聆听，点击停止'
-        : session.enabled ? (session.paused ? '聆听已开启，等待伙伴回复' : '聆听已开启，正在接续收音')
-        : '点击开启持续聆听';
+      el.micStatus.textContent = micPrompt(session);
       render();
     },
     onText: function (text, final) {
@@ -382,19 +429,26 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   function stopListening() { listener.stop(); }
   function toggleListening() {
     if (listener.enabled) { listener.stop(); return; }
-    if (!SpeechRecognitionCtor || window.isSecureContext === false) {
-      pushReply(MIC_NO_HTTPS, 'warn');
-      openComposer(false);
+    if (!speechReady()) {
+      pushReply(SpeechRecognitionCtor ? MIC_NO_HTTPS : MIC_NO_API, 'warn');
+      openComposer(true);
       return;
     }
     listener.start();
     if (busy || activeUtterance) listener.pause();
   }
 
+  // 底栏键盘键：开合文字输入行，语音不可用时也能走同一条原话入口
+  function toggleComposer() {
+    if (el.composer.hidden) openComposer(true);
+    else closeComposer();
+  }
+
   /* ---------------- 事件绑定 ---------------- */
 
   el.mic.addEventListener('click', toggleListening);
   el.mic.addEventListener('pointercancel', stopListening);
+  el.keyboard.addEventListener('click', toggleComposer);
 
   el.composer.addEventListener('submit', function (event) {
     event.preventDefault();
@@ -426,8 +480,23 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   });
   window.addEventListener('pagehide', function () { stopListening(); stopSpeaking(); });
 
+  // iOS 键盘弹出不会缩小布局视口：用 visualViewport 的差值把底部输入区顶到键盘上方
+  function watchKeyboard() {
+    var view = window.visualViewport;
+    if (!view) return;
+    function sync() {
+      var covered = Math.max(0, window.innerHeight - view.height - view.offsetTop);
+      document.documentElement.style.setProperty('--kb-offset', covered + 'px');
+    }
+    view.addEventListener('resize', sync);
+    view.addEventListener('scroll', sync);
+    sync();
+  }
+
   /* ---------------- 启动 ---------------- */
 
+  el.micStatus.textContent = micPrompt({ enabled: false, active: false, paused: false });
+  watchKeyboard();
   render();
   setConn('connecting');
   loadConfig();
