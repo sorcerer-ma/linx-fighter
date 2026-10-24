@@ -51,3 +51,27 @@ it('开局用“你定”征求指挥不误回退，数字交换和等待被省�
  const waiting=presentation('turn',null);waiting.facts.next='wait-response';
  assert.equal(checkReply('我出大招了，等对手应对。','我出大招了，你定。',waiting),false);
 });
+
+it('开局命中受伤胜利和重说允许鲜明主观感受，不依赖固定台词',async()=>{
+ const {createBattle}=await import('../src/game/engine.js');
+ const b=createBattle({now:1,seed:0,firstMover:'player'});
+ const hurt=structuredClone(b);hurt.player.hp=1;
+ const won=structuredClone(b);won.phase='victory';won.enemy.hp=0;
+ const cases=[
+  {source:'对决开始，我先手，我14点生命值，对手18点生命值。该我出招。',reply:'嘿，我好兴奋！我先手，我14点生命值、对手18点生命值，你来指挥。',facts:presentation('opening',b)},
+  {source:'我普攻命中，对手掉3点生命值、剩11点生命值。该我出招。',reply:'我普攻命中，真痛快，对手掉3点生命值、剩11点生命值！你来指挥。',facts:presentation('turn',b)},
+  {source:'对手强攻，我没躲开，掉5点生命值，剩1。',reply:'嘶，好疼，对手强攻我没躲开，我掉5点生命值、只剩1点了，还是想跟你拼一把。',facts:presentation('turn',hurt,{events:[{type:'attack',round:1,side:'enemy',move:'heavy',response:'dodge',dodged:false,crit:false,guarded:false,forced:false,damage:5,targetHp:1}]})},
+  {source:'我赢了，击倒对手啦。',reply:'太开心了，我赢了！这场咱们拿下啦！',facts:presentation('turn',won)},
+  {source:'没听清这一手，再说一次。',reply:'我有点懵，没听清，再告诉我一次？',facts:presentation('retry',b)},
+ ];
+ for(const c of cases)assert.equal(checkReply(c.source,c.reply,c.facts),true,c.reply);
+});
+
+
+it('第一人称欢呼可改写为我把对手击倒，但不追加原文没有的轮次',()=>{
+ const facts=presentation('turn',null);facts.facts.phase='victory';facts.facts.next='ended';facts.facts.opponentName='守擂教头';
+ assert.equal(checkReply('我赢了，击倒对手啦。','赢了！我把守擂教头击倒啦，真痛快！',facts),true);
+ assert.equal(checkReply('我赢了，击倒对手啦。','赢了！我把守擂教头击倒啦，第一回合就拿下！',facts),false);
+ facts.facts.phase='battle';facts.facts.next='act';
+ assert.equal(checkReply('我普攻。','我把对手击倒啦！',facts),false);
+});

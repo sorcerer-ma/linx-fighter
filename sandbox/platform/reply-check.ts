@@ -4,7 +4,7 @@ import type { Presentation } from '../../src/game/presentation.js';
  * number ownership is rejected; paraphrases that pass still need human QA. */
 function normalize(text:string):string {
   const digits:Record<string,string>={一:'1',二:'2',两:'2',三:'3',四:'4',五:'5',六:'6',七:'7',八:'8',九:'9',零:'0'};
-  return text.replace(/[一二两三四五六七八九零](?=次|点|轮)/g,n=>digits[n]!)
+  return text.replace(/[一二两三四五六七八九零](?=次|点|轮|回合)/g,n=>digits[n]!)
     .replace(/我方/g,'我').replace(/对方|敌方|敌人/g,'对手');
 }
 function numbers(text:string, details:Presentation):string[] {
@@ -25,10 +25,11 @@ function numbers(text:string, details:Presentation):string[] {
   }
   return values.sort();
 }
-function winner(text:string):string|null {
-  const t=normalize(text);
+function winner(text:string,details:Presentation):string|null {
+  const name=details.facts.opponentName;
+  const t=normalize(name && name!=='对手' ? text.split(name).join('对手') : text);
   if(/我(?:被击倒|输了|败了|失败)|对手(?:赢了|获胜|胜利)/.test(t))return 'opponent';
-  if(/我(?:赢了|获胜|胜利)|对手被我击倒/.test(t))return 'you';
+  if(/我(?:赢了|赢啦|获胜|胜利)|对手被我击倒|我(?:把|将)对手(?:击倒|打倒|击败)|我(?:击倒|打倒|击败)了?对手/.test(t))return 'you';
   return null;
 }
 export function checkReply(source:string,candidate:string,details:Presentation):boolean {
@@ -41,9 +42,9 @@ export function checkReply(source:string,candidate:string,details:Presentation):
     const positive=(s:string)=>s.replace(/(?:没能|没有|不能|未能|没|未|不)(?:命中|击中|打中|挡住|躲开|释放了|出手了|获胜|赢了)/g,'');
     if(!success.test(positive(source)) && success.test(positive(candidate)))return false;
   }
-  const expected=details.facts.phase==='victory'?'you':details.facts.phase==='defeat'?'opponent':winner(source);
-  if(expected && winner(candidate)!==expected)return false;
-  if(details.facts.phase==='battle' && !winner(source) && winner(candidate))return false;
+  const expected=details.facts.phase==='victory'?'you':details.facts.phase==='defeat'?'opponent':winner(source,details);
+  if(expected && winner(candidate,details)!==expected)return false;
+  if(details.facts.phase==='battle' && !winner(source,details) && winner(candidate,details))return false;
   const attacks=details.facts.events.filter(e=>e.type==='attack');
   if(attacks.length===1){
     const event=attacks[0]!;
