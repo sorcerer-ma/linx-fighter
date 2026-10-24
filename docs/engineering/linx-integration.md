@@ -12,7 +12,8 @@
 | SSH | `ssh linx-fighter-las`（`111.62.156.213:10653`，私钥登录） |
 | 应用服务 | `linx-fighter.service`，代码 `/opt/linx-fighter`，用户 `linx`，监听 `127.0.0.1:8000` |
 | 反向代理 | `nginx.service`，`/etc/nginx/conf.d/linx-fighter.conf`，80 → `127.0.0.1:8000` |
-| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`COMMAND_CODE_API_KEY` 等），不进仓库 |
+| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`COMMAND_CODE_API_KEY`、`ADMIN_TOKEN` 等），不进仓库 |
+| 监控页 | `http://111.62.156.213/admin`（只读看板，3 秒轮询；`ADMIN_TOKEN` 为空即公开） |
 
 常用操作：
 
@@ -20,6 +21,8 @@
 systemctl status linx-fighter     # 应用状态
 systemctl restart linx-fighter    # 重启应用
 journalctl -u linx-fighter -f     # 应用日志（单行 JSON，能看到平台来的连接与出招）
+
+curl -s http://127.0.0.1:8000/admin/api/rooms | head -c 400   # 看板数据（无 token 时）
 
 systemctl status nginx            # 反代状态
 nginx -t && systemctl reload nginx  # 改了反代配置后
@@ -96,7 +99,40 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 2. 勾选上一步创建的 MCP，让工具进入模型的可用工具列表。
 3. 填写提示词（见下节），保存后**重启设备或重开体验页**才生效。
 
-## 5. 智能体提示词模板
+## 5. 两台设备靠很近：把指令算到对的机器上
+
+真机现象：两台设备同处一屋、还共用一个智能体，B 说的话会被 A 的机器收走并替 A 出招；A 机器自己念的播报也会被自己的麦克风再收一遍，听上去像在自问自答。
+
+服务端已经做掉的（代码里，不用配）：
+
+1. **播报回灌判定**：`src/game/crosstalk.ts` 认得出伙伴自己的播报句式（结算数字、回合提示、房间播报、结局宣告等），命中后只回一个「嗯。」，同一局 2 秒内不再开口，不推进对局、不扣资源。玩家正常提问、否定、口号令不受影响。
+2. **座位口令（可选）**：`ATTRIBUTION_MODE=strict` 后，双人房说话带上「红方 / 蓝方」（房主=红方、加入者=蓝方）就能标明是替谁说，带对方口令的直接静默、零变化；不带口令的话照旧按轮次仲裁。低置信反问只说「说「是」或「不对」」，一句「是」就落地——确认再要一遍座位口令会多一轮往返，玩家不会照做；口令只是可选的归属标签。默认 `off`：口令一开就要玩家先习惯，没商量好反而更乱。
+3. **座位引导语**：strict 模式下本机会说「红方这边，我在听，说招式就行。」，让玩家知道自己这台认哪一边。
+
+服务端做不到、必须靠平台侧的：
+
+- 服务端拿不到说话人身份。MCP 只注入 Device / Agent / Session 三个头，平台「不会将其自动填入工具入参」，所以「谁在说话」只能靠平台声纹或座位口令。
+- 平台的声纹开关（控制台「声纹功能：只回应指定的人」）是**内部门禁**：命中就转发、不命中设备直接不吭声。它要求**每台设备绑各自的智能体**，否则两台设备在平台眼里是同一个主人，声纹也分不开。
+- 换设备所属智能体有官方接口（`PUT /v1/devices/{mac_address}/agent/{agent_id}`，原文「将设备切换到目标智能体」）：
+
+```bash
+curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
+  -H "Authorization: Bearer <平台 token>" -H 'Content-Type: application/json' \
+  -d '{"disable_chat_history_migration": true}'
+```
+
+两个智能体都要勾同一个自定义 MCP（地址仍是 `http://111.62.156.213/mcp`）。对局键是 `deviceId#agentId`，换成两个智能体后两边各自独立成局，不需要改服务端代码。
+
+现场推荐组合：
+
+1. 两台设备分别绑各自的智能体，各自开启声纹「只回应指定的人」；
+2. 服务端保持 `ATTRIBUTION_MODE=off`，播报本来就按两句 60 字控制；
+3. 还串音就临时开 `ATTRIBUTION_MODE=strict`，让玩家先报红 / 蓝方再说招式；
+4. 别在两台设备跟前同时喊话：唤醒词先到先得，平台没有「只认最近说话人」。
+
+已知未验证：两个智能体能否同时指向同一个自建 MCP（平台文档没写），演示前用控制台的「测试」按钮各点一次确认。平台侧语音能力（热词、透传、声纹接口边界）的调研结论见 [平台语音能力](platform-voice-capabilities.md)。
+
+## 6. 智能体提示词模板
 
 直接粘贴到智能体的提示词里，按需微调：
 

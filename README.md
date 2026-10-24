@@ -39,14 +39,17 @@
 - **完整回合制玩法**：普攻 / 强攻 / 大招 / 蓄力 / 格挡 / 闪避 / 承受；能量上限 5、主动阶段恢复能量、第 3 轮起伤害加成、先手 14点生命值 / 后手 18点生命值、大招一局一次。
 - **原话透传，判断在服务端**：平台把玩家原话原样交给 `game_say`，招式、战况、玩法、开局、开房都由服务端分类；规则认不出时才落到命令路由模型（按阶段收窄选项），任何模型异常都当作没认出来，回合不丢。路由是异步的，模型返回后这一手仍按「开始思考时那一局」核对，期间重开、换房或对局过期都作废这一手，不会落到新局上；模型认出的开局、开房同样先核对，不会重置刚开的新局，也不会把刚进的房间撤掉。
 - **语音即操作，不止认关键词**：口语别名（强攻 / 猛攻 / 抡、格挡 / 防御、承受 / 硬抗）、句中夹杂（「我要公鸡你」）、ASR 同音误识别（「公鸡」「工击」→ 普攻，「墙攻」「抢攻」→ 强攻，「大召」→ 大招）；每招另有中二唤出指令（「共鸣斩破军」「天倾共此声」），念出来会被回念一句。
+- **说错的字在本地拉回来**：规则与模型之间还有一层零网络开销的同音匹配（`src/game/asr.ts`，58 个音节、1700 余字的离线字表），把平台 ASR 常见的转写错误在服务端当场纠正：「轻机」→普攻、「开大 / 开大招 / 个大的」→大招、「挡一下」→格挡、「多散」→闪避；只在自己出招或应对的阶段生效，问句和等对手时不猜招，认出来也只还原成一个动作，能量不够、阶段不对照旧被引擎拦住。这一层是毫秒级的，命中就不必再等模型往返。
 - **规则外问答**：问天气、算数、翻译这类与对局无关的问题，由命令路由判为规则外后，原话透传给 Command Code 的语言模型（`deepseek/deepseek-v4.1-flash`），回答仍清成两句、60 字内；问答不动对局、不扣资源，没配 Key 或调用失败只回一句固定话术。对局内的问句（战况、大招次数、怎么玩）仍由本地规则回答，不消耗模型。打完一局也照常能问：结束状态只是不许出手，问答、重开、开房、查战况都还在。
 - **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；问句（如「我的大招还剩几次」）、否定（如「不要大招」）和一句话里点到两种招式（如「大招还是强攻」）同样不执行，只播当前局面或提示重说，对局状态一点不动；配了 Command Code Key 时再叠一层命令路由（System One 决策接口，把「这句话是哪类命令」做成按阶段收窄的选择题）：招式、战况、玩法、开局、开房、规则外问答放在同一份菜单里，把「给我狠狠地来一下」这类自由说法也认成招式；规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。关键词表不再参与分流，这套混合路由的实测与取舍见 [命令路由评测](docs/engineering/command-routing.md)。
 - **JEV 决策对手**：每次出招与应对都把「当前局面 + 最近六条战报 + 玩家出招/应对习惯 → 合法选项」做成选择题交给 Command Code 的 JEV 决策模型（`typesafe/jev`），让模型能顺着局势预判玩家下一步；本地先按能量与大招次数过滤出合法选项，模型只能从里面选；选择越界、超时 1.2 秒或返回异常时回退本地效用决策，回合不会卡住，置信度与概率只写进日志。本地兜底策略见 [docs/game/ai-enemy.md](docs/game/ai-enemy.md)；`ENEMY_AI=local` 可整体关掉模型层。
+- **后台监控页**：`GET /admin` 是一张只读看板，列出所有进行中的房间与对局：双方生命值、能量、大招剩余、当前阶段、待响应、轮次和胜负，3 秒轮询自动刷新；`GET /admin/api/rooms` 给出同一份 JSON。设备名做了脱敏，页面带 `noindex`。不配 `ADMIN_TOKEN` 时任何人拿到地址都能看（演示方便，也意味着房间号是公开的），配上后按口令校验并对单个来源限速 120 次/分。
+- **两台设备靠很近也不会答错人**：无屏设备没有屏幕可以「确认给我」，所以服务端先判断这句话是不是自己刚才播报的原话（回灌）——是就只回一个字「嗯。」，2 秒内不再开口，绝不把它当成新一轮指令；双人房里还可用「红方，普攻」这类座位口令指定替谁说，`ATTRIBUTION_MODE=strict` 时才算严格归属。平台侧配合「一台设备一个智能体、各自绑声纹」效果最好，见 [多设备归属](docs/product/multi-device-attribution.md)。
 - **双人联机**：说「联机」「开房间」得到 4 位房间号，对手说「加入房间1234」即可开打；平台模型没把这些词转成参数时，服务端也会从玩家原话里兜底识别。对局键仍是 `deviceId#agentId`，每个玩家看到自己的视角，服务端做镜像。换房间会先加入新房，再撤掉旧房间与那一局（双方补账一起清），原对手下次开口会另开一局单人局；加入失败（满员或房间号不存在）时原房间完全不动，一个玩家同一时间只在一个有效房间里。
 - **没有对局也能直接开口**：首句「普攻」自动开局，降低演示与试玩门槛。
 - **对局按「设备 + 智能体」归属**：断线重连、多轮对话不丢对局；不同设备天然隔离。
 - **两套传输并存**：Streamable HTTP（`POST /mcp`，平台实测走这条）与 SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）；`DELETE /mcp` 直接 200，避免客户端收尾时报错。
-- **为「听」而写的播报**：文案口语化、单次两句内，不用 Markdown、列表或 emoji——`content[].text` 会被原样念出来。
+- **为「听」而写的播报**：文案口语化、单次两句内，不用 Markdown、列表或 emoji——`content[].text` 会被原样念出来。单人局每回合都报一次自己的生命值与能量（「我14点生命值、1点能量，对手强攻还没结算」），双人局不报——保持简短，双方数值从战况查询里看。
 - **可替换的存储**：内存 + TTL，接口保持 `get/set/delete/sweep`，需要多实例时换 Redis 实现即可。
 
 ## 快速开始
@@ -115,6 +118,8 @@ open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开
 | `/health` | GET | 健康检查：状态、对局数、房间数、运行时长 |
 | `/state?device=&agent=` | GET | 某位玩家视角的局面快照（JSON），供沙箱与 Agent 自主模拟 |
 | `/events?device=&agent=` | GET | SSE 状态流：局面变化时推 `event: state`，15 秒一次心跳注释；跨域开放，手机页面可直连 |
+| `/admin` | GET | 只读后台监控页：所有进行中的房间与单人局、双方数值、阶段与待响应，3 秒轮询；`ADMIN_TOKEN` 为空时公开 |
+| `/admin/api/rooms` | GET | 同一份看板的 JSON，给脚本或第二屏用 |
 | `/debug/*` | GET/POST | 调试接口：`start` / `action` / `status` / `state`，默认仅非生产环境开启；`start` 支持 `mode` 与 `room` |
 
 ### 身份
@@ -141,7 +146,7 @@ open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开
 
 ## 语音容错
 
-ASR 在平台侧，同音与近音错误只能由我们兜住。识别按「整句精确 → 子串包含」两段式匹配，包含匹配里长说法优先（避免「闪开」被「闪」截胡）。新增招式时同时补口语别名与常见误识别样例。
+ASR 在平台侧，同音与近音错误只能由我们兜住。词表内按「整句精确 → 子串包含」匹配，包含匹配里长说法优先（避免「闪开」被「闪」截胡）；词表外先在端侧做同音节比较（`src/game/asr.ts`），再交给命令路由模型。三层各管一段：词表与规则毫秒级、同音比较毫秒级、模型 0.5–1.5 秒且只在前面都不认时才调用。新增招式时同时补口语别名、常见误识别样例，必要时补端侧近音样例。
 
 | 招式 | 口语别名（节选） | 唤出指令 | 常见误识别 |
 | --- | --- | --- | --- |
@@ -294,6 +299,8 @@ flowchart TB
 | `COMMAND_CODE_BASE_URL` | 官方地址 | Command Code Provider 根地址，换代理或网关时覆盖 |
 | `COMMAND_CODE_DECISION_MODEL` | `typesafe/jev` | JEV 决策模型名（命令路由与对手决策共用） |
 | `COMMAND_CODE_CHAT_MODEL` | `deepseek/deepseek-v4.1-flash` | 规则外问答的语言模型 |
+| `ATTRIBUTION_MODE` | `off` | 双人房的座位归属：`off` 按轮次仲裁，`strict` 时句子要带「红方／蓝方」；两种模式下回灌判定都生效 |
+| `ADMIN_TOKEN` | 空 | `/admin` 与 `/admin/api/rooms` 的口令；为空时公开，仅适合演示环境 |
 | `ROUTER_TIMEOUT_MS` | `1500` | 命令路由超时，超时按没认出来处理 |
 | `CHAT_TIMEOUT_MS` | `3000` | 规则外问答超时，超时回固定话术 |
 | `ENEMY_AI` | `jev` | 对手 AI：`jev` 走 JEV 决策，`local` 只用本地决策模型 |
@@ -312,6 +319,11 @@ flowchart TB
 | `test/enemy.test.ts` | 本地 AI 主动/应对决策、斩杀优先、保大招、生命值积攒能量、致死规避 |
 | `test/enemy-jev.test.ts` | JEV 对手决策：合法选项过滤、题干（含战报与习惯）、解析、低置信度/超时/异常回退 |
 | `test/router.test.ts` | 命令路由：阶段菜单（含结束状态）、置信度阈值、返回解析、请求体含原话、失败回退 |
+| `test/asr.test.ts` | 端侧同音纠错：音节表、声母/韵母混淆权重、线上语料逐条命中、噪声不误认、长说法优先 |
+| `test/routing.test.ts` | 三层解析顺序：规则命中不叫后两层、端侧命中不等模型、端侧不越过规则、问句与等对手时不猜招、注掉端侧后退回两层 |
+| `test/crosstalk.test.ts` | 回灌识别：真机日志原句、逐子句判定、问号与口头指令的区分、2 秒静默应答 |
+| `test/seat.test.ts` | 座位口令：红方／蓝方归属、strict 与 off、摘掉口令后仍能认招、确认回复不需要口令 |
+| `test/admin.test.ts` | 监控页：快照字段与脱敏、口令校验、限速与代理来源、页面安全头、无对局时的空表 |
 | `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
 | `test/command.test.ts` | 一句话读成命令：招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 规则外问答 / 不该出手，以及命令之间的优先级 |
 | `test/state.test.ts` | 局面快照字段、等对手标记、中文标签、视角镜像、胜负折算与幂等 |
@@ -391,7 +403,10 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | [docs/product/exceptions-and-exit.md](docs/product/exceptions-and-exit.md) | 异常与退出：明确换房、掉线、等待、认输和退出的处理边界。 |
 | [docs/product/acceptance-and-playtest.md](docs/product/acceptance-and-playtest.md) | 验收与试玩：定义产品体验的验收方式，以及试玩需要记录的证据。 |
 | [docs/engineering/architecture.md](docs/engineering/architecture.md) | 逐条设计决策的来龙去脉、替代方案与扩展指引（总览见上文「架构设计」） |
-| [docs/engineering/command-routing.md](docs/engineering/command-routing.md) | 命令路由：规则快路径 + 模型兜底的评测方法、四套方案对比与取舍 |
+| [docs/product/multi-device-attribution.md](docs/product/multi-device-attribution.md) | 多设备归属：房间座位、回灌判定与平台侧声纹的配合 |
+| [docs/engineering/command-routing.md](docs/engineering/command-routing.md) | 命令路由：规则快路径 + 端侧同音 + 模型兜底的评测方法、方案对比与取舍 |
+| [docs/engineering/platform-voice-capabilities.md](docs/engineering/platform-voice-capabilities.md) | 平台语音能力调研：热词、透传、声纹的实际边界与待确认清单 |
+| [docs/references/voice-attribution-research.md](docs/references/voice-attribution-research.md) | 声源与说话人识别方案对比，以及本项目的取舍 |
 | [docs/game/game-design.md](docs/game/game-design.md) | 产品设计中的游戏玩法：v0.2 规则、数值、AI、双人联机与验证 |
 | [docs/archive/v0.2/mechanics-and-balance.md](docs/archive/v0.2/mechanics-and-balance.md) | 早期候选机制设计与数值依据，仅作设计参考 |
 | [docs/archive/v0.2/test-validation.md](docs/archive/v0.2/test-validation.md) | 早期模拟结果、已知局限与面对面试玩计划 |
@@ -421,6 +436,10 @@ src/
   game/
     types.ts          数据模型：Fighter / Battle / TurnRecord / 事件
     actions.ts        七招定义、口语别名、ASR 容错与唤出指令
+    asr.ts            端侧同音纠错：词表外的错字按音节拉回来
+    pinyin.ts         离线生成的同音节字表（仓库零依赖）
+    crosstalk.ts      串音判定：这句是不是我自己刚才的播报
+    seat.ts           座位口令：红方／蓝方，管「替谁说」
     rules.ts          数值表：生命值、能量、伤害、暴击、闪避
     rng.ts            由 seed 派生的可复现随机数
     engine.ts         创建对局、双阶段结算与胜负（纯函数）
@@ -440,7 +459,12 @@ src/
     context.ts        设备上下文与对局归属键
     server.ts         McpServer 创建与 instructions
     tools.ts          工具注册
-  http/app.ts         路由：Streamable HTTP / SSE、状态流、健康检查、调试接口
+  http/app.ts         路由：Streamable HTTP / SSE、状态流、健康检查、监控页、调试接口
+  admin/
+    overview.ts       监控页数据：房间、双方数值、阶段与脱敏
+    page.ts           内嵌的看板页面（只读，3 秒轮询）
+    access.ts         监控页口令校验
+    ratelimit.ts      按来源的简单限速
   store/
     battles.ts        对局存储（内存 + TTL）
     rooms.ts          房间存储与玩家索引
@@ -472,6 +496,7 @@ docs/
     voice-and-feedback.md     语音交互、播报与载体差异
     exceptions-and-exit.md    异常、换房与退出
     acceptance-and-playtest.md 验收清单与试玩记录
+    multi-device-attribution.md 两台设备靠很近时，指令算给谁
   game/               现行玩法与 AI 决策
   engineering/        架构决策与平台接入
   testing/            沙箱使用说明与对局验证案例
