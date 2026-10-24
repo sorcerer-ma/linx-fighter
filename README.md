@@ -408,6 +408,7 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | [docs/engineering/architecture.md](docs/engineering/architecture.md) | 逐条设计决策的来龙去脉、替代方案与扩展指引（总览见上文「架构设计」） |
 | [docs/product/multi-device-attribution.md](docs/product/multi-device-attribution.md) | 多设备归属：房间座位、回灌判定与平台侧声纹的配合 |
 | [docs/engineering/command-routing.md](docs/engineering/command-routing.md) | 命令路由：规则快路径 + 端侧同音 + 模型兜底的评测方法、方案对比与取舍 |
+| [docs/engineering/mcp-protocol.md](docs/engineering/mcp-protocol.md) | MCP 协议 v2 设计稿：两个工具、JSON 事实出参、智能体演绎提示词 |
 | [docs/engineering/platform-voice-capabilities.md](docs/engineering/platform-voice-capabilities.md) | 平台语音能力调研：热词、透传、声纹的实际边界与待确认清单 |
 | [docs/references/voice-attribution-research.md](docs/references/voice-attribution-research.md) | 声源与说话人识别方案对比，以及本项目的取舍 |
 | [docs/game/game-design.md](docs/game/game-design.md) | 产品设计中的游戏玩法：v0.2 规则、数值、AI、双人联机与验证 |
