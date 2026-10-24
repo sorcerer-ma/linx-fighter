@@ -9,15 +9,15 @@ import type { AttackMove, ResponseMove } from './types.js';
 
 /** 对局规则常量 */
 export const RULES = {
-  /** 先手初始气血 */
+  /** 先手初始生命值 */
   firstHp: 14,
-  /** 后手初始气血：先手先动手，后手用 4 点气血换回一点劣势 */
+  /** 后手初始生命值：先手先动手，后手用 4 点生命值换回一点劣势 */
   secondHp: 18,
-  /** 双方初始行动点 */
+  /** 双方初始能量 */
   initialAp: 3,
-  /** 行动点上限，蓄力不能超过 */
+  /** 能量上限，蓄力不能超过 */
   maxAp: 5,
-  /** 自己后续每个主动阶段恢复的行动点（第一段不回） */
+  /** 自己后续每个主动阶段恢复的能量（第一段不回） */
   apRegen: 2,
   /** 大招每局次数 */
   ultUses: 1,
@@ -62,7 +62,7 @@ export const RESPONSES: Record<ResponseMove, ResponseSpec> = {
 /** 暴击额外伤害 */
 export const CRIT_BONUS = 2;
 
-/** 蓄力一次回复的行动点（受 maxAp 限制） */
+/** 蓄力一次回复的能量（受 maxAp 限制） */
 export const CHARGE_AP = 1;
 
 /**

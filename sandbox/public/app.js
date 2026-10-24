@@ -365,7 +365,7 @@
     barEl.setAttribute('aria-valuemax', String(maxHp));
     barEl.setAttribute('aria-valuenow', String(hp));
 
-    // 真气：一共 5 个点，亮起来的是当前真气
+    // 能量：一共 5 个点，亮起来的是当前能量
     if (dotsEl.childElementCount !== maxAp) {
       var dots = [];
       for (var i = 0; i < maxAp; i++) {
@@ -377,7 +377,7 @@
     for (var j = 0; j < dotsEl.children.length; j++) {
       dotsEl.children[j].dataset.on = j < ap ? 'true' : 'false';
     }
-    dotsEl.setAttribute('aria-label', '真气 ' + ap + '/' + maxAp);
+    dotsEl.setAttribute('aria-label', '能量 ' + ap + '/' + maxAp);
 
     var ready = ultLeft > 0;
     ultEl.textContent = ready ? '大招可用' : '大招已用';

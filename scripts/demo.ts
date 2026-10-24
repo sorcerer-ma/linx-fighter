@@ -22,7 +22,7 @@ function print(label: string, text: string): void {
 
 print('开局', (await service.start(key)).text);
 
-for (const command of ['攻击', '闪避', '回气', 'attack', '随便说一句']) {
+for (const command of ['攻击', '闪避', '蓄力', 'attack', '随便说一句']) {
   print(`玩家：${command}`, (await service.say(key, command)).text);
 }
 

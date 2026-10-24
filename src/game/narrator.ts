@@ -7,7 +7,7 @@ import type { AttackMove, Battle, BattleEvent, Side, TurnRejection } from './typ
  * 这些文字会被平台侧原样朗读给玩家，所以：
  * - 用口语，不用 Markdown、列表符号或括号补充；
  * - 每次最多两句、尽量 60 字内；
- * - 数值只说玩家需要知道的：掉了多少气血、还剩多少。
+ * - 数值只说玩家需要知道的：掉了多少生命值、还剩多少。
  */
 
 /** 主动招式的口语前缀 */
@@ -26,18 +26,18 @@ function sideName(side: Side): string {
   return side === 'player' ? '你' : '对手';
 }
 
-/** 双方气血与真气，最多两句里的第二句 */
+/** 双方生命值与能量，最多两句里的第二句 */
 export function fighterLine(battle: Battle): string {
   const { player, enemy } = battle;
-  return `你气血${player.hp}/${player.maxHp}、真气${player.ap}；${enemy.name}气血${enemy.hp}/${enemy.maxHp}、真气${enemy.ap}`;
+  return `你生命值${player.hp}/${player.maxHp}、能量${player.ap}；${enemy.name}生命值${enemy.hp}/${enemy.maxHp}、能量${enemy.ap}`;
 }
 
-/** 开局播报：对手、先手、初始气血，一句话说清 */
+/** 开局播报：对手、先手、初始生命值，一句话说清 */
 export function narrateBattleStart(battle: Battle): string {
   const first = battle.firstMover === 'player' ? '你先手' : '对手先手';
   // 联机换视角后对手没有名字，统一叫「对手」，别再念成「你的对手是对手」
   const opponent = battle.enemy.name === '对手' ? '' : `你的对手是${battle.enemy.name}，`;
-  return `对决开始，${opponent}${first}，你${battle.player.hp}点气血，他${battle.enemy.hp}点气血。`;
+  return `对决开始，${opponent}${first}，你${battle.player.hp}点生命值，他${battle.enemy.hp}点生命值。`;
 }
 
 /** 没有对局、临时开局的提示，会拼在回合播报前面 */
@@ -52,7 +52,7 @@ export function narrateChant(chant: string): string {
 
 /** 主动阶段：蓄力 */
 function chargeSentence(ap: number, side: Side): string {
-  return `${sideName(side)}凝神蓄力，真气涨到${ap}`;
+  return `${sideName(side)}凝神蓄力，能量涨到${ap}`;
 }
 
 /** 已锁定、等待玩家应对的攻击 */
@@ -71,12 +71,12 @@ function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>): string
   const hpLeft = Math.max(0, event.targetHp);
   const crit = event.crit ? '暴击，' : '';
   if (event.response === 'guard') {
-    return `${attacker}${verb}，${crit}${target}格挡，掉${event.damage}点气血，剩${hpLeft}`;
+    return `${attacker}${verb}，${crit}${target}格挡，掉${event.damage}点生命值，剩${hpLeft}`;
   }
   if (event.response === 'dodge') {
     return `${attacker}${verb}，${crit}${target}没躲干净，擦中${event.damage}点，剩${hpLeft}`;
   }
-  const take = event.forced ? '真气耗尽只能硬扛' : '硬扛';
+  const take = event.forced ? '能量耗尽只能硬扛' : '硬扛';
   return `${attacker}${verb}，${crit}${target}${take}，掉${event.damage}点，剩${hpLeft}`;
 }
 
@@ -173,7 +173,7 @@ export function narrateTurnHint(battle: Battle): string {
 /**
  * 这句话不像是在出招：否定与歧义都不执行，只说清为什么没出手。
  *
- * 查询不走这里——它直接播当前局面，让玩家听见气血、真气与大招次数。
+ * 查询不走这里——它直接播当前局面，让玩家听见生命值、能量与大招次数。
  */
 export function narrateActionBlocked(reason: 'negated' | 'ambiguous'): string {
   return reason === 'negated'
@@ -210,11 +210,11 @@ export function narrateRejection(battle: Battle, rejection: TurnRejection): stri
         ? '轮到你了，主动阶段可以说普攻、强攻、大招或蓄力。'
         : '现在还没轮到你出招，等对手先动。';
     case 'insufficient-ap':
-      return '真气不够，这一招没有打出去。可以先蓄力，或者换一招。';
+      return '能量不够，这一招没有打出去。可以先蓄力，或者换一招。';
     case 'no-ult':
       return '大招这一局已经用过了，换一招吧。';
     case 'full-ap':
-      return '真气已经满了，不用再蓄力，直接出招吧。';
+      return '能量已经满了，不用再蓄力，直接出招吧。';
   }
 }
 

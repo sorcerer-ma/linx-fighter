@@ -61,7 +61,7 @@ function createFighter(id: Side, name: string, hp: number): Fighter {
   };
 }
 
-/** 创建一场新对局。先手 14 血、后手 18 血，先手方先动 */
+/** 创建一场新对局。先手 14点生命值、后手 18点生命值，先手方先动 */
 export function createBattle(options: CreateBattleOptions): Battle {
   const seed = options.seed ?? Math.floor(Math.random() * 0x7fffffff);
   const firstMover = options.firstMover ?? (seed % 2 === 0 ? 'player' : 'enemy');
@@ -77,7 +77,7 @@ export function createBattle(options: CreateBattleOptions): Battle {
     phase: 'battle',
     firstMover,
     active: firstMover,
-    // 先手方在创建时就算已进入第一个主动阶段；第一个阶段不回行动点
+    // 先手方在创建时就算已进入第一个主动阶段；第一个阶段不回能量
     activePhases: { player: playerFirst ? 1 : 0, enemy: playerFirst ? 0 : 1 },
     pending: null,
     player: createFighter('player', '你', playerFirst ? RULES.firstHp : RULES.secondHp),
@@ -184,7 +184,7 @@ async function advance(draft: Draft): Promise<void> {
     const enemy = battle.enemy;
     let rejection = await performActive(draft, 'enemy', await draft.ai.chooseAction(actionView(draft)));
     if (rejection) {
-      // 对手 AI 给出当前行动点做不了的选择时，退到一定合法的操作，避免卡死
+      // 对手 AI 给出当前能量做不了的选择时，退到一定合法的操作，避免卡死
       rejection = await performActive(draft, 'enemy', enemy.ap < enemy.maxAp ? 'charge' : 'light');
       if (rejection) return;
     }
@@ -256,7 +256,7 @@ async function performActive(draft: Draft, side: Side, action: ActionId): Promis
   const defenderSide = otherSide(side);
   const defender = fighterOf(battle, defenderSide);
   if (defender.ap === 0) {
-    // 没有行动点就只能硬扛，不占用玩家的输入
+    // 没有能量就只能硬扛，不占用玩家的输入
     resolvePending(draft, 'take', true);
   } else if (side === 'player' && battle.mode === 'solo') {
     const response = normalizeResponse(await draft.ai.chooseResponse(responseView(draft, defenderSide)), defender);
@@ -283,7 +283,7 @@ function performResponse(draft: Draft, action: ActionId): TurnRejection | undefi
   return undefined;
 }
 
-/** 结算一次已经锁定的攻击：扣应对的行动点、判定闪避与暴击、扣血、记战报 */
+/** 结算一次已经锁定的攻击：扣应对的能量、判定闪避与暴击、扣除生命值、记战报 */
 function resolvePending(draft: Draft, response: ResponseMove, forced: boolean): void {
   const battle = draft.battle;
   const pending = battle.pending;
@@ -300,7 +300,7 @@ function resolvePending(draft: Draft, response: ResponseMove, forced: boolean): 
     crit = draft.rng() < spec.critChance;
     const reduction = response === 'guard' ? RESPONSES.guard.reduction : 0;
     damage = Math.max(0, pending.damage + (crit ? CRIT_BONUS : 0) - reduction);
-    // 气血夹取到 0，避免播报里念出负数；胜负仍按 <= 0 判定
+    // 生命值夹取到 0，避免播报里念出负数；胜负仍按 <= 0 判定
     defender.hp = Math.max(0, defender.hp - damage);
   }
 
@@ -352,7 +352,7 @@ function endPhase(draft: Draft, actor: Side): void {
   startActive(draft, battle.active);
 }
 
-/** 进入新的主动阶段：第一次不回行动点，之后每次恢复固定值 */
+/** 进入新的主动阶段：第一次不回能量，之后每次恢复固定值 */
 function startActive(draft: Draft, side: Side): void {
   const battle = draft.battle;
   const fighter = fighterOf(battle, side);
@@ -362,7 +362,7 @@ function startActive(draft: Draft, side: Side): void {
   battle.activePhases[side] += 1;
 }
 
-/** 对手 AI 选了当前行动点负担不起的应对时，退到承受 */
+/** 对手 AI 选了当前能量负担不起的应对时，退到承受 */
 function normalizeResponse(response: ResponseMove, defender: Fighter): ResponseMove {
   if (response === 'take') return 'take';
   return defender.ap >= RESPONSES[response].apCost ? response : 'take';

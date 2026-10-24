@@ -162,7 +162,7 @@ describe('游戏服务', () => {
     assert.match(result.text, /只能应对/);
   });
 
-  it('真气不足与真气已满都不会改对局', async () => {
+  it('能量不足与能量已满都不会改对局', async () => {
     const { service, store } = setup();
     const battle = createBattle({ now: 1_000_000, seed: 0, firstMover: 'player' });
 
@@ -170,7 +170,7 @@ describe('游戏服务', () => {
     const low = await service.say(KEY, '强攻');
     assert.equal(low.battle?.player.ap, 1);
     assert.equal(low.battle?.history.length, 0);
-    assert.match(low.text, /真气不够/);
+    assert.match(low.text, /能量不够/);
 
     store.set(KEY, { ...battle, player: { ...battle.player, ap: 5 } });
     const full = await service.say(KEY, '蓄力');
@@ -190,7 +190,7 @@ describe('游戏服务', () => {
     const responded = await service.say(KEY, '闪避');
     assert.equal(responded.battle?.pending, null);
     assert.equal(responded.battle?.active, 'player');
-    // 首个主动阶段不回气：3 - 1（闪避）= 2
+    // 首个主动阶段不恢复能量：3 - 1（闪避）= 2
     assert.equal(responded.battle?.player.ap, 2);
     assert.match(responded.text, /闪/);
   });
@@ -362,7 +362,7 @@ describe('双人补账播报', () => {
 
     const catchUp = await service.say(KEY, '战况如何');
     assert.match(catchUp.text, /^刚才那一手。/);
-    assert.match(catchUp.text, /你一记强攻，对手格挡，掉3点气血，剩15/);
+    assert.match(catchUp.text, /你一记强攻，对手格挡，掉3点生命值，剩15/);
     assert.match(catchUp.text, /第1轮/);
 
     // 补过一次就不再重复
@@ -378,7 +378,7 @@ describe('双人补账播报', () => {
 
     await service.say(KEY, '蓄力');
     const guestTurn = await service.say(KEY_B, '普攻');
-    assert.match(guestTurn.text, /^刚才那一手。对手凝神蓄力，真气涨到4。/);
+    assert.match(guestTurn.text, /^刚才那一手。对手凝神蓄力，能量涨到4。/);
     assert.match(guestTurn.text, /一记普攻已出手/);
   });
 
@@ -403,7 +403,7 @@ describe('双人补账播报', () => {
     const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
     await service.say(KEY_B, `加入房间${code}`);
 
-    // 把房主气血摆到 1：访客这一手直接收尾
+    // 把房主生命值摆到 1：访客这一手直接收尾
     const key = pvpBattleKey(code);
     const canonical = store.get(key);
     assert.ok(canonical);
@@ -485,18 +485,18 @@ describe('异步与状态的边界', () => {
     await service.start(KEY);
     const before = store.get(KEY);
     assert.ok(before);
-    // 攒满真气、留着大招：这类句子最容易被识别成「真放一招」
+    // 攒满能量、留着大招：这类句子最容易被识别成「真放一招」
     store.set(KEY, { ...before, player: { ...before.player, ap: 5 } });
     const armed = store.get(KEY);
     assert.ok(armed);
 
     const asked = await service.say(KEY, '我的大招还剩几次');
-    assert.match(asked.text, /真气/);
+    assert.match(asked.text, /能量/);
     assert.equal(store.get(KEY), armed);
 
     // 走统一入口也一样：这句话归成战况，不落进出招
     const askedViaSay = await service.say(KEY, '我要放几次大招');
-    assert.match(askedViaSay.text, /真气/);
+    assert.match(askedViaSay.text, /能量/);
     assert.equal(store.get(KEY), armed);
 
     const negated = await service.say(KEY, '不要大招');

@@ -43,6 +43,7 @@ export const ACTIONS: Record<ActionId, ActionMeta> = {
   charge: {
     id: 'charge',
     label: '蓄力',
+    // 旧资源口语与对应 ASR 误识别仅兼容输入，推荐名称仍为蓄力。
     aliases: ['蓄力', '蓄气', '回气', '聚气', '憋大招', '攒气', '蓄势', '调息', '回力', '运气', 'recover'],
     asrErrors: ['续力', '蓄利', '蓄立', '续气', '回七', '回器', '回汽', '汇气', '调西', '蓄汽'],
     chants: ['一息归元海', '静听吾心跳'],

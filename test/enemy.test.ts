@@ -25,7 +25,7 @@ import type {
   Side,
 } from '../src/game/types.js';
 
-/** 造一个主动阶段的 view：默认双方满血、3 点行动点、各留一次大招 */
+/** 造一个主动阶段的 view：默认双方满生命值、3 点能量、各留一次大招 */
 function activeView(
   parts: {
     self?: Partial<FighterView>;
@@ -68,48 +68,48 @@ function responseView(
   };
 }
 
-/** 与 engine 的合法性判定一致：行动点够、大招还有次数、蓄力不超上限 */
+/** 与 engine 的合法性判定一致：能量够、大招还有次数、蓄力不超上限 */
 function isLegalAction(view: ActionView, action: ActiveActionId): boolean {
   if (action === 'charge') return view.self.ap < RULES.maxAp;
   if (view.self.ap < ATTACKS[action].apCost) return false;
   return action !== 'ult' || view.self.ultLeft > 0;
 }
 
-/** 应对：承受永远合法，格挡与闪避各要 1 点行动点 */
+/** 应对：承受永远合法，格挡与闪避各要 1 点能量 */
 function isLegalResponse(view: ResponseView, response: ResponseMove): boolean {
   return response === 'take' || view.self.ap >= RESPONSES[response].apCost;
 }
 
 test('主动阶段：对手进了大招收割线就开大', () => {
-  // 大招 9 点，对手 5 血就算格挡也吃 7 点，必死
+  // 大招 9 点，对手 5点生命值就算格挡也吃 7 点，必死
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 4 }, enemy: { hp: 5 } })), 'ult');
-  // 当轮加成把大招推到 13 点，9 血的对手同样在收割线内
+  // 当轮加成把大招推到 13 点，9点生命值的对手同样在收割线内
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 4 }, enemy: { hp: 9 }, round: 4 })), 'ult');
 });
 
-test('主动阶段：大招差行动点时先蓄力补上', () => {
-  // 3 点行动点打不出大招，蓄力后回气正好凑够 4 点，下一轮就能收割
+test('主动阶段：大招差能量时先蓄力补上', () => {
+  // 3 点能量打不出大招，蓄力后恢复能量正好凑够 4 点，下一轮就能收割
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 3 }, enemy: { hp: 9 } })), 'charge');
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 2 }, enemy: { hp: 9 } })), 'charge');
 });
 
-test('主动阶段：行动点见底只能蓄力', () => {
-  // 0 点连普攻都出不起；1 点出击会把行动点花光，下个阶段只能白挨一下
+test('主动阶段：能量见底只能蓄力', () => {
+  // 0 点连普攻都出不起；1 点出击会把能量花光，下个阶段只能白挨一下
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 0 } })), 'charge');
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 1 } })), 'charge');
 });
 
-test('主动阶段：不把行动点花光，留一点应对下一击', () => {
+test('主动阶段：不把能量花光，留一点应对下一击', () => {
   // 2 点打强攻刚好清零，对手下一手没人应对；普攻能留 1 点
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 2 }, enemy: { hp: 14 } })), 'light');
   // 3 点打强攻还剩 1 点，够格挡或闪避，这时强攻才划算
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 3 }, enemy: { hp: 14 } })), 'heavy');
 });
 
-test('主动阶段：满血对峙不急着交大招', () => {
-  // 对手满血时大招打不死，交了既押上 4 点行动点又丢了大招威慑
+test('主动阶段：满生命值对峙不急着交大招', () => {
+  // 对手满生命值时大招打不死，交了既押上 4 点能量又丢了大招威慑
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 4 }, enemy: { hp: 14 } })), 'heavy');
-  // 行动点已经满，攒不出更多，再捏着大招就是浪费，换血也要换
+  // 能量已经满，攒不出更多，再捏着大招就是浪费，交换伤害也要换
   assert.equal(ENEMY_AI.chooseAction(activeView({ self: { ap: 5 }, enemy: { hp: 18 } })), 'ult');
 });
 
@@ -129,20 +129,20 @@ test('应对：普攻用格挡，强攻用闪避', () => {
 });
 
 test('应对：这一下会把自己打死时不硬扛', () => {
-  // 3 血挨 5 点强攻：硬扛必死，格挡后只要暴击才死，闪避还有一半活路
+  // 3点生命值挨 5 点强攻：硬扛必死，格挡后只要暴击才死，闪避还有一半活路
   assert.equal(ENEMY_AI.chooseResponse(responseView({ move: 'heavy', self: { hp: 3, ap: 3 } })), 'dodge');
-  // 4 血时只有暴击（20%）才致死，这时候赌闪避反而更险，格挡更稳
+  // 4点生命值时只有暴击（20%）才致死，这时候赌闪避反而更险，格挡更稳
   assert.equal(ENEMY_AI.chooseResponse(responseView({ move: 'heavy', self: { hp: 4, ap: 3 } })), 'guard');
 });
 
-test('应对：血线安全时宁可硬扛，把行动点留给进攻', () => {
-  // 只剩 1 点行动点：12 血挨一下普攻打不死，白吃这一下、把点数留给自己出手更值
+test('应对：生命值安全时宁可硬扛，把能量留给进攻', () => {
+  // 只剩 1 点能量：12点生命值挨一下普攻打不死，白吃这一下、把点数留给自己出手更值
   assert.equal(ENEMY_AI.chooseResponse(responseView({ move: 'light', self: { hp: 12, ap: 1 } })), 'take');
-  // 同样 1 点行动点，血线掉到 5 点就赌不起了，必须格挡
+  // 同样 1 点能量，生命值掉到 5 点就赌不起了，必须格挡
   assert.equal(ENEMY_AI.chooseResponse(responseView({ move: 'light', self: { hp: 5, ap: 1 } })), 'guard');
 });
 
-test('应对：没有行动点只能承受', () => {
+test('应对：没有能量只能承受', () => {
   for (const move of ['light', 'heavy', 'ult'] as const) {
     assert.equal(ENEMY_AI.chooseResponse(responseView({ move, self: { ap: 0 } })), 'take');
   }
@@ -162,7 +162,7 @@ test('确定性：同一局面永远同一选择，且不改动视图', () => {
   assert.deepEqual(response, responseSnapshot);
 });
 
-test('合法性：所有行动点与血量组合下都给出合法招式', () => {
+test('合法性：所有能量与生命值组合下都给出合法招式', () => {
   for (let round = 1; round <= 8; round += 1) {
     for (let ap = 0; ap <= RULES.maxAp; ap += 1) {
       for (const ultLeft of [0, 1]) {

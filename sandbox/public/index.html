@@ -31,7 +31,7 @@
       <main class="main">
         <!-- 局面整体（双方 + 状态）作为一块垂直居中，播报贴在底部控制栏上方 -->
         <div class="board">
-          <!-- 双方局面：名字 / 气血条 / 真气点 / 大招状态 -->
+          <!-- 双方局面：名字 / 生命值条 / 能量点 / 大招状态 -->
           <div class="players" id="players" hidden>
             <section class="player" data-side="you" aria-label="你的局面">
               <div class="prow">
@@ -42,7 +42,7 @@
                 class="hp-bar"
                 id="you-hp-bar"
                 role="progressbar"
-                aria-label="你的气血"
+                aria-label="你的生命值"
                 aria-valuemin="0"
                 aria-valuemax="0"
                 aria-valuenow="0"
@@ -50,7 +50,7 @@
                 <i class="hp-fill" id="you-hp-fill"></i>
               </div>
               <div class="pmeta">
-                <span class="dots" id="you-dots" role="img" aria-label="真气 0/5"></span>
+                <span class="dots" id="you-dots" role="img" aria-label="能量 0/5"></span>
                 <span class="ult" id="you-ult">大招可用</span>
               </div>
             </section>
@@ -64,7 +64,7 @@
                 class="hp-bar"
                 id="foe-hp-bar"
                 role="progressbar"
-                aria-label="对手的气血"
+                aria-label="对手的生命值"
                 aria-valuemin="0"
                 aria-valuemax="0"
                 aria-valuenow="0"
@@ -72,7 +72,7 @@
                 <i class="hp-fill" id="foe-hp-fill"></i>
               </div>
               <div class="pmeta">
-                <span class="dots" id="foe-dots" role="img" aria-label="真气 0/5"></span>
+                <span class="dots" id="foe-dots" role="img" aria-label="能量 0/5"></span>
                 <span class="ult" id="foe-ult">大招可用</span>
               </div>
             </section>
