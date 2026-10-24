@@ -76,6 +76,7 @@ pnpm sandbox:selfplay --rounds 3  # 两个脚本身份自动打完整局并校�
 | 玩家原话分类（招式 / 战况 / 玩法 / 开局） | `src/game/utterance.ts` |
 | 界面/脚本用的局面快照 | `src/game/state.ts` |
 | 业务流程（开局 / 出招 / 战况 / 说明） | `src/game/service.ts` |
+| 对局状态写入串行、异步结果校验 | `src/game/serialize.ts` 的 `SerialQueue` + `service.ts` 的 `driftedSolo` / `driftedPvp` |
 | 工具定义与参数 | `src/mcp/tools.ts`、`src/mcp/server.ts` |
 | 路由、传输、请求头 | `src/http/app.ts` |
 | 存储 | `src/store/battles.ts`、`src/store/rooms.ts`、`src/store/echoes.ts`（对外 `get/set/delete/sweep/size` 不变） |
@@ -108,6 +109,8 @@ ASR 在平台侧，错误是常态（「攻击」被识别成「公鸡」）。�
 13. **README 是门面**：新增命令、端点、请求头、配置项或测试文件时，同步更新 `README.md` 的对应表格与目录结构；沙箱相关同步 `sandbox/README.md`；README 里只写已验证的行为，不写计划中的能力。
 14. **PVP 是新增层**：配对与房间独立于现有 1v1，不改 `Battle` 的语义；玩家身份仍是 `deviceId#agentId`，没有匹配到人时用 AI 兜底，保证演示随时能玩。
 15. **载体差异走请求头**：有没有屏幕这类能力用 `X-Linx-Display`（`voice` 默认 / `screen`）表达，解析在 `src/mcp/context.ts`，效果落到 `SayOptions.catchUp`。不要把「客户端是什么设备」塞进工具入参，也不要让平台侧模型判断要不要补账。
+16. **对局状态串行写，异步回来先校验**：意图模型（1.5 秒）与对手决策（1.2 秒）都是异步的，读改写一律走 `src/game/serialize.ts` 的 `SerialQueue`（单人按对局键、双人按房间号）；返回后必须确认还是同一局、同一个座位（对局每次结算都换新对象，对象身份就是版本号），对不上就丢弃并让玩家重说，绝不把旧快照写回。新的读改写路径不要绕过队列直接 `store.set`。
+17. **一人一个有效房间**：换房先验证目标房可加入、再占座、最后撤旧房（房间、该房间的基准对局与双方补账一起清）；加入失败时原房间与那局完全不动。判断玩家在哪个房间只认 `rooms.byPlayer`，别用 `store` 里残留的单人局反推。
 
 ## Git 与 PR
 
