@@ -41,15 +41,17 @@ export interface SayResult {
   sessionId: string;
   state: BattleSnapshot | null;
   trace: McpTrace;
+  sourceReply?: string;
+  rewriteStatus?: string;
   error?: string;
 }
 
 export class SandboxClient {
   constructor(private readonly options: SandboxClientOptions) {}
 
-  get agentMode(): 'agent' | 'compatibility' { return this.options.agent ? 'agent' : 'compatibility'; }
+  get agentMode(): 'relay' | 'compatibility' { return this.options.agent ? 'relay' : 'compatibility'; }
 
-  /** Agent selects a tool; legacy direct mode remains explicitly labelled. */
+  /** ASR text is forwarded unchanged; expression never executes another turn. */
   async say(deviceId: string, text: string): Promise<SayResult> {
     const sessionId = `s-${randomUUID().slice(0, 8)}`;
     const mcp = new LinxMcpClient({
@@ -66,7 +68,7 @@ export class SandboxClient {
     try {
       await mcp.initialize();
       const outcome = this.options.agent
-        ? await this.options.agent.run(deviceId + '#' + this.options.agentId, text, mcp)
+        ? await this.options.agent.run(text, mcp)
         : {tool:'game_say',...await mcp.callTool('game_say', { text })};
       const { text: reply, isError } = outcome;
       // 局面只是展示用：查不到不影响这一句播报
@@ -82,7 +84,7 @@ export class SandboxClient {
         tool: outcome.tool,
         ms: trace.ms,
       });
-      return { ok: true, reply, isError, ...base, tool:outcome.tool, state, trace };
+      return { ok: true, reply, isError, ...base, tool:outcome.tool, sourceReply:reply, rewriteStatus:this.options.agent ? 'awaiting-facts' : 'original', state, trace };
     } catch (error) {
       const message = error instanceof UpstreamError ? error.message : error instanceof Error ? error.message : String(error);
       const trace = mcp.takeTrace();
