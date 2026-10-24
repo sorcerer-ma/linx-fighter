@@ -1,0 +1,25 @@
+# 共鸣：闻声对决 —— systemd 单元
+# 安装：cp deploy/linx-fighter.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now linx-fighter
+[Unit]
+Description=Linx Fighter MCP service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=linx
+Group=linx
+# 代码与生产依赖放在 /opt/linx-fighter，由 scripts/deploy.sh 同步
+WorkingDirectory=/opt/linx-fighter
+# 配置（端口、TTL、模型密钥）只放这里，不进仓库
+EnvironmentFile=-/etc/linx-fighter.env
+ExecStart=/usr/local/bin/node /opt/linx-fighter/dist/index.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

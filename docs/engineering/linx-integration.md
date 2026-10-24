@@ -4,35 +4,52 @@
 
 ## 1. 部署
 
-服务部署在七牛云内网机器 `100.100.61.41`，由 systemd 托管；由于内网地址平台访问不到，另起了一个公网隧道把 8000 端口暴露出去：
+服务跑在独立服务器上，systemd 托管，nginx 在 80 端口做反向代理：
 
 | 项 | 值 |
 | --- | --- |
-| 控制台填写的 SSE 地址 | `http://bore.pub:3216/mcp` |
-| 备用（内网直连） | `http://100.100.61.41:8000/mcp` |
-| 应用服务 | `linx-fighter.service`，`/opt/linx-fighter`，用户 `linx` |
-| 公网隧道 | `linx-tunnel.service`，bore 客户端 → `bore.pub:3216` → 本机 `127.0.0.1:8000` |
+| 控制台填写的 SSE 地址 | `http://111.62.156.213/mcp` |
+| SSH | `ssh linx-fighter-las`（`111.62.156.213:10653`，私钥登录） |
+| 应用服务 | `linx-fighter.service`，代码 `/opt/linx-fighter`，用户 `linx`，监听 `127.0.0.1:8000` |
+| 反向代理 | `nginx.service`，`/etc/nginx/conf.d/linx-fighter.conf`，80 → `127.0.0.1:8000` |
+| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`OPENROUTER_API_KEY`），不进仓库 |
 
 常用操作：
 
 ```bash
 systemctl status linx-fighter     # 应用状态
 systemctl restart linx-fighter    # 重启应用
-journalctl -u linx-fighter -f     # 应用日志（单行 JSON，能看到平台来的 SSE 连接与出招）
+journalctl -u linx-fighter -f     # 应用日志（单行 JSON，能看到平台来的连接与出招）
 
-systemctl status linx-tunnel      # 隧道状态
-journalctl -u linx-tunnel -n 20   # 隧道日志，含 "listening at bore.pub:<端口>"
+systemctl status nginx            # 反代状态
+nginx -t && systemctl reload nginx  # 改了反代配置后
 ```
 
-隧道说明：`bore` 是开源的内网穿透客户端，连的公共中继 `bore.pub`，只转发 TCP，不做 TLS；端口 `3216` 是启动时申请的固定端口，中继侧若被占用会换端口，届时以日志里的 `listening at` 为准，并同步改控制台地址。隧道重启（`systemctl restart linx-tunnel`）后端口不变。
+反代必须为 SSE 与 Streamable HTTP 关闭缓冲、放宽超时，否则平台收不到 `endpoint` 事件，表现为「工具调用超时 / 连不上」。完整配置见 [`deploy/nginx-linx-fighter.conf`](../../deploy/nginx-linx-fighter.conf)，关键几行：
 
-发布新版本（在开发机仓库根目录执行，一条命令完成编译、同步、装依赖、重启、自检）：
+```nginx
+proxy_http_version 1.1;
+proxy_set_header Connection "";
+proxy_buffering off;
+proxy_cache off;
+proxy_read_timeout 3600s;
+```
+
+发布新版本（在开发机仓库根目录执行，一条命令完成编译、同步、装依赖、重启，并分别自检直连与反代）：
 
 ```bash
 scripts/deploy.sh
 ```
 
-脚本默认发到 `root@100.100.61.41:/opt/linx-fighter`，换机器时传参：`scripts/deploy.sh root@<主机> /opt/linx-fighter`。
+脚本默认发到 `root@linx-fighter-las:/opt/linx-fighter`，换机器时传参：`scripts/deploy.sh root@<主机> /opt/linx-fighter`。
+
+机器上的 systemd 单元、环境变量样例与 nginx 配置在 `deploy/` 里有副本；改过机器上的配置后要同步回仓库：
+
+```bash
+cp deploy/linx-fighter.service /etc/systemd/system/ && systemctl daemon-reload
+cp deploy/linx-fighter.env.example /etc/linx-fighter.env && chmod 600 /etc/linx-fighter.env
+cp deploy/nginx-linx-fighter.conf /etc/nginx/conf.d/ && nginx -t && systemctl reload nginx
+```
 
 部署到其他机器时也可以用 Docker：
 
@@ -42,44 +59,22 @@ docker run -d --name linx-fighter -p 8000:8000 -e LOG_LEVEL=info linx-fighter
 curl http://127.0.0.1:8000/health
 ```
 
-反向代理（Nginx）必须为 SSE 关闭缓冲，否则平台收不到 `endpoint` 事件，表现为「工具调用超时 / 连不上」：
-
-```nginx
-location /mcp {
-    proxy_pass http://127.0.0.1:8000;
-    proxy_http_version 1.1;
-    proxy_set_header Connection '';
-    proxy_set_header Host $host;
-    proxy_buffering off;
-    proxy_cache off;
-    proxy_read_timeout 3600s;
-}
-
-location /mcp/message {
-    proxy_pass http://127.0.0.1:8000;
-    proxy_http_version 1.1;
-    proxy_set_header Connection '';
-    proxy_set_header Host $host;
-    proxy_read_timeout 60s;
-}
-```
-
-> 平台文档中的示例地址是 `http://...:8000/sse`，说明允许明文 HTTP。有域名和证书时建议走 HTTPS。
+> 平台文档中的示例地址是 `http://...:8000/sse`，说明允许明文 HTTP。有域名和证书时可以在这台机器上换成 HTTPS。
 
 ## 2. 自检
 
 在开发机或任意能上网的机器上执行：
 
 ```bash
-# 健康检查（走公网隧道）
-curl http://bore.pub:3216/health
+# 健康检查
+curl http://111.62.156.213/health
 # 应看到 event: endpoint 和 /mcp/message?sessionId=... 两行
-curl -N -H 'Accept: text/event-stream' --max-time 2 http://bore.pub:3216/mcp
+curl -N -H 'Accept: text/event-stream' --max-time 2 http://111.62.156.213/mcp
 # 完整协议链路（initialize → tools/list → tools/call）
-pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
+pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 ```
 
-`smoke.ts` 会把开局、出招、战况的播报文本打印出来；文本正常说明服务端没问题，剩下的是平台侧配置。
+`smoke.ts` 会把开局、出招、战况的播报文本打印出来；文本正常说明服务端没问题，剩下的是平台侧配置。排查网络时也可以从本机穿透检查机器自己的 8000 端口：`ssh -L 18000:127.0.0.1:8000 linx-fighter-las` 后 `curl http://127.0.0.1:18000/health`。
 
 ## 3. 控制台：配置自定义 MCP
 
@@ -88,7 +83,7 @@ pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
 | 配置项 | 值 |
 | --- | --- |
 | 服务名称 | 灵犀对决 |
-| SSE 地址 | `http://bore.pub:3216/mcp` |
+| SSE 地址 | `http://111.62.156.213/mcp` |
 | 描述 | 语音回合制对战游戏 |
 
 - 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
@@ -138,9 +133,9 @@ pnpm exec tsx scripts/smoke.ts http://bore.pub:3216
 **平台连不上 / 工具调用超时**
 先分两种情况判断，看 `journalctl -u linx-fighter -f`：
 
-- **完全没有「SSE 连接建立」日志**：平台的请求没到服务端，是网络或地址问题。检查隧道是否在跑（`systemctl status linx-tunnel`、`journalctl -u linx-tunnel | grep listening`），确认控制台填的端口与日志一致，再在外部机器上 `curl http://bore.pub:<端口>/health` 验证。
+- **完全没有「收到 MCP 请求」日志**：平台的请求没到服务端，是网络或地址问题。先确认控制台填的是 `http://111.62.156.213/mcp`，再在外部机器上 `curl http://111.62.156.213/health`；不通就看云控制台的端口映射（外网 80 → 本机 80）与 `systemctl status nginx`。
 - **日志里是 `收到未知路径请求` 且状态 404**：请求到了但方法/路径对不上。看日志里的 `method`、`path`、`host` 三个字段：`POST /mcp` 是新版 Streamable HTTP，服务端已支持；其它路径说明控制台地址填错了。
-- **有 SSE 连接日志但拿不到工具调用**：多半是中间代理缓冲了 SSE。按第 1 节配置 `proxy_buffering off` 与长 `proxy_read_timeout`，再确认 `/mcp` 的响应头是 `text/event-stream`。
+- **有连接日志但拿不到工具调用**：多半是中间代理缓冲了 SSE。按第 1 节确认 `proxy_buffering off` 与长 `proxy_read_timeout`，再确认 `/mcp` 的响应头是 `text/event-stream`。
 
 **能连上但模型从不调用工具**
 意图识别模型不支持 Function Call，或智能体没勾选 MCP；也可能是提示词里没写工具用途。换模型 + 重新保存配置 + 重启设备。
