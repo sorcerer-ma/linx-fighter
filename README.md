@@ -144,26 +144,123 @@ ASR 在平台侧，同音与近音错误只能由我们兜住。识别按「整�
 
 匹配规则集中在 `src/game/actions.ts`；一个唤出词只映射一招，单字别名「打」「躲」只走整句精确匹配，不会误伤。
 
-## 架构
+## 架构设计
+
+整套服务的形状由三条前提推出来：
+
+1. **语音只有一条窄通道**：一次最多听两句、不能回头翻记录，所以信息必须由服务端替玩家记住并挑重点说。
+2. **对局只能有一个判断者**：判断与结算全在服务端，平台侧模型只做透传与朗读。换模型、换提示词、换载体都不影响对局正确性。
+3. **演示优先、单实例够用**：内存存储与单进程足够撑现场演示，不引入数据库、消息队列与多实例状态同步。
+
+其余设计都是这三条的推论。
+
+### 分层与依赖方向
+
+依赖只允许自上而下：`http` → `mcp` → `game` → `store`。领域层（规则、策略、联机、播报、分类、视图）不 import MCP 或 HTTP，因此 `scripts/demo.ts`、`scripts/validate-v02.ts` 可以脱离协议直接跑玩法与对拍。
 
 ```mermaid
-flowchart LR
-  Device[灵犀语音硬件] -- WebSocket --> Platform[灵犀平台<br/>ASR · TTS · 设备路由]
-  Browser[手机 / 网页<br/>沙箱页面] -- "POST /api/say" --> Sandbox[本地沙箱<br/>MCP 客户端 · 静态页]
-  Platform -- "POST /mcp / GET /sse + POST /mcp/message" --> Http[HTTP 外壳<br/>Express]
+flowchart TB
+  Device["灵犀硬件<br/>唤醒 · ASR · TTS"] -- "平台侧 POST /mcp" --> Http
+  Web["沙箱页面 / 手机<br/>语音或文字输入 · 只读局面"] -- "POST /api/say" --> Sandbox["本地沙箱<br/>MCP 客户端 + 静态页"]
   Sandbox -- "POST /mcp · game_say" --> Http
-  Http -. "GET /events（SSE 局面快照）" .-> Browser
-  Http --> Mcp[MCP 层<br/>工具注册 · 设备上下文]
-  Mcp --> Game[对局服务<br/>单人 / 双人分流]
-  Game --> Engine[回合引擎<br/>结算与胜负]
-  Game --> Enemy[AI 对手<br/>决策模型]
-  Game --> Pvp[双人联机<br/>房间号 · 视角镜像]
-  Game --> Narrator[播报文案]
-  Game --> Store[(对局存储<br/>内存 + TTL)]
-  Pvp --> Store
+  Http["HTTP 外壳<br/>Express · 两套传输 · 身份提取"] --> Mcp["MCP 协议层<br/>5 个工具 · 设备上下文"]
+  Mcp --> Service["GameService<br/>单人 / 双人分流 · 读改写"]
+  Service --> Utterance["原话分类<br/>utterance.ts"]
+  Service --> Intent["JEV 意图模型<br/>intent.ts"]
+  Service --> Engine["回合引擎（纯函数）<br/>engine.ts · rules.ts · rng.ts"]
+  Engine --> Enemy["对手决策<br/>本地效用 / JEV"]
+  Service --> Pvp["双人联机<br/>房间号 · 视角镜像"]
+  Service --> Narrator["播报文案<br/>narrator.ts"]
+  Service --> Stores[("存储层<br/>对局 · 房间 · 补账<br/>内存 + TTL")]
+  Http -.->|"只读局面：GET /state · GET /events（SSE）"| Web
+  Http -.->|"GET /state"| Agent["Agent 脚本 / 调试"]
 ```
 
-依赖只允许自上而下：`http` → `mcp` → `game` → `store`。`engine` / `enemy` / `pvp` / `narrator` 不 import MCP 或 HTTP，所以 `scripts/demo.ts` 脱离协议就能跑。分层职责、已定决策与扩展指引见 [docs/architecture.md](docs/architecture.md)。
+### 各层职责
+
+| 层 | 文件 | 职责 | 边界 |
+| --- | --- | --- | --- |
+| 接入层 | `src/http/app.ts` | 两套 MCP 传输、身份提取、`/state` 与 `/events` 旁路、健康检查、调试接口、错误兜底 | 不判断玩法 |
+| 协议层 | `src/mcp/server.ts`、`src/mcp/tools.ts` | 工具注册与参数校验、把异常转成 `isError` + 一句人话 | 不做业务分支 |
+| 编排层 | `src/game/service.ts` | 开局 / 出招 / 战况 / 说明，单人双人分流，读改写存储，补账播报 | 不算数值 |
+| 规则层 | `src/game/engine.ts`、`rules.ts`、`rng.ts` | 创建对局、双阶段结算、胜负，纯函数，随机数由 seed 派生 | 不感知协议 |
+| 策略层 | `src/game/enemy.ts`、`enemy-jev.ts`、`intent.ts` | 对手决策与「这句话是哪一招」的归一化，只选动作 | 不产出数值、不改状态 |
+| 联机层 | `src/game/pvp.ts`、`src/store/rooms.ts` | 房间号、视角镜像与写回、事件换视角 | 不复制引擎 |
+| 表现层 | `src/game/narrator.ts` | 为「听」写的播报，只依赖对局状态与事件 | 不拼业务判断 |
+| 分类与视图 | `src/game/utterance.ts`、`state.ts` | 原话分类（招式 / 战况 / 玩法 / 开局）与界面用的局面快照 | 不写状态 |
+| 存储层 | `src/store/battles.ts`、`rooms.ts`、`echoes.ts` | 对局、房间、补账的读写与过期清理 | 不做结算 |
+
+### 一次请求的完整路径
+
+1. 平台或沙箱 `POST /mcp`，JSON-RPC 带 `X-Linx-Device-Id` / `X-Linx-Agent-Id` / `X-Linx-Session-Id` / `X-Linx-Display`；
+2. 接入层建临时 `McpServer`（无状态传输）→ 协议层取出 `deviceId#agentId` 作为对局键 → `game_say(text=原话)`；
+3. `GameService.say()` 先 `classifyUtterance`：招式 → `act`，战况 / 玩法 / 开局直接回，剩下的一律交给 `act` 兜底（含开房、加入房间、自动开局）；
+4. `act` 按是否在房间里分流：单人走本地 AI，双人按视角镜像后结算；
+5. 规则层 `resolveTurn` 推进一个阶段并返回新状态与事件；认不出招式时**不推进回合**，只提示当前可用的说法；
+6. 表现层把事件拼成最多两句中文，双人局顺带把出手方错过的结算记进补账队列，然后原样作为 `content[].text` 返回，由平台 TTS 念给玩家；
+7. 旁路：页面用 `EventSource` 订阅 `GET /events` 拿只读局面，脚本用 `GET /state` 拿同一份快照——两者都不参与判断。
+
+### 对局状态机
+
+对局的几个关键状态，靠 `battle.active` 与 `battle.pending` 区分：
+
+| 状态 | 判定（按当前玩家视角） | 玩家能做什么 |
+| --- | --- | --- |
+| 轮到玩家出招 | `pending === null && active === 'player'` | 普攻 / 强攻 / 大招 / 蓄力，或问战况 / 玩法 |
+| 等玩家应对 | `pending.actor === 'enemy'` | 格挡 / 闪避 / 承受 |
+| 攻击已锁定、等对手应对 | `pending.actor === 'player'` | 只能等（补账播报此时不记，等这一轮真正结算完再记） |
+| 终局 | `phase !== 'battle'` | 看播报与结算，说「开始」「再来一局」重开 |
+
+双人局每次成功结算后 `active` 都会翻到另一方，所以「此刻该开口的人」永远是没在场的那个——补账播报就是在这个缝里补的。
+
+### 关键设计决策一览
+
+| # | 决策 | 理由摘要 |
+| --- | --- | --- |
+| 1 | Streamable HTTP 与 SSE 两套传输并存 | 平台实测走 `POST /mcp`，早期文档描述的是 SSE；两套共用存储，按方法分流 |
+| 2 | 对局键 = `deviceId#agentId` | 会话每轮都变，按会话存会让玩家「失忆」 |
+| 3 | 存储用内存 + TTL，接口保持可替换 | 单实例够用；换 Redis 时只替换构造，`GameService` 不动 |
+| 4 | 工具返回纯文本，不返回 `structuredContent` | 现阶段没有设备动作，纯文本对平台侧模型最稳 |
+| 5 | 随机数全部由对局 seed 派生 | 同一 seed 逐位复现，256,000 局对拍才有意义 |
+| 6 | 双人用视角镜像，不复制引擎 | 结算逻辑只有一份，`viewAs` / `canonicalize` 负责换视角与写回 |
+| 7 | 认不出招式不消耗回合 | 语音误识别是常态，凭空掉血比重说一次更糟 |
+| 8 | 首句出招自动开局 | 玩家第一句往往是「攻击」而不是「开始游戏」 |
+| 9 | 每个 SSE 连接一个 `McpServer` | 协议状态按连接保存，共用实例会串会话 |
+| 10 | 工具错误不外抛 | 转成 `isError: true` + 人话，避免平台侧模型拿到协议错误后乱编 |
+| 11 | JEV 只做选择题，规则优先 | 模型只从合法选项里选，超时 / 越界 / 低置信度一律回退，断网也能玩 |
+| 12 | 原话透传（`game_say`） | 平台侧模型每多一个选择就多一次选错；判断依据本来就在服务端 |
+| 13 | 状态流用 SSE 而不是 WebSocket | 单向、低频、浏览器自带重连；WebSocket 只在双向低延迟输入时才值得 |
+| 14 | 沙箱独立进程、走真实 MCP 入口 | 它跑通的链路就是玩家会走的链路；坏了只能怪自己的 bug |
+| 15 | 补账播报 + `X-Linx-Display` 协商 | 无屏终端需要补，有屏客户端自己能看；能力走请求头，不进工具入参 |
+
+每条决策的来龙去脉、替代方案与否决原因见 [docs/architecture.md](docs/architecture.md)。
+
+### 载体与沙箱的位置
+
+灵犀硬件只是载体，真正对外的是这套 MCP 服务。任何新载体只需要回答两个问题：**怎么把玩家的话送进来**（调 `game_say`）、**怎么把结果呈现出去**（念出来，或画出来）。请求头 `X-Linx-Display` 就是载体能力的声明：`voice` 保留补账播报，`screen` 关掉、由客户端自己画局面。
+
+`sandbox/` 是这台「替身设备」：页面把原话交给沙箱，沙箱像平台一样只发 HTTP 调 `game_say`，不 import 服务端内部函数。所以多窗口对战、手机访问、Agent 用脚本自己打完整局，走的都是真实链路。详见 [sandbox/README.md](sandbox/README.md)。
+
+### 扩展点
+
+| 想改什么 | 改哪里 |
+| --- | --- |
+| 招式、口语别名、ASR 误识别、唤出短语 | `src/game/types.ts` 的 `ActionId` + `src/game/actions.ts` 的 `ACTIONS` |
+| 数值（气血、真气、伤害、暴击、闪避） | `src/game/rules.ts`，同步 `docs/game-design.md` 并重跑 `pnpm validate` |
+| 回合结算与胜负 | `src/game/engine.ts` 的 `resolveTurn` |
+| 对手 AI | `src/game/enemy.ts`（本地兜底）、`src/game/enemy-jev.ts`（JEV 决策） |
+| 双人房间与视角 | `src/game/pvp.ts`、`src/store/rooms.ts` |
+| 意图模型 | `src/game/intent.ts`（提示词与阈值在 `actions.ts` / `intent.ts`） |
+| 播报文案 | `src/game/narrator.ts` |
+| 业务流程（开局 / 出招 / 战况 / 说明） | `src/game/service.ts` |
+| 工具定义与参数 | `src/mcp/tools.ts`、`src/mcp/server.ts` |
+| 路由、传输、请求头 | `src/http/app.ts`、`src/mcp/context.ts` |
+| 存储 | `src/store/battles.ts`、`src/store/rooms.ts`、`src/store/echoes.ts` |
+| 换存储 / 多实例 | 实现同签名的 `get/set/delete/sweep`，在 `src/index.ts` 替换构造；多实例还要考虑会话粘滞 |
+
+### 有意不做的事
+
+演示前刻意不做：多实例与 Redis、账号体系、关系型数据库、可观测性平台、容器编排、前端框架。沙箱页是「前端」的唯一例外——它的定位是设备替身，不是产品界面，所以零依赖、零构建、零 CDN。
 
 ## 配置
 
@@ -186,7 +283,7 @@ flowchart LR
 
 [![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
 
-`node:test` + 内置覆盖率，不引入额外测试框架。当前 **221 个用例**，行覆盖 **99.0%**、分支覆盖 **94.2%**、函数覆盖 **98.8%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
+`node:test` + 内置覆盖率，不引入额外测试框架。当前 **229 个用例**，行覆盖 **99.2%**、分支覆盖 **94.3%**、函数覆盖 **98.8%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
@@ -244,7 +341,7 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | 文档 | 内容 |
 | --- | --- |
 | [README.md](README.md) | 现状、命令、接口、部署 |
-| [docs/architecture.md](docs/architecture.md) | 请求链路、分层职责、已定设计决策 |
+| [docs/architecture.md](docs/architecture.md) | 逐条设计决策的来龙去脉、替代方案与扩展指引（总览见上文「架构设计」） |
 | [docs/game-design.md](docs/game-design.md) | v0.2 规则、数值、AI、双人联机与验证 |
 | [docs/ai-enemy.md](docs/ai-enemy.md) | AI 决策模型、权重与自博弈结果 |
 | [docs/design-references.md](docs/design-references.md) | 同类设计案例：读招、资源、节奏与先手补偿 |
