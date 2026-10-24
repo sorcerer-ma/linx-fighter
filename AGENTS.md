@@ -1,142 +1,86 @@
 # AGENTS.md — 共鸣：闻声对决（linx-fighter）
 
-给在本仓库写代码的 AI 的约束。只写本仓库特有的东西；通用规范（中文注释与 commit、不造无意义薄封装、不提及他人）见全局配置，不在这里重复。
+本文件定义仓库协作约束和修改入口。产品现状、操作命令、模型参数与部署细节分别维护在对应文档，不在这里重复记录动态数值。
 
-## 项目
+## 项目定位与范围
 
-- **是什么**：灵犀（七牛 Xrobot 语音硬件）上的 1v1 回合制语音对战。玩家用嘴下令，服务端持有对局并结算，平台侧模型只负责理解意图、调用工具、朗读结果。服务通过 MCP 接入平台。
-- **灵犀只是载体**：真正对外的是这套 MCP 服务，硬件只是它的输入与播报通道。同一套服务端既能接灵犀硬件，也能接网页 / 手机（本地沙箱就是替身），**换载体不改服务**；演示可以把硬件换成手机 Web。
-- **分工**：ASR、TTS、唤醒都在灵犀平台侧，本服务只接收文字、只返回文字。不要引入语音库、不要处理音频。
-- **命名**：中文名「共鸣：闻声对决」**已定稿**（正式名，不再改动）；英文名 `linx-fighter` 用于仓库名、包名、服务名、`systemd` 单元与镜像名。面向玩家的文案、文档标题、灵犀控制台的智能体名称与提示词都用中文名。确需改名时，搜这几处一起同步：`README.md`、`docs/engineering/linx-integration.md`、`src/mcp/server.ts`、`src/mcp/tools.ts`、`src/game/narrator.ts`、`src/http/app.ts`、`src/index.ts`、`test/mcp.e2e.test.ts`。
-- **截止**：黑客松评审 2026-10-26 09:00 现场演示，时间以小时计。优先级 **闭环能玩 > 数值平衡 > 打磨**；每个需求先问「演示必须吗」。
-- **现状**：v0.2 玩法（七招、真气循环、伤害加成、先手补偿）、JEV 决策对手、双人联机（房间号 + 视角镜像）与 JEV 意图模型均已落地；规则对拍 256,000 局零漂移，部署在 `100.100.61.41`。另有本地沙箱 `sandbox/`（Web 模拟器 + 多窗口多人 + 脚本自对弈），用于不依赖硬件地跑通整条链路。
-- **沙箱的定位**：`sandbox/` 不是为了做个页面，而是给 Agent 一条不依赖控制台与实体硬件的真实链路——脚本能驱动整局（`pnpm sandbox:selfplay`）做回归，页面能开多个窗口模拟多人，手机同一内网可访问（后续可能顶替硬件上台演示）。它只是灵犀设备的替身：所有话语仍经 MCP `game_say` 进服务端，不在沙箱里加任何玩法判断；页面上的语音识别与 TTS 也由浏览器提供，属于设备替身，不进服务端。
-- **路线**：演示前以稳定性为主，数值平衡与观战/回放留到评审后；双人联机已可用，断线重连与超时判负未做。双人局的补账播报：平台没有服务端主动播报能力，A 出招、B 应对后 A 当场听不到结果；服务端把这段记进 `src/store/echoes.ts`，A 下次任何发言都先在播报最前面补一句，取走即清，换局即清。只补无屏终端：客户端带 `X-Linx-Display: screen` 就不念（沙箱页面默认如此），有屏客户端自己画局面。
-- **明确不做**（除非用户要求）：多实例/Redis/数据库、账号体系、可观测性平台、容器编排。**沙箱页面是唯一例外**：`sandbox/public/` 只做灵犀设备的替身（输入 + 只读局面），不承载业务判断，也不开第二条输入路径（所有话语仍走 `POST /api/say` → MCP `game_say`）。
+- 玩家通过语音指挥硬件伙伴进行 1v1 回合制战斗；中文名为「共鸣：闻声对决」，仓库、包、服务和镜像名使用 `linx-fighter`。没有明确改名需求时沿用现有名称。
+- 服务通过 MCP 接入灵犀平台。平台负责唤醒、ASR、原话透传和朗读返回文本；服务端判断游戏意图、维护对局并裁决结果，只接收和返回文字，不处理音频。
+- 硬件、网页和手机共用同一服务。`sandbox/` 是设备替身，所有输入仍走 `/api/say` → MCP `game_say`；浏览器语音属于替身能力，不在沙箱或页面增加玩法判断。
+- 演示阶段优先保证双人闭环和稳定性。除非用户明确要求，不增加多实例、Redis、数据库、账号体系、可观测性平台、容器编排或前端框架。新增依赖或扩大技术栈前先确认；已有明确授权时不重复询问。
 
-## 文档自动更新（给 AI）
+## 必须保持的行为约束
 
-用户在本会话里提出的补充、决定与重大改变，只要影响「怎么写代码」或「对外怎么介绍」，就**当场**写进文件，不要等用户再提醒一次：
+1. **统一裁决**：气血、真气、轮次、随机结果和胜负由服务端规则引擎决定。平台模型与客户端不能自行推演或修改数值；可调参数集中在 `src/game/rules.ts`。
+2. **原话入口**：推荐平台使用 `game_say`，不把游戏意图分类推回平台。扩展招式复用现有工具；保持当前五工具契约，除非任务明确要求调整接口。
+3. **输入容错**：保留别名、ASR 同音误识别和唤出词支持，单字别名仅精确匹配。查询、否定、歧义、识别失败及非法行动不能消耗战斗资源或推进阶段；补相应边界测试。
+4. **模型边界**：意图模型只归一化动作，对手模型只从合法动作中选择，不产出数值或获知未结算的隐藏结果。意图识别失败按未识别处理，对手决策失败回退本地 AI；测试注入假模型，不依赖真实密钥或外部模型网络。
+5. **状态与复现**：`resolveTurn` 不修改输入，返回新状态与事件；随机源与策略依赖可注入，结算随机数沿用 `rng.ts` 的 seed 与计数。固定随机输入、时间和确定性策略后应可复现；接入外部模型后不承诺仅凭 seed 重现整局。
+6. **并发写入**：开局和行动沿用 `SerialQueue` 的对局粒度；任何跨 `await` 的写回前检查是否仍为同一对局、同一状态和同一座位。房间管理可能在等待期间改变归属，不能仅靠排队假定状态有效；串行执行也不等于请求去重。
+7. **房间归属**：一个玩家只属于一个有效房间，以 `rooms.byPlayer` 为准。换房先验证并加入目标，再清理旧房、旧局和双方补账；加入失败保留原局。双人房无人加入时继续等待，不擅自用 AI 占座；单人模式才提供 AI 对手。
+8. **身份来源**：身份由接入层解析，不放进游戏工具参数。平台调用优先使用 `X-Linx-*` 请求头；状态流与本地调试保留现有查询参数兼容。优先按 `deviceId#agentId` 定位对局，会话与匿名身份只按现有缺省逻辑兜底，不把正常对局改成按 session 存储。
+9. **载体能力与补账**：`X-Linx-Display` 在 context 层解析，转换为 `SayOptions.catchUp`，不交给模型判断。无屏玩家的遗漏结算保存在 `EchoStore`，在双人行动与状态查询路径取走；有屏路径取走但不朗读，换局退房时清理。帮助和开局不是通用补账入口，不能宣称“任何发言都补账”；扩大覆盖时先补测试并更新产品说明。
+10. **语音反馈**：战斗播报集中在 `narrator.ts`，工具返回可直接朗读的短口语，不带 Markdown 或表情。常规播报按两句、60 字目标检查，补账和唤出词拼接后也检查总长度；区分识别失败与闪避失败，不提前宣布命中或泄露暴击结果。
+11. **协议与错误**：保留 Streamable HTTP 和 SSE 的现有兼容路径、`DELETE /mcp` 收尾行为及正常 JSON-RPC 响应。工具业务异常转为 `isError: true`、可理解的文案与错误日志，不把“正常响应”写成所有端点固定 HTTP 状态码。当前以纯文本返回；设备动作确有需求时再按平台文档使用 `structuredContent.funcs`。
+12. **日志**：服务代码使用 `src/log.ts` 的结构化 logger，不新增散落的 `console.log`。密钥、`.env`、构建产物与依赖目录不入库。
 
-| 用户提到了什么 | 写到哪里 |
+## 模块职责与修改入口
+
+接入与协议层调用游戏编排，编排调用规则、策略、表现与存储；`/state`、`/events` 可直接查询编排层快照。规则和播报不得反向依赖 HTTP 或 MCP；沙箱只通过 HTTP/MCP 使用服务，不引用服务端内部业务实现。
+
+TypeScript 使用 ESM / NodeNext，相对导入带 `.js` 后缀。运行时与包管理器版本以 `package.json` 为准，依赖版本以锁文件为准；完整命令见根目录 README。
+
+| 修改内容 | 入口 |
 | --- | --- |
-| 新约束、禁止事项、协作方式、演示方式的改变 | 本文件「项目」「规则」「路线」 |
-| 玩家可见的新能力、新命令、新端点、新配置、目录变化 | `README.md` 的对应表格与目录结构；沙箱相关再同步 `docs/testing/sandbox.md` |
-| 已定架构被改（传输、工具边界、判定归属） | 本文件 + `docs/engineering/architecture.md` 的设计决策 |
+| 招式、别名、ASR 误识别、唤出词 | `src/game/types.ts`、`actions.ts` |
+| 数值与结算 | `src/game/rules.ts`、`engine.ts`、`rng.ts` |
+| AI 与意图模型 | `src/game/enemy.ts`、`enemy-jev.ts`、`intent.ts` |
+| 语句分类、查询与歧义拦截 | `src/game/utterance.ts`、`actions.ts` |
+| 开局、行动、房间切换与并发校验 | `src/game/service.ts`、`serialize.ts` |
+| 双人视角与房间索引 | `src/game/pvp.ts`、`src/store/rooms.ts` |
+| 伙伴播报、补账与界面快照 | `src/game/narrator.ts`、`state.ts`、`src/store/echoes.ts` |
+| MCP 工具、身份与载体能力 | `src/mcp/server.ts`、`tools.ts`、`context.ts` |
+| 路由、传输、状态流、调试接口 | `src/http/app.ts` |
+| 存储与过期 | `src/store/` |
+| 沙箱服务、客户端与页面 | `sandbox/server.ts`、`platform/`、`public/` |
 
-- 只写用户确认过的内容：猜测、未验证的方案不进 README；README 只写已验证的行为。
-- 一条说清一件事，沿用现有表格与编号的风格；已经写过的不要重复堆叠。
-- 写完在回复里点明改了哪几处；每次改代码顺手检查这两份文件是否落后于实现（名称、命令、工具数、测试数、端点）。
+## 验证要求
 
-## 资料
+按本次修改选择检查，不以“每天收工”作为任务验证边界，不用覆盖率数字代替行为断言。
 
-| 文档 | 用途 |
+| 修改类型 | 至少检查 |
 | --- | --- |
-| `README.md` | 根目录统一入口：现状、命令、MCP 接口与请求头、部署、文档导航与维护约定 |
-| `docs/product/product-design.md` | 产品定位、玩家旅程、语音体验、验收与待决策项；产品流程变化时同步 |
-| `docs/engineering/architecture.md` | 分层职责与**已定决策**（改传输、存储、工具返回值前必读） |
-| `docs/game/game-design.md` | 玩法施工图：已实现 / 待定 / 每项改哪里（改结算前必读） |
-| `docs/engineering/linx-integration.md` | 平台接入步骤、智能体提示词、排障 |
-| `docs/references/design-references.md` | 同类设计案例（读招、资源、节奏、先手补偿）与改进建议（改规则前参考） |
-| `docs/testing/sandbox.md` | 本地沙箱的启动、身份、接口契约与 Agent 用法 |
+| 仅文档、注释或目录整理 | `git diff --check`、本地链接和路径引用；确认无运行逻辑变化 |
+| TypeScript 逻辑或类型 | `pnpm typecheck` 与受影响的测试 |
+| 规则、数值或随机顺序 | 以上检查，加边界测试和 `pnpm validate`；基准变化须解释原因，不能只更新夹具消除失败 |
+| 联机、并发、身份或协议 | 对应 service/PVP/MCP/HTTP 测试，覆盖交错请求、换房和过期状态 |
+| 沙箱交互或链路 | 对应测试；具备本机服务条件时执行 `pnpm sandbox:selfplay --rounds 3`，页面变化检查实际布局 |
+| 构建、依赖或部署配置 | `pnpm typecheck`、`pnpm build` 与受影响的测试；部署另按发布边界处理 |
 
-项目文档统一放在 `docs/`：`product/` 写产品体验，`game/` 写现行玩法，`engineering/` 写架构与接入，`testing/` 写验证操作和案例，`references/` 写参考资料，`archive/` 保存历史候选与报告。临时过程文件、日志和备份保存在仓库外；有协作价值的结论整理进正式文档或历史归档。根目录保留项目入口 `README.md` 和协作约定 `AGENTS.md`，不建立额外的工作资料目录。文档移动时同步更新 Markdown 链接、源码注释中的路径与 README 导航。
+CI 门禁以 `.github/workflows/ci.yml` 与 `package.json` 为准，包含类型检查、覆盖率、数值对拍和构建。提交前核对适用检查；环境阻止的验证明确记录原因、已执行替代检查和未验证范围，不把未执行项写为通过。HTTP 测试需要本机监听端口，服务回归通过不能替代真机验收。
 
-`docs/xrobot-dev-spec/` 是平台官方文档的整份拷贝（含大量图片，约 51MB）：**不入库**（已列入 `.gitignore`），只在本地按需查阅，新环境需要时从 [linx.qiniu.com/docs/xrobot](https://linx.qiniu.com/docs/xrobot/) 同步。**只读、按需单篇读**，不要编辑，也不要整目录检索图片。常用：`mcp/software-mcp.md`（请求头、`structuredContent`）、`mcp/hardware-mcp.md`（设备侧 JSON-RPC）、`guide/agent-config.md`（智能体配置）。
+## 文档维护约定
 
-## 技术栈与命令
+根目录 `README.md` 是项目和文档统一入口；`AGENTS.md` 只维护协作约束。所有专题文档集中在 `docs/`，临时草稿、日志和备份保存在仓库外。`archive/` 是历史依据，不覆盖现行规则。
 
-TypeScript ESM（NodeNext：相对导入必须带 `.js` 后缀）、Node ≥ 20、pnpm、Express 5、`@modelcontextprotocol/sdk`、zod、node:test。
-
-```bash
-pnpm dev        # tsx watch，0.0.0.0:8000
-pnpm test       # 单元测试 + MCP 端到端
-pnpm coverage   # 覆盖率并校验阈值（行 95% / 分支 90% / 函数 95%）
-pnpm typecheck  # 唯一的静态门禁（没有 lint）
-pnpm demo       # 不连 MCP，直接看每个指令的播报
-pnpm smoke      # 真实调用链自检（默认 http://127.0.0.1:8000）
-pnpm validate   # 规则对拍：复刻 PR 参考仿真 256,000 局
-pnpm coverage:lcov # 生成 coverage/lcov.info（CI 上传 Codecov）
-pnpm sandbox       # 沙箱页面与透传服务（默认 0.0.0.0:8100，需先起 pnpm dev）
-pnpm sandbox:say   # 命令行说一句（--device 指定身份）
-pnpm sandbox:selfplay --rounds 3  # 两个脚本身份自动打完整局并校验视角镜像
-```
-
-每次改完至少跑 `pnpm typecheck`。`pnpm test` 与 `pnpm coverage` 不必每个任务都跑，按天收口：每天收工前跑一遍并保持全绿、行覆盖 ≥ 95%。改玩法必须补测试；补覆盖率要补有断言的用例，不要为了数字写空转测试。
-
-## 分层与落点
-
-依赖只能自上而下：`http` → `mcp` → `game` → `store`。`engine` / `narrator` 不 import MCP 或 HTTP，否则 `scripts/demo.ts` 脱离协议就跑不动。
-
-| 要改什么 | 改哪里 |
+| 发生变化 | 同步文档 |
 | --- | --- |
-| 招式、口语别名、ASR 误识别、唤出指令 | `src/game/types.ts` 的 `ActionId` + `src/game/actions.ts` 的 `ACTIONS` |
-| 回合结算、数值、胜负 | `src/game/engine.ts` 的 `resolveTurn`；数值在 `src/game/rules.ts` |
-| 对手 AI | `src/game/enemy.ts`（本地兜底）、`src/game/enemy-jev.ts`（JEV 决策） |
-| 双人房间与视角 | `src/game/pvp.ts`、`src/store/rooms.ts` |
-| 意图模型 | `src/game/intent.ts`（规则在 `actions.ts`） |
-| 播报文案 | `src/game/narrator.ts` |
-| 玩家原话分类（招式 / 战况 / 玩法 / 开局） | `src/game/utterance.ts` |
-| 界面/脚本用的局面快照 | `src/game/state.ts` |
-| 业务流程（开局 / 出招 / 战况 / 说明） | `src/game/service.ts` |
-| 对局状态写入串行、异步结果校验 | `src/game/serialize.ts` 的 `SerialQueue` + `service.ts` 的 `driftedSolo` / `driftedPvp` |
-| 工具定义与参数 | `src/mcp/tools.ts`、`src/mcp/server.ts` |
-| 路由、传输、请求头 | `src/http/app.ts` |
-| 存储 | `src/store/battles.ts`、`src/store/rooms.ts`、`src/store/echoes.ts`（对外 `get/set/delete/sweep/size` 不变） |
-| 沙箱服务与页面 | `sandbox/server.ts`（透传）、`sandbox/platform/`（MCP 客户端）、`sandbox/public/`（页面） |
-| 状态流 | `src/http/app.ts` 的 `GET /events`（SSE）与 `GET /state` |
+| 产品流程、体验目标与验收 | [产品设计](docs/product/product-design.md) |
+| 战斗规则与调参 | [玩法机制](docs/game/game-design.md)，并检查实现与验证口径 |
+| 架构、传输、状态归属 | [架构与决策](docs/engineering/architecture.md)；协作边界变更时更新本文件 |
+| 平台配置、部署与排障 | [平台接入](docs/engineering/linx-integration.md) |
+| 沙箱操作、接口与回归 | [沙箱说明](docs/testing/sandbox.md) |
+| 同类案例与设计依据 | [设计参考](docs/references/design-references.md) |
+| 已验证的新能力、命令、端点、配置或目录 | README 对应条目与相关专题文档 |
 
-## 语音输入
+用户已明确的决定随本次修改写入相应文档；建议与未决事项在产品文档中明确标注，不能写成已确认或已交付功能。README 可以区分现状与待验收项，不将仓库测试等同于硬件体验验证。不重复维护测试数量、模型超时、覆盖率快照和部署地址；从实现、配置、最新验证或对应文档获取。
 
-ASR 在平台侧，错误是常态（「攻击」被识别成「公鸡」）。这层容错只能我们做。
+移动文档时同步更新 Markdown 链接、源码注释中的路径与 README 导航。官方文档本地副本 `docs/xrobot-dev-spec/` 沿用忽略规则，只读、按需单篇查阅，不修改或整目录检索图片；缺少副本时按平台接入文档获取来源。
 
-- `matchAction` 必须容忍同音/近音（公鸡、工击 → 攻击）和句中夹杂（「我要公鸡你」）。常见误识别按招式维护在 `ACTIONS.asrErrors` 里，与口语别名区分开，新增招式时一并补误识别样例。
-- 每招两条中二「唤出指令」（`ACTIONS.chants`，如「共鸣斩破军」）：整句靠包含匹配命中，命中后播报先回念一句；一个唤出词只映射一招，不能影响单字别名「打」「躲」的精确匹配。
-- 已接入 JEV 意图模型（`src/game/intent.ts`，OpenRouter decisions 接口上的 `typesafe/jev-1.13`）：规则匹配优先，规则认不出时把「原话 → 阶段内招式」表达成一个选择题，置信度 ≥ 0.6 才生效，只归一化意图、不产出数值、不改对局状态；超时 1.5 秒、失败/异常一律按没认出来处理。未配 `OPENROUTER_API_KEY` 时只用规则匹配，测试全部用假 fetch，不依赖网络。
-- 对手的每次出招与应对也走 JEV（`src/game/enemy-jev.ts`）：本地先按行动点/大招次数过滤出合法选项再做选择题，模型只能从合法选项里选；题干除双方数值外带最近六条战报与玩家出招/应对计数，供模型判断局势、预判玩家下一步，但模型永远看不到未结算的隐藏信息（暴击/闪避结果在题干里只作为已发生的历史）。超时 1.2 秒、HTTP 异常、选项越界都回退 `ENEMY_AI` 本地决策，置信度与概率只记日志。接上后同一 seed 不再保证复现，单测与 256,000 局对拍仍用注入的本地 AI；`ENEMY_AI=local` 可整体关掉这层。
+## Git 与发布边界
 
-## 规则
-
-1. **服务端是唯一事实来源**：气血、真气、回合、胜负只在 `engine` 算。不要依赖平台侧模型记住或推演数值。
-2. **`resolveTurn` 保持纯函数**：不改入参、返回新状态（接 JEV 对手后是 async，等待决策，但依旧纯）；随机数用 `battle.seed` 派生（需要时新建 `src/game/rng.ts`），不要在结算里散用 `Math.random`。
-3. **播报是为「听」写的**：只在 `narrator.ts` 拼中文口语；一次最多两句、60 字内；不用 Markdown、列表、emoji、括号补充。`content[].text` 会被原样念出来。
-4. **认不出就重说**：语音识别错误是常态。招式认不出时**不推进回合、不改数值**，只提示可选说法。
-5. **工具不抛异常**：错误统一转成 `isError: true` + 一句玩家能听懂的话，并记 `logger.error`；协议层保持正常响应。
-6. **身份只从请求头来**：`X-Linx-Device-Id` / `X-Linx-Agent-Id` / `X-Linx-Session-Id` 由平台注入，不进工具入参；对局键是 `deviceId#agentId`，不要按 session 存。
-7. **两套传输都留着**：平台实测走 `POST /mcp`（Streamable HTTP），SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）保持兼容，`DELETE /mcp` 直接 200。改路由前先看 `docs/engineering/architecture.md` 的设计决策。
-8. **原话透传，判断在服务端**：平台侧模型只该调 `game_say`，把玩家原话一字不改放进去；招式、战况、玩法、开局、开房都由 `src/game/utterance.ts` + `matchAction` + JEV 判断。不要把「这句话是哪一招」的判断推回给平台模型。
-9. **招式扩展不新增工具**：扩 `ActionId` 复用 `game_action`；工具总数固定 5 个（`game_say` + 四个兜底，平台侧模型工具越多越容易选错）。只有需要驱动设备动作才返回 `structuredContent.funcs`（`linx_play` / `linx_stop` / `change_role`），`content.text` 保持可读。
-10. **数值集中**：可调参数放 `src/game/rules.ts`，不散落魔法数字；同时把取值与理由写进 `docs/game/game-design.md`。
-11. **日志**用 `src/log.ts` 的 `createLogger` 结构化字段（`logger.info('消息', { ... })`），不要 `console.log`（`log.ts` 内部除外）。
-12. **不加依赖、不扩栈**：需要新库先问；单实例内存存储够用。
-13. **README 是门面**：新增命令、端点、请求头、配置项或测试文件时，同步更新 `README.md` 的对应表格与目录结构；沙箱相关同步 `docs/testing/sandbox.md`；README 里只写已验证的行为，不写计划中的能力。
-14. **PVP 是新增层**：配对与房间独立于现有 1v1，不改 `Battle` 的语义；玩家身份仍是 `deviceId#agentId`，没有匹配到人时用 AI 兜底，保证演示随时能玩。
-15. **载体差异走请求头**：有没有屏幕这类能力用 `X-Linx-Display`（`voice` 默认 / `screen`）表达，解析在 `src/mcp/context.ts`，效果落到 `SayOptions.catchUp`。不要把「客户端是什么设备」塞进工具入参，也不要让平台侧模型判断要不要补账。
-16. **对局状态串行写，异步回来先校验**：意图模型（1.5 秒）与对手决策（1.2 秒）都是异步的，读改写一律走 `src/game/serialize.ts` 的 `SerialQueue`（单人按对局键、双人按房间号）；返回后必须确认还是同一局、同一个座位（对局每次结算都换新对象，对象身份就是版本号），对不上就丢弃并让玩家重说，绝不把旧快照写回。新的读改写路径不要绕过队列直接 `store.set`。
-17. **一人一个有效房间**：换房先验证目标房可加入、再占座、最后撤旧房（房间、该房间的基准对局与双方补账一起清）；加入失败时原房间与那局完全不动。判断玩家在哪个房间只认 `rooms.byPlayer`，别用 `store` 里残留的单人局反推。
-
-## Git 与 PR
-
-`main` 受保护：**不要直接 commit 或 push 到 main，不要 force push**。所有改动走特性分支 + PR。
-
-```bash
-git fetch origin
-git switch -c feat/<主题> origin/main
-# ...改动...
-pnpm typecheck && pnpm test
-git add -A && git commit -m "feat(game): 接入命中与伤害结算"
-git push -u origin feat/<主题>
-gh pr create --fill
-```
-
-- 分支前缀 `feat/`、`fix/`、`docs/`、`refactor/`；一个 PR 只做一件事，做出可演示的改动就尽快开 PR。
-- 提交信息用 Conventional Commits，正文中文，一行说清做了什么，不写流水账。
-- PR 描述写「改了什么 / 怎么验证」，附验证命令与结果。
-- 合并 PR 需要用户确认；演示当天的紧急修复也走分支 + PR。
-
-## 演示环境
-
-- 内网机 `100.100.61.41`，代码 `/opt/linx-fighter`，systemd `linx-fighter.service`；公网靠 `linx-tunnel.service`（bore），控制台填 `http://bore.pub:3216/mcp`。排障见 `docs/engineering/linx-integration.md`。
-- 发布用 `scripts/deploy.sh`（编译 → rsync → 装生产依赖 → 重启 → 自检）。
-- 自检：`curl http://127.0.0.1:8000/health`、`pnpm smoke <baseUrl>`。
-- 演示前不要动隧道、端口、systemd 配置；不提交 `.env`、密钥、`dist/`、`node_modules/`。
+- 不直接向 `main` 提交或推送，不 force push。使用特性分支与 PR；优先沿用本仓库的 `feat/`、`fix/`、`docs/`、`refactor/` 前缀，用户指定时按其要求。
+- 开始前检查分支和工作区，不覆盖用户未提交修改。提交前检查差异，只暂存本次任务涉及的文件，避免无检查地执行 `git add -A`。
+- 提交使用 Conventional Commits，主题用中文说明具体变化；PR 描述说明最终行为、验证结果与限制，不用历史测试结果充当本次证据。
+- 在用户授权范围内提交、推送和创建 PR；合并与部署按用户明确授权执行，不因创建 PR 自动发布。
+- 发布步骤、环境地址与排障统一查阅平台接入文档。未获任务授权不调整演示环境的隧道、端口或 systemd 配置；演示紧急修复仍走分支与 PR。
