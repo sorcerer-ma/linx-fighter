@@ -79,6 +79,9 @@ describe('线上真实语料：同音只差一处也认', () => {
     expectAction('硬航', 'take', 'exact');
     expectAction('长寿', 'take', 'exact');
     expectAction('我要可党。', 'guard', 'exact');
+    // 平台吞掉「闪避」的 an 韵尾后会转写成脏话，不能因此放弃判断
+    expectAction('傻逼', 'dodge', 'exact');
+    expectAction('傻避', 'dodge', 'exact');
     expectAction('我要开大。', 'ult', 'exact');
     expectAction('我开大招。', 'ult', 'exact');
     expectAction('强化攻击', 'light', 'exact');
@@ -206,6 +209,9 @@ describe('按阶段筛选招式', () => {
     assert.equal(matchSpokenAction('大招', 'response'), null);
     assert.equal(matchSpokenAction('格挡', 'response')?.id, 'guard');
     assert.equal(matchSpokenAction('大招', 'active')?.id, 'ult');
+    // 脏话只是「闪避」的误转写，主动阶段仍不能当防守招
+    assert.equal(matchSpokenAction('傻逼', 'active'), null);
+    assert.equal(matchSpokenAction('傻逼', 'response')?.id, 'dodge');
     // 不传阶段时全表参与：词表本身仍由流水线校验阶段
     assert.equal(matchSpokenAction('格挡')?.id, 'guard');
   });

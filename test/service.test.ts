@@ -328,8 +328,13 @@ describe('统一入口与局面快照', () => {
     assert.equal(hit.battle?.history.length, 1);
     assert.match(hit.text, /普攻/);
 
+    // 「傻逼」是平台吞掉「闪避」鼻音后的误转写：识别层要接住，不能被当脏话拒绝
+    const dodge = await service.say(KEY, '傻逼');
+    assert.equal(dodge.battle?.history[1]?.response, 'dodge');
+    assert.match(dodge.text, /躲开|闪避/);
+
     const miss = await service.say(KEY, '今天天气不错');
-    assert.equal(miss.battle?.history.length, 1);
+    assert.equal(miss.battle?.history.length, 2);
     assert.match(miss.text, /没听清/);
   });
 
