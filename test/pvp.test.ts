@@ -509,6 +509,28 @@ describe('房间与席位的边界', () => {
     assert.equal(hostAct.battle?.mode, 'solo');
   });
 
+  it('房主自己换到别的房间，旧房与旧局一起撤掉', async () => {
+    const { service, rooms, store } = setup();
+    await service.start(HOST, { mode: 'pvp' });
+    const oldCode = findRoom(service, HOST);
+    await service.start(GUEST, { room: oldCode });
+
+    await service.start(OTHER, { mode: 'pvp' });
+    const newCode = findRoom(service, OTHER);
+
+    // 房主离开自己的房间：旧房作废，原加入者也不再被记在那间房里
+    const moved = await service.say(HOST, `加入房间${newCode}`);
+    assert.match(moved.text, /房间/);
+    assert.equal(rooms.byPlayer(HOST)?.code, newCode);
+    assert.equal(rooms.get(oldCode), undefined);
+    assert.equal(store.get(pvpBattleKey(oldCode)), undefined);
+    assert.equal(rooms.byPlayer(GUEST), undefined);
+
+    // 原加入者再开口时已经不在房间里，会按单人局重新起一局
+    const stranded = await service.say(GUEST, '普攻');
+    assert.equal(stranded.battle?.mode, 'solo');
+  });
+
   it('换房失败时原来的房间与对局一点不动', async () => {
     const { service, rooms, store } = setup();
     await service.start(HOST, { mode: 'pvp' });

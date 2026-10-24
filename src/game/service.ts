@@ -457,9 +457,9 @@ export class GameService {
   /**
    * 凭房间号加入：成功即把该玩家接到房主的对局上。
    *
-   * 顺序是先验证目标房、再占座、最后才撤旧房：加入失败时原来那间房、
-   * 那场对局与补账都不动；撤旧房也顺手清掉旧对局和补账，
-   * 保证一个人同一时间只在一个有效房间里，旧房里的对手不会永远等不到响应。
+   * 先在不动任何索引的前提下判完能不能加入（这决定播什么），再交给房间存储
+   * 一次占座：它同样会再验一遍，成功时把旧房交出来，这里连着旧对局与补账一起撤。
+   * 所以加入失败时，原来的房间、那局对局与补账一点都不会动。
    */
   private joinRoom(sessionKey: string, rawRoom: string): ServiceResult {
     const fallback = this.store.get(sessionKey) ?? null;
@@ -469,27 +469,25 @@ export class GameService {
       return { text: narrateRoomInvalid(), battle: fallback };
     }
 
-    const current = this.rooms.byPlayer(sessionKey);
     const target = this.rooms.get(code);
-
+    if (!target) {
+      this.logger.info('房间加入失败', { sessionKey, room: code, reason: 'missing' });
+      return { text: narrateRoomMissing(code), battle: fallback };
+    }
     // 房主自己拿房间号加入：不把它登记成加入者，只提示还在等人
-    if (target && target.hostKey === sessionKey) {
+    if (target.hostKey === sessionKey) {
       this.logger.debug('房主自己加入房间', { sessionKey, room: code });
       return {
         text: narrateWaitingRoom(code),
         battle: fallback ?? this.store.get(pvpBattleKey(code)) ?? null,
       };
     }
-
-    if (!target) {
-      this.logger.info('房间加入失败', { sessionKey, room: code, reason: 'missing' });
-      return { text: narrateRoomMissing(code), battle: fallback };
-    }
     if (target.guestKey !== null && target.guestKey !== sessionKey) {
       this.logger.info('房间加入失败', { sessionKey, room: code, reason: 'full' });
       return { text: narrateRoomFull(code), battle: fallback };
     }
 
+    // 房间还在但对局已经过期：这间房废了，换掉它也不该顺手把玩家踢出原来的房间
     const canonical = this.store.get(pvpBattleKey(code));
     if (!canonical) {
       this.rooms.remove(code);
@@ -497,18 +495,18 @@ export class GameService {
       return { text: narrateRoomMissing(code), battle: fallback };
     }
 
-    const joined = this.rooms.join(code, sessionKey);
-    if (!joined.ok) {
-      // 目标房刚刚验证过，走到这里只可能是并发撤房；原有房间保持不动
-      this.logger.info('房间加入失败', { sessionKey, room: code, reason: joined.reason });
+    const claimed = this.rooms.claim(code, sessionKey);
+    if (!claimed.ok) {
+      // 上面刚验过，走到这里只可能是同一刻被撤房：原有房间保持不动
+      this.logger.info('房间加入失败', { sessionKey, room: code, reason: claimed.reason });
       return {
-        text: joined.reason === 'full' ? narrateRoomFull(code) : narrateRoomMissing(code),
+        text: claimed.reason === 'full' ? narrateRoomFull(code) : narrateRoomMissing(code),
         battle: fallback,
       };
     }
 
-    // 座位先占上，再撤旧房：撤房失败也不会出现一个人同时在两间房里
-    if (current && current.code !== code) dropRoom(this.tables, current, '换房');
+    // 席位已经归到新房，旧房连着那局对局与补账一起撤掉
+    if (claimed.previous) dropRoom(this.tables, claimed.previous, '换房');
 
     const view = viewAs(canonical, 'enemy');
     this.store.delete(sessionKey);
@@ -518,7 +516,7 @@ export class GameService {
       room: code,
       battleId: canonical.id,
       round: canonical.round,
-      from: current?.code ?? null,
+      from: claimed.previous?.code ?? null,
     });
     const fresh = view.history.length === 0 && view.round === 1 && !view.pending;
     const opening = fresh
