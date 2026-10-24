@@ -23,7 +23,7 @@ function print(label: string, text: string): void {
 print('开局', (await service.start(key)).text);
 
 for (const command of ['攻击', '闪避', '回气', 'attack', '随便说一句']) {
-  print(`玩家：${command}`, (await service.act(key, command)).text);
+  print(`玩家：${command}`, (await service.say(key, command)).text);
 }
 
 // 双人联机演示：开房、第二位玩家加入、两人各出一招
@@ -32,8 +32,8 @@ const guest = 'demo-guest#local';
 print('房主开房', (await service.start(host, { mode: 'pvp' })).text);
 const roomCode = service.status(host).text.match(/房间(\d{4})/)?.[1] ?? '';
 print('对手加入', (await service.start(guest, { room: roomCode })).text);
-print('房主出招', (await service.act(host, '强攻')).text);
-print('对手应对', (await service.act(guest, '格挡')).text);
+print('房主出招', (await service.say(host, '强攻')).text);
+print('对手应对', (await service.say(guest, '格挡')).text);
 
 print('玩家：战况如何', service.status(key).text);
 print('玩家：怎么玩', service.help().text);

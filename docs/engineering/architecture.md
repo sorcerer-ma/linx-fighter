@@ -8,7 +8,7 @@
   → 灵犀平台（唤醒 + ASR）
   → MCP 客户端：POST /mcp 直接发 JSON-RPC（Streamable HTTP），调 game_say(text=原话)
   → 本服务 mcp/tools.ts → GameService.say
-      → utterance.ts 分类（招式 / 战况 / 玩法 / 开局 / 认不出）
+      → command.ts 读成命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手 / 认不出）
       → 招式直接进结算；认不出时才问 JEV 意图模型
       → engine.ts（结算）+ enemy.ts（AI）+ pvp.ts（双人视角）+ narrator.ts（播报）
   → 工具返回 text
@@ -33,7 +33,7 @@
 | 策略层 | `src/game/enemy.ts` | AI 对手的决策模型，只读公开视角、不掷随机数 |
 | 联机层 | `src/game/pvp.ts` | 房间号、双人视角镜像与写回 |
 | 表现层 | `src/game/narrator.ts` | 播报文案，只依赖对局状态与事件 |
-| 分类与视图 | `src/game/utterance.ts`、`src/game/state.ts` | 原话分类（招式 / 战况 / 玩法 / 开局）与界面用的局面快照 |
+| 命令与视图 | `src/game/command.ts`、`src/game/state.ts` | 把原话读成一条命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手）与界面用的局面快照 |
 | 存储层 | `src/store/battles.ts`、`src/store/rooms.ts` | 对局与房间的读写、过期清理 |
 
 依赖方向自上而下，规则层不感知 MCP，因此可以用 `scripts/demo.ts` 脱离协议直接跑玩法。
@@ -108,7 +108,7 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 ### 13. 原话透传：MCP 只做传输，判断在服务端
 
-平台侧模型只拿到一个推荐入口 `game_say`：玩家说完话，它把原话一字不改地放进去。想干什么由服务端判断——先 `classifyUtterance`，招式再交给 `matchAction` 与 JEV 意图模型。
+平台侧模型只拿到一个推荐入口 `game_say`：玩家说完话，它把原话一字不改地放进去。想干什么由服务端判断——`readCommand` 一次读成命令（同音误识别与唤出指令交给 `matchAction`，规则认不出时再问 JEV 意图模型），后续分派只看命令类型。
 
 这么做的原因：玩家一句话可能是出招、查战况、问玩法、开房，平台侧模型每多一个选择就多一次选错的机会；而判断依据（当前阶段、合法招式、对局状态）本来就在服务端手边。工具总数也因此稳在 5 个以内。
 

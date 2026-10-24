@@ -109,12 +109,12 @@ describe('双人联机', () => {
     const code = findRoom(service, HOST);
     await service.start(GUEST, { room: code });
 
-    const first = await service.act(HOST, '普攻');
+    const first = await service.say(HOST, '普攻');
     assert.deepEqual(first.battle?.pending, { actor: 'player', move: 'light', damage: 3 });
     assert.equal(first.battle?.enemy.hp, 18);
     assert.match(first.text, /已出手/);
 
-    const second = await service.act(GUEST, '格挡');
+    const second = await service.say(GUEST, '格挡');
     assert.equal(second.battle?.pending, null);
     assert.equal(second.battle?.history.length, 1);
     assert.match(second.text, /格挡/);
@@ -151,7 +151,7 @@ describe('双人联机', () => {
     const { service } = setup();
     await service.start(HOST, { mode: 'pvp' });
 
-    const result = await service.act(HOST, '普攻');
+    const result = await service.say(HOST, '普攻');
     assert.equal(result.battle?.history.length, 0);
     assert.match(result.text, /还等着对手加入/);
   });
@@ -235,7 +235,7 @@ describe('双人联机', () => {
     const { service } = setup();
     await service.start(HOST, { mode: 'pvp' });
 
-    const acted = await service.act(HOST, '普攻');
+    const acted = await service.say(HOST, '普攻');
     assert.match(acted.text, /还等着对手加入/);
     assert.equal(acted.battle?.history.length, 0);
 
@@ -251,8 +251,8 @@ describe('双人联机', () => {
     const code = findRoom(service, HOST);
     await service.start(GUEST, { room: code });
 
-    assert.match((await service.act(HOST, '跳个舞')).text, /没听清/);
-    assert.match((await service.act(GUEST, '普攻')).text, /还没轮到你/);
+    assert.match((await service.say(HOST, '跳个舞')).text, /没听清/);
+    assert.match((await service.say(GUEST, '普攻')).text, /还没轮到你/);
     assert.match(service.status(GUEST).text, /第1轮/);
   });
 
@@ -279,7 +279,7 @@ describe('双人联机', () => {
     await service.start(HOST, { mode: 'pvp' });
     const second = findRoom(service, HOST);
     store.delete(`pvp:${second}`);
-    assert.match((await service.act(HOST, '普攻')).text, /没找到房间/);
+    assert.match((await service.say(HOST, '普攻')).text, /没找到房间/);
     assert.equal(rooms.size, 0);
 
     await service.start(HOST, { mode: 'pvp' });
@@ -378,12 +378,12 @@ describe('双人联机的意图模型兜底', () => {
     await service.start(GUEST, { room: code });
 
     // 房主先出招，随后轮到对手应对；房主此时再说话不该惊动模型
-    await service.act(HOST, '普攻');
-    const hostAgain = await service.act(HOST, '我稳如泰山');
+    await service.say(HOST, '普攻');
+    const hostAgain = await service.say(HOST, '我稳如泰山');
     assert.match(hostAgain.text, /已经出手/);
     assert.deepEqual(calls, []);
 
-    const guestBlock = await service.act(GUEST, '我稳如泰山');
+    const guestBlock = await service.say(GUEST, '我稳如泰山');
     assert.match(guestBlock.text, /格挡/);
     assert.deepEqual(calls, ['我稳如泰山']);
   });
@@ -400,13 +400,13 @@ describe('双人回合不能被自己顶掉', () => {
     const first = (await service.status(HOST)).battle?.active === 'player' ? HOST : GUEST;
     const second = first === HOST ? GUEST : HOST;
 
-    const attack = await service.act(first, '强攻');
+    const attack = await service.say(first, '强攻');
     assert.match(attack.text, /等对手应对/);
-    const selfGuard = await service.act(first, '格挡');
+    const selfGuard = await service.say(first, '格挡');
     assert.match(selfGuard.text, /等对手应对/);
     assert.equal(selfGuard.battle?.pending?.actor, 'player');
 
-    const defend = await service.act(second, '格挡');
+    const defend = await service.say(second, '格挡');
     assert.match(defend.text, /格挡/);
     assert.equal(defend.battle?.pending, null);
   });
@@ -415,7 +415,7 @@ describe('双人回合不能被自己顶掉', () => {
 describe('语音原话兜底开房与加入', () => {
   it('没有对局时直接说「开个房间」也能开房', async () => {
     const { service } = setup();
-    const result = await service.act(HOST, '开个房间');
+    const result = await service.say(HOST, '开个房间');
     assert.match(result.text, /房间\d{4}已开好/);
     assert.equal(result.battle?.mode, 'pvp');
   });
@@ -424,7 +424,7 @@ describe('语音原话兜底开房与加入', () => {
     const { service } = setup();
     await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
-    const joined = await service.act(GUEST, `加入房间${code}`);
+    const joined = await service.say(GUEST, `加入房间${code}`);
     assert.match(joined.text, /你进了房间/);
     assert.equal(joined.battle?.mode, 'pvp');
     assert.equal(joined.battle?.player.id, 'player');
@@ -496,7 +496,7 @@ describe('房间与席位的边界', () => {
     assert.notEqual(newCode, oldCode);
 
     // 访客已经在房间里了：这句话原先会被当成「没听清这一手」，人还留在原地
-    const moved = await service.act(GUEST, `加入房间${newCode}`);
+    const moved = await service.say(GUEST, `加入房间${newCode}`);
     assert.match(moved.text, /房间/);
     assert.equal(moved.battle?.mode, 'pvp');
     assert.equal(rooms.byPlayer(GUEST)?.code, newCode);
@@ -505,7 +505,7 @@ describe('房间与席位的边界', () => {
     assert.equal(rooms.get(oldCode), undefined);
     assert.equal(store.get(pvpBattleKey(oldCode)), undefined);
     assert.equal(rooms.byPlayer(HOST), undefined);
-    const hostAct = await service.act(HOST, '普攻');
+    const hostAct = await service.say(HOST, '普攻');
     assert.equal(hostAct.battle?.mode, 'solo');
   });
 
@@ -518,7 +518,7 @@ describe('房间与席位的边界', () => {
     assert.ok(battleBefore);
 
     // 房间号不存在
-    const missing = await service.act(GUEST, '加入房间9999');
+    const missing = await service.say(GUEST, '加入房间9999');
     assert.match(missing.text, /没找到房间9999/);
     assert.equal(rooms.byPlayer(GUEST)?.code, code);
     assert.equal(store.get(pvpBattleKey(code)), battleBefore);
@@ -528,7 +528,7 @@ describe('房间与席位的边界', () => {
     const otherCode = findRoom(service, OTHER);
     const fourth = 'device-d#agent-4';
     await service.start(fourth, { room: otherCode });
-    const full = await service.act(GUEST, `加入房间${otherCode}`);
+    const full = await service.say(GUEST, `加入房间${otherCode}`);
     assert.match(full.text, /已经满员/);
     assert.equal(rooms.byPlayer(GUEST)?.code, code);
     assert.equal(store.get(pvpBattleKey(code)), battleBefore);
@@ -547,13 +547,13 @@ describe('房间与席位的边界', () => {
     const armed = store.get(key);
     assert.ok(armed);
 
-    const asked = await service.act(HOST, '我的大招还剩几次');
+    const asked = await service.say(HOST, '我的大招还剩几次');
     assert.match(asked.text, /真气/);
     assert.equal(store.get(key), armed);
     assert.equal(armed.player.ap, 5);
     assert.equal(armed.player.ultLeft, 1);
 
-    const negated = await service.act(GUEST, '不要闪避');
+    const negated = await service.say(GUEST, '不要闪避');
     assert.match(negated.text, /没打出去/);
     assert.equal(store.get(key), armed);
   });
@@ -563,7 +563,7 @@ describe('房间与席位的边界', () => {
     await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
 
-    const again = await service.act(HOST, `加入房间${code}`);
+    const again = await service.say(HOST, `加入房间${code}`);
     assert.match(again.text, /还等着对手加入/);
     const room = rooms.get(code);
     assert.ok(room);
