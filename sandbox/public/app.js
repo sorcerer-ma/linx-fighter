@@ -1,5 +1,5 @@
 import { createListeningSession } from './listening.js';
-import { companionView, newSettlement, renderCompanion } from './companion.js';
+import { companionView, newSettlement, renderCompanion, opponentDetails } from './companion.js';
 
 /*
  * 共鸣 · 闻声对决 —— 沙箱页面脚本（极简游戏画面版）
@@ -301,6 +301,7 @@ import { companionView, newSettlement, renderCompanion } from './companion.js';
     if (connected && !unconfirmed && listening) view.visual = 'listening';
     if (busy) view.ultimate = 'unknown';
     renderCompanion($('app'), battle, view);
+    $('opponent-debug').textContent = opponentDetails(battle, connected && !unconfirmed);
     el.round.hidden = !battle;
     if (battle) el.round.textContent = '第 ' + battle.round + ' 轮';
     const status = describeStatus(battle);

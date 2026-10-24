@@ -68,3 +68,20 @@ export function renderCompanion(app, battle, view) {
   app.querySelector('.buddy').setAttribute('aria-label','伙伴表情：' + key);
   refreshFace(app,key);
 }
+
+/** Only public snapshot fields; never display invented defaults or pending damage. */
+export function opponentDetails(battle, connected) {
+  if (!connected) return '连接或行动结果待核实，暂不展示缓存的对手数值。';
+  if (!battle) return '尚无对局，没有对手状态。';
+  if (battle.waiting) return '对手尚未加入房间。';
+  const foe = battle.opponent;
+  const phase = battle.phase === 'victory' ? '对手已被击倒'
+    : battle.phase === 'defeat' ? '对手获胜'
+    : battle.pending?.actor === 'player' ? '对手需要应对本方攻击'
+    : battle.pending?.actor === 'enemy' ? '对手已出招，等待本方应对'
+    : battle.active === 'enemy' ? '对手主动阶段' : '等待本方主动出招';
+  return '生命值：' + foe.hp + ' / ' + foe.maxHp
+    + '\n能量：' + foe.ap + ' / ' + foe.maxAp
+    + '\n大招：' + (foe.ultLeft > 0 ? '剩余' + foe.ultLeft + '次' : '本局已用')
+    + '\n状态：' + phase;
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import type { BattleState, HistoryEntryState } from '../src/game/state.js';
-const { companionView, newSettlement } = await import(new URL('../sandbox/public/companion.js', import.meta.url).href);
+const { companionView, newSettlement, opponentDetails } = await import(new URL('../sandbox/public/companion.js', import.meta.url).href);
 function battle(overrides: Partial<BattleState> = {}): BattleState {
   return {room:'1234',mode:'pvp',side:'player',phase:'battle',round:1,active:'player',firstMover:'player',pending:null,waiting:false,you:{name:'伙伴',hp:14,maxHp:14,ap:4,maxAp:5,ultLeft:1},opponent:{name:'对手',hp:18,maxHp:18,ap:3,maxAp:5,ultLeft:1},winner:null,history:[],updatedAt:1,...overrides};
 }
@@ -34,4 +34,14 @@ it('初次载入、查询重复、换房和历史替换不重播战果', () => {
   assert.equal(newSettlement(before,{...after,room:'5678'}),null);
   assert.equal(newSettlement(after,battle({history:[{...hit,damage:5},hit]})),null);
   assert.equal(newSettlement(before,battle({history:[{...hit,action:'charge'}]})),null);
+});
+
+it('对手调试只显示可信公开快照，明确缺席与阶段视角', () => {
+  assert.ok(!opponentDetails(battle(),false).includes('18'));
+  assert.ok(opponentDetails(null,true).includes('尚无对局'));
+  assert.ok(opponentDetails(battle({waiting:true}),true).includes('尚未加入'));
+  const b=battle({pending:{actor:'player',move:'light',moveLabel:'普攻',damage:999}});
+  const text=opponentDetails(b,true);
+  assert.ok(text.includes('18 / 18'));assert.ok(text.includes('需要应对'));assert.ok(!text.includes('999'));
+  assert.ok(opponentDetails(battle({phase:'victory'}),true).includes('对手已被击倒'));
 });
