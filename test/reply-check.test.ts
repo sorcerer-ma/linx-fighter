@@ -39,3 +39,15 @@ it('开局名称归属可替换为对手，仍拒绝数字交换；等待加入�
  const ended=presentation('status',null);ended.facts.next='ended';
  assert.equal(checkReply('这局结束了。','我该怎么做？',ended),false);
 });
+
+
+it('开局用“你定”征求指挥不误回退，数字交换和等待被省略仍拒绝',()=>{
+ const details=presentation('opening',null);details.facts.opponentName='守擂教头';details.facts.next='act';
+ const source='对决开始，你的对手是守擂教头，我先手，我14点生命值，守擂教头18点生命值。该我出招，说普攻、强攻、大招或蓄力，听你的。';
+ const candidate='开局了，我14点对守擂教头18点，我先手。出普攻、强攻、大招还是蓄力？你定。';
+ assert.equal(checkReply(source,candidate,details),true);
+ assert.equal(checkReply(source,candidate.replace('我14点对守擂教头18点','我18点对守擂教头14点'),details),false);
+ assert.equal(checkReply(source,'我14点，对手18点。',details),false);
+ const waiting=presentation('turn',null);waiting.facts.next='wait-response';
+ assert.equal(checkReply('我出大招了，等对手应对。','我出大招了，你定。',waiting),false);
+});

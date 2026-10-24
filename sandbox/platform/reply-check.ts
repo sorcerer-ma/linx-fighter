@@ -57,7 +57,7 @@ export function checkReply(source:string,candidate:string,details:Presentation):
   if(next==='ended' && /该我出招|轮到我|请指挥我|我该怎么做/.test(candidate))return false;
   if(next==='wait-join' && /对决开始|开打|该我出招|轮到我|我该怎么做/.test(candidate))return false;
   if(next==='start' && /(?:轮到|该)我(?:出招|格挡)|等对手(?:加入|应对)/.test(candidate))return false;
-  if(next==='act' && /该我出招|轮到我|请指挥我/.test(source) && !/该我|轮到我|指挥我|听你(?:的|指挥)|我(?:来|接着).*出招|我该怎么做/.test(candidate))return false;
+  if(next==='act' && /该我出招|轮到我|请指挥我/.test(source) && !/该我|轮到我|指挥我|听你(?:的|指挥)|我(?:来|接着).*出招|我该怎么做|你(?:来)?(?:定|指挥|决定)/.test(candidate))return false;
   if(['wait-opponent','wait-response'].includes(next) && /等对手/.test(source) && (!/等.*(?:对手|对方)/.test(candidate)||/该我出招|轮到我/.test(candidate)))return false;
   if(next==='respond' && details.kind!=='retry' && /格挡|闪避|应对/.test(source) && !/格挡|闪避|应对|承受/.test(candidate))return false;
   if(details.facts.events.some(e=>e.type==='pending') && !attacks.length && !/命中|击倒/.test(source) && /命中|击倒/.test(candidate))return false;
