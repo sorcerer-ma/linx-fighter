@@ -61,6 +61,7 @@ const service = new GameService({
   chat,
   echo: echoes,
   attribution: config.attribution,
+  speakers: config.speakers,
 });
 const app = createApp({ config, logger, store, rooms, service });
 
