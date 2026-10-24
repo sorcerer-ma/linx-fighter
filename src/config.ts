@@ -61,9 +61,23 @@ export interface AppConfig {
    * 配置后访问必须带 ?token= 或 Authorization: Bearer。
    */
   adminToken?: string;
+  /**
+   * 只回应这些说话人（平台声纹给的名字，逗号分隔）。
+   * 演示阶段用来挡掉围观的人；为空表示不设限。
+   */
+  speakers: string[];
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
+/** 说话人名单：逗号分隔、去空白；空串或没配都是「不设限」 */
+function parseSpeakers(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,，]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
 
 /** 只认 off / low 两个值，写错就当没配 */
 function parseChatReasoning(raw: string | undefined): ChatReasoning | undefined {
@@ -114,5 +128,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 2000))),
     attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
+    speakers: parseSpeakers(env.ALLOWED_SPEAKERS),
   };
 }

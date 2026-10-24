@@ -75,6 +75,7 @@ const server = app.listen(config.port, config.host, () => {
     enemyAi: ai ? `jev(${config.decisionModel})` : 'local',
     chatModel: chat ? config.chatModel : 'disabled',
     attribution: config.attribution,
+    speakers: config.speakers,
   });
 });
 

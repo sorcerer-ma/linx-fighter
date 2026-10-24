@@ -73,8 +73,12 @@ const sayInput = {
 export function registerGameTools(server: McpServer, deps: ToolDependencies): void {
   const { service, logger, ctx } = deps;
 
-  // 有屏客户端自己能看到局面，不需要补账播报；无屏终端（平台默认）保留
-  const speakOptions = () => ({ catchUp: ctx.display !== 'screen' });
+  // 有屏客户端自己能看到局面，不需要补账播报；无屏终端（平台默认）保留。
+  // 说话人一并带上：演示阶段服务端只回应名单里的人
+  const speakOptions = () => ({
+    catchUp: ctx.display !== 'screen',
+    speaker: ctx.speakerName || undefined,
+  });
 
   // 统一包装：异常不外抛，转成玩家能听懂的一句失败播报，同时记日志
   const invoke = async (
@@ -146,7 +150,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     },
     async ({ opponent, mode, room, text, speaker }) =>
       invoke('game_start', { opponent, mode, room, text, speaker }, () =>
-        service.start(battleKey(ctx), { opponent, mode, room, text }),
+        service.start(battleKey(ctx), { opponent, mode, room, text, speaker: speaker || undefined }),
       ),
   );
 
@@ -183,7 +187,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
       description: '说明玩法与可用指令。玩家问「怎么玩」「你能做什么」时调用。',
       inputSchema: { speaker: speakerField },
     },
-    async ({ speaker }) => invoke('game_help', { speaker }, () => service.help()),
+    async ({ speaker }) => invoke('game_help', { speaker }, () => service.help(speakOptions())),
   );
 }
 

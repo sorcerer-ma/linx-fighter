@@ -62,6 +62,8 @@ export interface StartOptions {
   room?: string;
   /** 玩家原话：平台模型不确定结构化参数时塞进来，服务端兜底识别「开房间 / 加入房间」 */
   text?: string;
+  /** 这一次是谁在说（平台声纹给的名字） */
+  speaker?: string;
 }
 
 /**
@@ -73,6 +75,8 @@ export interface StartOptions {
 export interface SayOptions {
   /** 默认 true，保持硬件端的原有体验；有屏客户端传 false */
   catchUp?: boolean;
+  /** 这一次是谁在说（平台声纹给的名字）；演示阶段用来挡掉围观的人 */
+  speaker?: string;
 }
 
 /**
@@ -88,6 +92,9 @@ interface RoutedHand {
   /** 当时那一局的 id；当时还没有对局则为 null */
   battleId: string | null;
 }
+
+/** 不回应时返回的文本：零宽字符，平台念出来是空的，也不会把设备叫醒 */
+const SILENT_TEXT = '\u200b';
 
 export interface GameServiceDeps {
   store: BattleStore;
@@ -108,6 +115,8 @@ export interface GameServiceDeps {
   attribution?: AttributionMode;
   /** 端侧同音纠错；不传用 asr.ts 的实现，传 null 关掉这一层 */
   fuzzy?: SpokenMatcher | null;
+  /** 只回应这些说话人（平台声纹给的名字）；空数组表示不设限 */
+  speakers?: string[];
 }
 
 /**
@@ -140,6 +149,10 @@ export class GameService {
   private readonly echo: EchoStore;
   private readonly attribution: AttributionMode;
   private readonly fuzzy: SpokenMatcher | null;
+  /** 演示阶段的说话人名单：名单外的人不回应 */
+  private readonly speakers: string[];
+  /** 每个座位绑定的是谁的声音；键是桌子的存储键（单人局玩家键，双人局 pvp:房间号） */
+  private readonly seatSpeakers = new Map<string, { player?: string; enemy?: string }>();
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
   /** 桌子要用到的存储，构造一张桌子的入口参数 */
@@ -157,6 +170,7 @@ export class GameService {
     this.echo = deps.echo ?? new EchoStore({ now: this.now });
     this.attribution = deps.attribution ?? 'off';
     this.fuzzy = deps.fuzzy === undefined ? DEFAULT_SPOKEN_MATCHER : deps.fuzzy;
+    this.speakers = deps.speakers ?? [];
     this.battles = new BattleTransactions(deps.store, deps.logger);
     this.tables = { store: deps.store, rooms: deps.rooms, echo: this.echo, logger: deps.logger };
   }
@@ -168,20 +182,37 @@ export class GameService {
    * 「开房间 / 加入房间1234」这类说法和服务端自己的识别保持同一套规则。
    */
   async start(sessionKey: string, options: StartOptions = {}): Promise<ServiceResult> {
+    if (!this.speakerListed(options.speaker)) {
+      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
+    }
     const phrase = [options.opponent, options.text].filter(Boolean).join(' ');
     const command = options.room
       ? ({ kind: 'join-room', code: options.room } as const)
       : phrase
         ? readCommand(phrase)
         : null;
-    if (command?.kind === 'join-room') return this.joinRoom(sessionKey, command.code);
-    if (options.mode === 'pvp' || command?.kind === 'open-room') return this.openRoom(sessionKey);
-    return this.startSolo(sessionKey, options.opponent);
+    if (command?.kind === 'join-room') {
+      const joined = this.joinRoom(sessionKey, command.code);
+      this.bindSeat(sessionKey, options.speaker);
+      return joined;
+    }
+    if (options.mode === 'pvp' || command?.kind === 'open-room') {
+      const opened = this.openRoom(sessionKey);
+      this.bindSeat(sessionKey, options.speaker);
+      return opened;
+    }
+    return this.startSolo(sessionKey, options.opponent).then((started) => {
+      this.bindSeat(sessionKey, options.speaker);
+      return started;
+    });
   }
 
   /** 查看当前战况 */
   /** 查看当前战况：等待中的房间先把房间号说一遍 */
   status(sessionKey: string, options: SayOptions = {}): ServiceResult {
+    if (!this.speakerListed(options.speaker)) {
+      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
+    }
     const table = tableFor(this.tables, sessionKey);
     const battle = table.battle();
     if (!battle) {
@@ -202,7 +233,8 @@ export class GameService {
   }
 
   /** 玩法说明，用于玩家不知道说什么的场景 */
-  help(): ServiceResult {
+  help(options: SayOptions = {}): ServiceResult {
+    if (!this.speakerListed(options.speaker)) return { text: SILENT_TEXT, battle: null };
     return { text: narrateHelp(), battle: null };
   }
 
@@ -232,6 +264,11 @@ export class GameService {
     options: SayOptions,
     routed?: RoutedHand,
   ): ServiceResult | Promise<ServiceResult> {
+    // 演示阶段的说话人闸门：名单外的人、没轮到自己的人都不回应
+    if (this.speakerGate(sessionKey, command, options.speaker) === 'silent') {
+      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
+    }
+
     // 座位归属（ATTRIBUTION_MODE=strict）：不是冲本机说的、或只报了座位号，到这里就收住。
     // 单人局没有房间也没有对方座位，seat 传 null 让它原样放行
     const table = tableFor(this.tables, sessionKey);
@@ -247,16 +284,25 @@ export class GameService {
       case 'echo':
         this.logger.info('疑似播报回灌', { sessionKey, chars: raw.length, rule: matchEchoRule(raw) });
         return { text: echoAck(sessionKey, raw, this.now()), battle: this.viewFor(sessionKey) };
-      case 'join-room':
-        return this.joinRoom(sessionKey, command.code);
-      case 'open-room':
-        return this.openRoom(sessionKey, routed);
+      case 'join-room': {
+        const joined = this.joinRoom(sessionKey, command.code);
+        if (joined.battle || this.tables.get(sessionKey)?.room) this.bindSeat(sessionKey, options.speaker);
+        return joined;
+      }
+      case 'open-room': {
+        const opened = this.openRoom(sessionKey, routed);
+        if (opened.battle) this.bindSeat(sessionKey, options.speaker);
+        return opened;
+      }
       case 'help':
-        return this.help();
+        return this.help(options);
       case 'status':
         return this.status(sessionKey, options);
       case 'start':
-        return this.startSolo(sessionKey, undefined, routed);
+        return this.startSolo(sessionKey, undefined, routed).then((started) => {
+          if (started.battle) this.bindSeat(sessionKey, options.speaker);
+          return started;
+        });
       case 'refused':
         return this.refuse(sessionKey, command.why, options);
       case 'ask':
@@ -447,6 +493,84 @@ export class GameService {
     const body = narrateTurn(result.battle, result.events);
     return { text: `${catchUp}${prefix}${chantLine}${body}`, battle: result.battle,
       presentation:presentation('turn',result.battle,{events:result.events,renderings:[`${catchUp}${prefix}${chantLine}${narrateTurn(result.battle,result.events,{expressive:true})}`]}) };
+  }
+
+  /** 名单为空表示不设限；名单非空时只认名单里的名字（平台声纹给的那个） */
+  private speakerListed(speaker?: string): boolean {
+    if (this.speakers.length === 0) return true;
+    const name = (speaker ?? '').trim();
+    return Boolean(name) && this.speakers.includes(name!);
+  }
+
+  /**
+   * 说话人闸门（演示阶段）：名单外的人完全不回应；名单内但没轮到自己、
+   * 或者这句话的出招人不是本机座位绑定的人，也不回应。
+   *
+   * 只有「会动用回合」的说法受轮次约束，查战况、问玩法、开局、加入房间照旧。
+   */
+  private speakerGate(sessionKey: string, command: Command, speaker?: string): 'pass' | 'silent' {
+    if (this.speakers.length === 0) return 'pass';
+    if (!this.speakerListed(speaker)) {
+      this.logger.info('说话人不在名单里，保持静默', { sessionKey, speaker: (speaker ?? '').trim() || null });
+      return 'silent';
+    }
+    const name = (speaker ?? '').trim();
+
+    const turnLike =
+      command.kind === 'turn' || command.kind === 'refused' || (command.kind === 'route' && !command.question);
+    if (!turnLike) return 'pass';
+
+    const table = tableFor(this.tables, sessionKey);
+    const battle = table.battle();
+    const seat = table.seat(sessionKey);
+    if (!battle || !seat) return 'pass';
+
+    const owner = this.seatSpeakers.get(table.key)?.[seat];
+    if (owner && owner !== name) {
+      this.logger.info('这一手不是本机玩家说的，保持静默', { sessionKey, seat, owner, speaker: name });
+      return 'silent';
+    }
+
+    const view = viewAs(battle, seat);
+    const myTurn = view.pending ? view.pending.actor !== 'player' : view.active === 'player';
+    if (!myTurn) {
+      this.logger.info('没轮到这个座位，保持静默', {
+        sessionKey,
+        seat,
+        speaker: name,
+        active: view.active,
+        pending: view.pending?.actor ?? null,
+      });
+      return 'silent';
+    }
+
+    // 开局前就存在的老对局没有绑定记录：第一次开口的人认领这个座位
+    if (!owner) this.bindSeat(sessionKey, name);
+    return 'pass';
+  }
+
+  /** 把这次说话人绑到他坐的那一边；已经绑了别人就不覆盖，避免串音改掉座位 */
+  private bindSeat(sessionKey: string, speaker?: string): void {
+    const name = (speaker ?? '').trim();
+    if (!name) return;
+    const table = tableFor(this.tables, sessionKey);
+    const seat = table.seat(sessionKey);
+    if (!seat) return;
+    const seats = this.seatSpeakers.get(table.key) ?? {};
+    if (seats[seat] === name) return;
+    if (seats[seat]) {
+      this.logger.warn('座位已经绑定了别的说话人', {
+        sessionKey,
+        key: table.key,
+        seat,
+        bound: seats[seat],
+        speaker: name,
+      });
+      return;
+    }
+    seats[seat] = name;
+    this.seatSpeakers.set(table.key, seats);
+    this.logger.info('说话人已绑定座位', { sessionKey, key: table.key, seat, speaker: name });
   }
 
   /**

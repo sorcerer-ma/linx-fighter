@@ -27,6 +27,7 @@ describe('配置解析', () => {
       enemyTimeoutMs: 2000,
       attribution: 'off',
       adminToken: undefined,
+      speakers: [],
     });
   });
 
