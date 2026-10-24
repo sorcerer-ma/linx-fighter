@@ -4,11 +4,15 @@
 
 > 灵犀语音硬件上的 1v1 回合制对战。玩家用嘴下令，服务端持有对局并裁定每一手；平台侧只负责听、说和调用工具。
 
-中文名「共鸣：闻声对决」为暂定名；仓库名、包名、`systemd` 单元与镜像名统一用 `linx-fighter`。
+中文名「共鸣：闻声对决」已定稿；仓库名、包名、`systemd` 单元与镜像名统一用 `linx-fighter`。
 
 当前进度：**v0.2 玩法已落地**。七种招式、真气循环、伤害加成、先手补偿、AI 对手与双人联机（房间号 + 视角镜像）全部接通；结算由服务端唯一裁定，并用 PR 参考仿真的 256,000 局做数值对拍。规则与调参见 [docs/game-design.md](docs/game-design.md)。
 
-另带一个本地沙箱（[`sandbox/`](sandbox/README.md)）：在浏览器里模拟灵犀设备的输入与播报，可开多个窗口互相对战，也可以用命令行或脚本让 Agent 自己把整局打完，不依赖控制台与实体硬件。
+灵犀只是载体，真正对外的是这套 MCP 服务。同一套服务端既接灵犀硬件，也接网页 / 手机：沙箱页面用同样的 `game_say` 说话，所以**换载体不改服务**——没有硬件时用手机或网页演示，接上硬件时同一套服务照常工作。
+
+另带一个本地沙箱（[`sandbox/`](sandbox/README.md)）：在浏览器里模拟灵犀设备的输入与播报，可开多个窗口互相对战，也可以用命令行或脚本让 Agent 自己把整局打完——不依赖控制台与实体硬件，Agent 能在真实链路上自主模拟、自主回归。
+
+已知局限：双人局里 A 出招、B 应对之后，结果在 B 的回合结算，A 的播报会停在「等对手应对」；网页靠局面面板能立刻看到，无屏的硬件要等 A 下次开口（说战况或出新招）才知道这一手的结果。
 
 ## 一次语音出招是怎么走完的
 
@@ -65,6 +69,15 @@ pnpm sandbox:say   # 命令行说一句：pnpm sandbox:say --device web-a "强�
 pnpm sandbox:state # 打印某个设备看到的局面快照
 pnpm sandbox:selfplay --rounds 3  # 两个脚本身份自动打完 3 局，顺带校验视角镜像
 ```
+
+沙箱起来后，一个窗口就是一名玩家：
+
+```bash
+open 'http://localhost:8100/?player=1'   # 说「开房间」，拿到 4 位房间号
+open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开打
+```
+
+手机连同一内网打开 `http://<电脑内网 IP>:8100/?player=3` 就是第三名玩家；页面里的局面走 `/events` 实时刷新，输入仍然只有语音和文字一条路。浏览器只在 HTTPS 或 localhost 下给麦克风，局域网 HTTP 打开时页面会降级成文字输入（详见 [sandbox/README.md](sandbox/README.md)）。
 
 ## MCP 接口
 
@@ -135,7 +148,10 @@ ASR 在平台侧，同音与近音错误只能由我们兜住。识别按「整�
 ```mermaid
 flowchart LR
   Device[灵犀语音硬件] -- WebSocket --> Platform[灵犀平台<br/>ASR · TTS · 设备路由]
+  Browser[手机 / 网页<br/>沙箱页面] -- "POST /api/say" --> Sandbox[本地沙箱<br/>MCP 客户端 · 静态页]
   Platform -- "POST /mcp / GET /sse + POST /mcp/message" --> Http[HTTP 外壳<br/>Express]
+  Sandbox -- "POST /mcp · game_say" --> Http
+  Http -. "GET /events（SSE 局面快照）" .-> Browser
   Http --> Mcp[MCP 层<br/>工具注册 · 设备上下文]
   Mcp --> Game[对局服务<br/>单人 / 双人分流]
   Game --> Engine[回合引擎<br/>结算与胜负]
