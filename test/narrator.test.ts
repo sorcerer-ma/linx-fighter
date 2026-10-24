@@ -20,6 +20,11 @@ import {
   narrateRoomMissing,
   narrateStaleAction,
   narrateWaitingRoom,
+  narrateOpponentJoined,
+  narrateWaitRespond,
+  narrateWaitTimeout,
+  narrateWaitTurn,
+  narrateWake,
   narrateStatus,
   narrateTurn,
   narrateUnknownAction,
@@ -438,6 +443,46 @@ describe('规则外问答的兜底', () => {
     assert.match(text, /游戏里的事/);
     assert.doesNotMatch(text, /生命值|能量|大招/);
     assertSpeakable(text);
+  });
+});
+
+describe('挂起等对手的播报', () => {
+  it('醒来时只念等到的那几段，不带「刚才那一手」前缀', () => {
+    const text = narrateWake(['我强攻，对手格挡，掉3点生命值，剩15。']);
+    assert.equal(text, '我强攻，对手格挡，掉3点生命值，剩15。');
+    // 挂起等来的播报是当场念的，不能像是补旧账
+    assert.doesNotMatch(text, /刚才那一手/);
+    assertSpeakable(text);
+  });
+
+  it('醒来时攒多了也只念最近两段', () => {
+    assert.equal(narrateWake(['第一手。', '第二手。', '第三手。']), '第二手。第三手。');
+  });
+
+  it('轮到自己、对手已经出招、超时各给一句收尾', () => {
+    assert.equal(narrateWaitTurn(), '该我出招了，你说打哪一招就行。');
+    assert.equal(narrateWaitRespond(), '对手已经出招，你说格挡、闪避还是承受。');
+    assert.equal(narrateWaitTimeout('opponent'), '对手还没出手，出了我马上说。');
+    assert.equal(narrateWaitTimeout('guest'), '对手还没进房间，进来了我马上说。');
+    for (const text of [
+      narrateWaitTurn(),
+      narrateWaitRespond(),
+      narrateWaitTimeout('opponent'),
+      narrateWaitTimeout('guest'),
+    ]) {
+      assertSpeakable(text);
+    }
+  });
+
+  it('房主等到人进门：先说人到了，再报开局', () => {
+    const text = narrateOpponentJoined(battle('player', 'pvp'));
+    assert.match(text, /^对手进房间了。/);
+    assert.match(text, /对决开始/);
+    assertSpeakable(text);
+  });
+
+  it('补账入口仍以「刚才那一手。」开头，和唤醒文案区分开', () => {
+    assert.match(narrateCatchUp(['我强攻，对手格挡，掉3点生命值，剩15。']), /^刚才那一手。/);
   });
 });
 

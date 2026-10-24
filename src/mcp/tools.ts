@@ -10,6 +10,8 @@ export interface ToolDependencies {
   logger: Logger;
   /** 当前 MCP 连接对应的设备上下文，POST 调用时会先刷新 */
   ctx: DeviceContext;
+  /** wait_event 最多挂多久（毫秒）：由部署配置决定，不交给模型 */
+  waitTimeoutMs: number;
 }
 
 // 平台侧的声纹识别结果：在工具参数里声明了这个字段，灵犀才会把说话人带上。
@@ -71,7 +73,7 @@ const sayInput = {
  * 工具层只做参数形状与错误兜底，业务编排在 GameService，方便后续替换实现。
  */
 export function registerGameTools(server: McpServer, deps: ToolDependencies): void {
-  const { service, logger, ctx } = deps;
+  const { service, logger, ctx, waitTimeoutMs } = deps;
 
   // 有屏客户端自己能看到局面，不需要补账播报；无屏终端（平台默认）保留。
   // 说话人一并带上：服务端据此过滤非本机的请求
@@ -89,6 +91,8 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     // 平台把声纹结果放在工具参数里，比头更贴近这一次发言；头里没有时以它为准
     const spoken = typeof args.speaker === 'string' ? args.speaker.trim() : '';
     if (spoken) ctx.speakerName = spoken;
+    // 耗时也进日志：wait_event 会挂住十几秒，平台到底等了多久、有没有提前掐断，看这里
+    const startedAt = Date.now();
     try {
       // 入参、身份头与返回文案都进日志：平台侧模型传了什么、系统回了什么，都能逐轮回放
       logger.info('工具调用', {
@@ -105,6 +109,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         sessionKey: battleKey(ctx),
         speaker: ctx.speakerName || undefined,
         text: result.text,
+        ms: Date.now() - startedAt,
         round: result.battle?.round ?? 0,
         phase: result.battle?.phase ?? null,
         active: result.battle?.active ?? null,
@@ -178,6 +183,24 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     },
     async ({ speaker }) =>
       invoke('game_status', { speaker }, () => service.status(battleKey(ctx), speakOptions())),
+  );
+
+  server.registerTool(
+    'wait_event',
+    {
+      title: '挂起等对手',
+      description:
+        '等对手这一手，把这次调用挂在服务端不返回。双人局里刚出完招、对手还没应招，或者房间开好等另一位玩家进来时调用它：对手一动，服务端就借这次请求把结果送回来，你立刻念给玩家，玩家不用再开口。轮到自己出招、对手已经出招等你应招、单人局或没有对局时会立刻返回，不会卡住。',
+      inputSchema: { speaker: speakerField },
+    },
+    async ({ speaker }, extra) =>
+      invoke('wait_event', { speaker }, () =>
+        service.wait(battleKey(ctx), {
+          timeoutMs: waitTimeoutMs,
+          signal: extra.signal,
+          speaker: speaker || ctx.speakerName || undefined,
+        }),
+      ),
   );
 
   server.registerTool(

@@ -19,6 +19,7 @@ import {
   narrateHelp,
   narrateNoBattle,
   narrateOpening,
+  narrateOpponentJoined,
   narrateOutsideUnavailable,
   narrateRejection,
   narrateRoomCreated,
@@ -31,6 +32,10 @@ import {
   narrateTurn,
   narrateUnknownAction,
   narrateWaitingRoom,
+  narrateWaitRespond,
+  narrateWaitTimeout,
+  narrateWaitTurn,
+  narrateWake,
 } from './narrator.js';
 import { mirrorEvents, normalizeRoomCode, pvpBattleKey, viewAs } from './pvp.js';
 import type { CommandRouter, RouterStage } from './router.js';
@@ -76,6 +81,21 @@ export interface SayOptions {
   /** 默认 true，保持硬件端的原有体验；有屏客户端传 false */
   catchUp?: boolean;
   /** 这一次是谁在说，由平台声纹给出；用来判断是不是已登记的人 */
+  speaker?: string;
+}
+
+/**
+ * 挂起等对手的参数。
+ *
+ * 平台模型调用 wait_event 后这次请求先不返回，就在这里停住：对手应招、
+ * 进房间都会把它叫醒（见 GameService.wait 与 EchoStore.wait）。
+ */
+export interface WaitOptions {
+  /** 最多挂多久（毫秒）：平台自己可能收掉连接，到点按「对手还没动静」收尾 */
+  timeoutMs: number;
+  /** 平台断开这次请求时提前收摊，别把等待位一直占着 */
+  signal?: AbortSignal;
+  /** 这一次是谁在等：未登记的声音不挂、也不回应 */
   speaker?: string;
 }
 
@@ -246,6 +266,82 @@ export class GameService {
    */
   async say(sessionKey: string, text: string, options: SayOptions = {}): Promise<ServiceResult> {
     return this.execute(sessionKey, readCommand(text), text, options);
+  }
+
+  /**
+   * 等对手这一手：平台模型把请求挂在这里，对手一动就带着结果回话。
+   *
+   * 平台没有反向推送通道，只能在对话轮次里由模型调 wait_event 把请求挂住，
+   * 服务端不主动去连设备。挂着的这段时间里，对手出招、应招、进房间都会叫醒
+   * 这次请求；醒来后按局面决定说什么：
+   * - 本来就没可等的事（轮到自己、单人局对手立刻应招）立即返回，不占着连接；
+   * - 等到攒下的补账就念补账（见 narrateWake），这是最常走的一条；
+   * - 只是局面有动静、还没有播报（对手刚锁定攻击）就提醒该玩家应招；
+   * - 超时或被取消回一句「对手还没动静」，让玩家知道这一手确实没有结果。
+   */
+  async wait(sessionKey: string, options: WaitOptions): Promise<ServiceResult> {
+    if (!this.speakerListed(options.speaker)) {
+      this.logger.info('说话人不在名单里，保持静默', {
+        sessionKey,
+        speaker: (options.speaker ?? '').trim() || null,
+      });
+      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
+    }
+    const table = tableFor(this.tables, sessionKey);
+    const battle = table.view(sessionKey);
+    if (!battle) return { text: narrateNoBattle(), battle: null };
+    if (battle.phase !== 'battle') return { text: narrateEnded(battle), battle };
+
+    // 房间里还没等到第二位玩家：挂着等对手进房间
+    const waitingForGuest = table.waiting();
+    // 自己刚出招还没应招，或者轮到对手先动：这两种才值得挂
+    const waitingForOpponent = battle.pending ? battle.pending.actor === 'player' : battle.active === 'enemy';
+    if (!waitingForGuest && !waitingForOpponent) {
+      // 对手已经出招等这边应招，或者正轮到这边出招：立刻回，不必挂
+      return { text: battle.pending ? narrateWaitRespond() : narrateWaitTurn(), battle };
+    }
+
+    const reason = waitingForGuest ? 'guest' : 'opponent';
+    const startedAt = this.now();
+    this.logger.info('挂起等待对手', {
+      sessionKey,
+      room: table.room,
+      battleId: battle.id,
+      reason,
+      timeoutMs: options.timeoutMs,
+    });
+
+    const lines = await this.echo.wait(sessionKey, options);
+    const elapsed = this.now() - startedAt;
+    const view = this.viewFor(sessionKey);
+
+    if (lines === null) {
+      // 平台收掉了连接，或者已经等满服务端给的上限：这一手没有结果，别让玩家干等
+      this.logger.info(options.signal?.aborted ? '等待被取消' : '等待超时', {
+        sessionKey,
+        room: table.room,
+        battleId: battle.id,
+        reason,
+        ms: elapsed,
+      });
+      return { text: view ? narrateWaitTimeout(reason) : narrateNoBattle(), battle: view };
+    }
+
+    this.logger.info('等待被唤醒', {
+      sessionKey,
+      room: table.room,
+      reason,
+      ms: elapsed,
+      lines: lines.length,
+    });
+    if (lines.length > 0) return { text: narrateWake(lines), battle: view };
+
+    // 只是局面有动静、没有攒下播报：照醒来时的最新局面说该做什么，不复述旧账
+    if (!view) return { text: narrateNoBattle(), battle: null };
+    if (view.phase !== 'battle') return { text: narrateEnded(view), battle: view };
+    if (view.pending?.actor === 'enemy') return { text: narrateWaitRespond(), battle: view };
+    if (!view.pending && view.active === 'player') return { text: narrateWaitTurn(), battle: view };
+    return { text: narrateWaitTimeout(reason), battle: view };
   }
 
   /**
@@ -486,8 +582,14 @@ export class GameService {
       next: written.pending ? `${written.pending.actor} 待应对` : written.active,
     });
 
-    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口
-    if (!written.pending) this.recordCatchUp(table, seat, written, result.events);
+    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口；
+    // 只是锁定了攻击就只叫醒他（挂着的请求不能干等到超时），补账留到应招之后
+    if (written.pending) {
+      const waitingKey = table.echoTo(seat);
+      if (waitingKey) this.echo.nudge(waitingKey);
+    } else {
+      this.recordCatchUp(table, seat, written, result.events);
+    }
 
     const chantLine = match.chant ? narrateChant(match.chant) : '';
     const body = narrateTurn(result.battle, result.events);
@@ -758,6 +860,10 @@ export class GameService {
       round: canonical.round,
       from: claimed.previous?.code ?? null,
     });
+    // 房主正挂着等对手：人一进来就叫醒他，别等他再开口才补上这局已经开打
+    if (this.echo.waitingOn(target.hostKey)) {
+      this.echo.push(target.hostKey, narrateOpponentJoined(canonical));
+    }
     const fresh = view.history.length === 0 && view.round === 1 && !view.pending;
     const opening = fresh
       ? `${narrateRoomJoined(code)}。${narrateBattleStart(view)}`

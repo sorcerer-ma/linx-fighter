@@ -49,6 +49,18 @@ describe('说话人校验与轮次归属', () => {
     assertSilent((await service.say(HOST, '普攻')).text, '没名字');
   });
 
+  it('名单外的设备调用挂起等对手时也不回应，不会把请求占住', async () => {
+    const { service } = setup(['主人']);
+    await service.say(HOST, '开始游戏', { speaker: '主人' });
+
+    const startedAt = Date.now();
+    const result = await service.wait(HOST, { timeoutMs: 5000, speaker: '陌生人' });
+
+    assertSilent(result.text, '名单外的设备等对手');
+    // 没被挂住：不许挂满超时才回，否则占着连接白等
+    assert.ok(Date.now() - startedAt < 500, '应立刻返回');
+  });
+
   it('名单为空时不设限，行为和以前一样', async () => {
     const { service } = setup([]);
     const started = await service.say(HOST, '普攻');

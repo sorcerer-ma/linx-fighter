@@ -66,6 +66,8 @@ export interface AppConfig {
    * 避免环境里其他人声、噪声误触发对局。为空表示不限制。
    */
   speakers: string[];
+  /** wait_event 最多挂多久（毫秒）：平台先掐断连接时以平台为准，这里只是服务端上限 */
+  waitEventTimeoutMs: number;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -129,5 +131,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
     speakers: parseSpeakers(env.ALLOWED_SPEAKERS),
+    waitEventTimeoutMs: Math.max(1000, Math.min(120000, parseInteger(env.WAIT_EVENT_TIMEOUT_MS, 30000))),
   };
 }
