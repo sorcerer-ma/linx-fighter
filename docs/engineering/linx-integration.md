@@ -64,6 +64,45 @@ curl http://127.0.0.1:8000/health
 
 > 平台文档中的示例地址是 `http://...:8000/sse`，说明允许明文 HTTP。有域名和证书时可以在这台机器上换成 HTTPS。
 
+### 1.1 模型层的出口与换厂商
+
+命令路由、对手决策和规则外问答都走同一个 Provider 客户端（`src/game/commandcode.ts`），根地址与两条路径都能用环境变量覆盖，默认仍是官方那三条。
+
+这台演示机实测过出口差异，选型时先量再定：
+
+| 目标 | 成功 | 单次耗时 |
+| --- | --- | --- |
+| `api.commandcode.ai`（官方） | 2/5 | 3.7–6 s，一半超时 |
+| `openrouter.ai` | 5/5 | 0.9–1.7 s |
+
+同一分钟、同一报文、同一个 Node 进程测的，TCP 握手都在 0.3 s 内，慢在等响应。语音场景 3 秒以上等于没有反应，所以演示环境当前指向 OpenRouter，Command Code 的配置与代码原样保留，那边出口恢复后改回三行环境变量即可。
+
+两套配置对照（都在 `/etc/linx-fighter.env`）：
+
+```bash
+# 官方
+COMMAND_CODE_BASE_URL=https://api.commandcode.ai/provider/v1
+COMMAND_CODE_DECISION_PATH=/systemone
+COMMAND_CODE_CHAT_PATH=/chat/completions
+COMMAND_CODE_DECISION_MODEL=typesafe/jev
+
+# OpenRouter（当前）
+COMMAND_CODE_BASE_URL=https://openrouter.ai/api
+COMMAND_CODE_DECISION_PATH=/alpha/decisions
+COMMAND_CODE_CHAT_PATH=/v1/chat/completions
+COMMAND_CODE_DECISION_MODEL=typesafe/jev-1.13
+COMMAND_CODE_CHAT_MODEL=google/gemini-2.5-flash-lite
+```
+
+另外这台机器没有可用的 IPv6 出网，Node 默认会先试 IPv6，表现为请求在连接阶段快速失败（`fetch failed` / `ETIMEDOUT`，约 0.5 s）。`NODE_OPTIONS` 里的 `--dns-result-order=ipv4first` 不生效，必须写进 systemd 的命令行，并关掉 happy-eyeballs：
+
+```ini
+# /etc/systemd/system/linx-fighter.service.d/ipv4.conf
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/node --dns-result-order=ipv4first --no-network-family-autoselection /opt/linx-fighter/dist/index.js
+```
+
 ## 2. 自检
 
 在开发机或任意能上网的机器上执行：

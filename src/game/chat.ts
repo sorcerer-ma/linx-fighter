@@ -33,6 +33,8 @@ export interface ChatAnswererOptions {
   timeoutMs?: number;
   /** 默认官方地址，测试或代理时覆盖 */
   baseUrl?: string;
+  /** 语言模型路径；换 Provider 时覆盖 */
+  chatPath?: string;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
   logger?: Pick<Logger, 'warn' | 'debug'>;
@@ -93,6 +95,7 @@ export function createChatAnswerer(options: ChatAnswererOptions): ChatAnswerer {
         {
           apiKey: options.apiKey,
           baseUrl: options.baseUrl,
+          chatPath: options.chatPath,
           timeoutMs,
           fetchImpl: options.fetchImpl,
           logger: options.logger,

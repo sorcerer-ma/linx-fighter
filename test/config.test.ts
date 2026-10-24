@@ -12,6 +12,8 @@ describe('配置解析', () => {
       enableDebugEndpoints: true,
       commandCodeApiKey: undefined,
       commandCodeBaseUrl: undefined,
+      commandCodeDecisionPath: undefined,
+      commandCodeChatPath: undefined,
       commandCodeDecisionModel: 'typesafe/jev',
       commandCodeChatModel: 'deepseek/deepseek-v4.1-flash',
       routerTimeoutMs: 1500,
@@ -69,6 +71,13 @@ describe('配置解析', () => {
     assert.equal(loadConfig({}).commandCodeApiKey, undefined);
     assert.equal(loadConfig({ COMMAND_CODE_BASE_URL: ' http://127.0.0.1:9999/v1 ' }).commandCodeBaseUrl, 'http://127.0.0.1:9999/v1');
     assert.equal(loadConfig({}).commandCodeBaseUrl, undefined);
+    assert.equal(
+      loadConfig({ COMMAND_CODE_DECISION_PATH: ' /alpha/decisions ' }).commandCodeDecisionPath,
+      '/alpha/decisions',
+    );
+    assert.equal(loadConfig({}).commandCodeDecisionPath, undefined);
+    assert.equal(loadConfig({ COMMAND_CODE_CHAT_PATH: '/v1/chat/completions' }).commandCodeChatPath, '/v1/chat/completions');
+    assert.equal(loadConfig({}).commandCodeChatPath, undefined);
     assert.equal(loadConfig({ COMMAND_CODE_DECISION_MODEL: ' typesafe/jev-1.14.0 ' }).commandCodeDecisionModel, 'typesafe/jev-1.14.0');
     assert.equal(loadConfig({}).commandCodeDecisionModel, 'typesafe/jev');
     assert.equal(loadConfig({ COMMAND_CODE_CHAT_MODEL: ' deepseek/deepseek-v4-flash ' }).commandCodeChatModel, 'deepseek/deepseek-v4-flash');

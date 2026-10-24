@@ -25,6 +25,10 @@ export interface CommandCodeOptions {
   apiKey: string;
   /** 默认官方地址，测试或代理时覆盖 */
   baseUrl?: string;
+  /** 决策模型路径；换 Provider 时覆盖（默认 /systemone） */
+  decisionPath?: string;
+  /** 语言模型路径；换 Provider 时覆盖（默认 /chat/completions） */
+  chatPath?: string;
   timeoutMs: number;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
@@ -88,18 +92,18 @@ async function post(options: CommandCodeOptions, path: string, body: unknown): P
       signal: AbortSignal.timeout(options.timeoutMs),
     });
     if (!response.ok) {
-      options.logger?.warn('Command Code 返回异常状态', { path, status: response.status });
+      options.logger?.warn('模型返回异常状态', { path, status: response.status });
       return null;
     }
     const payload = await response.json();
-    options.logger?.debug('Command Code 调用完成', {
+    options.logger?.debug('模型调用完成', {
       path,
       latencyMs: Date.now() - startedAt,
       ...readUsage(payload),
     });
     return payload;
   } catch (error) {
-    options.logger?.warn('Command Code 调用失败', {
+    options.logger?.warn('模型调用失败', {
       path,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -112,7 +116,7 @@ export async function askDecision(
   options: CommandCodeOptions,
   input: DecisionInput,
 ): Promise<unknown | null> {
-  return post(options, '/systemone', {
+  return post(options, options.decisionPath ?? '/systemone', {
     model: input.model ?? DEFAULT_DECISION_MODEL,
     state: input.state,
     questions: input.questions,
@@ -124,7 +128,7 @@ export async function askChat(
   options: CommandCodeOptions,
   input: ChatInput,
 ): Promise<string | null> {
-  const payload = await post(options, '/chat/completions', {
+  const payload = await post(options, options.chatPath ?? '/chat/completions', {
     model: input.model ?? DEFAULT_CHAT_MODEL,
     messages: input.messages,
     temperature: input.temperature,

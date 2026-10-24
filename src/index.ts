@@ -20,6 +20,7 @@ const router = config.commandCodeApiKey
   ? createCommandRouter({
       apiKey: config.commandCodeApiKey,
       baseUrl: config.commandCodeBaseUrl,
+      decisionPath: config.commandCodeDecisionPath,
       model: config.commandCodeDecisionModel,
       timeoutMs: config.routerTimeoutMs,
       logger,
@@ -31,6 +32,7 @@ const ai =
     ? createJevEnemyAI({
         apiKey: config.commandCodeApiKey,
         baseUrl: config.commandCodeBaseUrl,
+        decisionPath: config.commandCodeDecisionPath,
         model: config.commandCodeDecisionModel,
         timeoutMs: config.enemyTimeoutMs,
         logger,
@@ -41,6 +43,7 @@ const chat = config.commandCodeApiKey
   ? createChatAnswerer({
       apiKey: config.commandCodeApiKey,
       baseUrl: config.commandCodeBaseUrl,
+      chatPath: config.commandCodeChatPath,
       model: config.commandCodeChatModel,
       timeoutMs: config.chatTimeoutMs,
       logger,

@@ -41,6 +41,8 @@ export interface CommandRouterOptions {
   timeoutMs?: number;
   /** 默认官方地址，测试或代理时覆盖 */
   baseUrl?: string;
+  /** 决策模型路径；换 Provider 时覆盖 */
+  decisionPath?: string;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
   logger?: Pick<Logger, 'warn' | 'debug'>;
@@ -193,6 +195,7 @@ export function createCommandRouter(options: CommandRouterOptions): CommandRoute
         {
           apiKey: options.apiKey,
           baseUrl: options.baseUrl,
+        decisionPath: options.decisionPath,
           timeoutMs,
           fetchImpl: options.fetchImpl,
           logger: options.logger,

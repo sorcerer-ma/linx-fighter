@@ -296,7 +296,9 @@ flowchart TB
 | `BATTLE_TTL_SECONDS` | `1800` | 对局与房间的空闲过期时间 |
 | `ENABLE_DEBUG_ENDPOINTS` | 非生产环境开启 | 是否暴露 `/debug/*` |
 | `COMMAND_CODE_API_KEY` | 空 | 配置后启用命令路由、对手决策与规则外问答；为空只用规则匹配与本地决策 |
-| `COMMAND_CODE_BASE_URL` | 官方地址 | Command Code Provider 根地址，换代理或网关时覆盖 |
+| `COMMAND_CODE_BASE_URL` | 官方地址 | Provider 根地址，换代理、网关或厂商时覆盖 |
+| `COMMAND_CODE_DECISION_PATH` | `/systemone` | 决策模型路径；OpenRouter 这类厂商填 `/alpha/decisions` |
+| `COMMAND_CODE_CHAT_PATH` | `/chat/completions` | 语言模型路径；换厂商时一起改 |
 | `COMMAND_CODE_DECISION_MODEL` | `typesafe/jev` | JEV 决策模型名（命令路由与对手决策共用） |
 | `COMMAND_CODE_CHAT_MODEL` | `deepseek/deepseek-v4.1-flash` | 规则外问答的语言模型 |
 | `ATTRIBUTION_MODE` | `off` | 双人房的座位归属：`off` 按轮次仲裁，`strict` 时句子要带「红方／蓝方」；两种模式下回灌判定都生效 |

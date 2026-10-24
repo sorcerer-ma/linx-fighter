@@ -89,6 +89,22 @@ describe('规则外问答：调用语言模型', () => {
     assert.equal(model, 'deepseek/deepseek-v4-flash');
   });
 
+  it('可以单独覆盖语言模型路径', async () => {
+    let url = '';
+    const answerer = createChatAnswerer({
+      apiKey: 'cmd-test',
+      baseUrl: 'https://openrouter.ai/api',
+      chatPath: '/v1/chat/completions',
+      fetchImpl: (async (seen: string) => {
+        url = String(seen);
+        return completion('不错。');
+      }) as typeof fetch,
+    });
+
+    assert.equal(await answerer.answer('在吗'), '不错。');
+    assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+  });
+
   it('非 2xx、网络异常、空 choices 都返回 null', async () => {
     const answerWith = (impl: typeof fetch) => createChatAnswerer({ apiKey: 'cmd-test', fetchImpl: impl, logger });
 
