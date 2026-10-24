@@ -11,22 +11,58 @@ import { SandboxClient, type BattleSnapshot } from './platform/client.js';
  *
  * 这里刻意只用页面同款接口（say / state），不直接调服务端内部函数：
  * 走的是玩家真正会走的那条链路，跑通才有意义。
+ *
+ * 每一步都会留一份「谁说了什么、听到什么、之后双方什么状态」的记录，
+ * 加 --json 导出后可以据此写对局复盘，不用再靠截图。
  */
 const TRANSCRIPT_LIMIT = 80;
 const DEFAULT_ROUNDS = 1;
 const MAX_STEPS = 200;
 
 interface DuelOptions {
-  rounds: number;
   client: SandboxClient;
   asJson: boolean;
+  verbose: boolean;
 }
 
-interface TranscriptLine {
+/** 一方的气血与真气，用于复盘里画状态 */
+interface SideState {
+  name: string;
+  hp: number;
+  maxHp: number;
+  ap: number;
+  maxAp: number;
+  ultLeft: number;
+}
+
+/** 一步的完整记录：原话、播报、以及这一手之后的双方状态 */
+interface DuelStep {
   step: number;
   device: string;
   text: string;
   reply: string;
+  /** 公共状态以房主视角记：双人局双方看的是同一局的镜像 */
+  round: number | null;
+  phase: BattleState['phase'] | null;
+  active: 'player' | 'enemy' | null;
+  pending: { actor: 'player' | 'enemy'; moveLabel: string; damage: number } | null;
+  host: SideState | null;
+  guest: SideState | null;
+  historyCount: number;
+}
+
+interface DuelResult {
+  round: number;
+  room: string;
+  players: { host: string; guest: string };
+  firstMover: 'host' | 'guest' | null;
+  winner: 'host' | 'guest';
+  turns: number;
+  steps: number;
+  mirrorChecks: number;
+  hostHp: number;
+  guestHp: number;
+  transcript: DuelStep[];
 }
 
 /** 两名玩家：每局换一对身份，避免上一局的对局与房间串到下一局 */
@@ -100,16 +136,56 @@ function short(text: string): string {
   return oneLine.length <= TRANSCRIPT_LIMIT ? oneLine : `${oneLine.slice(0, TRANSCRIPT_LIMIT)}…`;
 }
 
+function sideState(fighter: BattleState['you'] | undefined): SideState | null {
+  if (!fighter) return null;
+  const { name, hp, maxHp, ap, maxAp, ultLeft } = fighter;
+  return { name, hp, maxHp, ap, maxAp, ultLeft };
+}
+
+/** 一步之后的状态，给终端与 --json 复盘用 */
+function stateLine(step: DuelStep): string {
+  if (!step.host || !step.guest) return '未开局';
+  const ult = (side: SideState): string => (side.ultLeft > 0 ? '★' : '☆');
+  const pending = step.pending
+    ? ` · 待应对：${step.pending.moveLabel}（${step.pending.damage} 伤害，${step.pending.actor === 'player' ? '房主' : '访客'}出手）`
+    : step.phase === 'battle'
+      ? ` · 轮到${step.active === 'player' ? '房主' : '访客'}出招`
+      : '';
+  return `R${step.round} · 房主 ${step.host.hp}/${step.host.maxHp} 气${step.host.ap}${ult(step.host)} · 访客 ${step.guest.hp}/${step.guest.maxHp} 气${step.guest.ap}${ult(step.guest)}${pending}`;
+}
+
 /** 打一局：开房 → 加入 → 轮流出手直到分出胜负 */
-async function playDuel(options: DuelOptions, round: number): Promise<Record<string, unknown>> {
+async function playDuel(options: DuelOptions, round: number): Promise<DuelResult> {
   const { client } = options;
   const [host, guest] = playersFor(round);
-  const transcript: TranscriptLine[] = [];
+  const transcript: DuelStep[] = [];
+
+  const capture = async (deviceId: string, text: string, reply: string): Promise<void> => {
+    const hostState = await client.state(host);
+    const guestState = await client.state(guest);
+    const battle = hostState?.battle ?? null;
+    const guestBattle = guestState?.battle ?? null;
+    transcript.push({
+      step: transcript.length + 1,
+      device: deviceId,
+      text,
+      reply,
+      round: battle?.round ?? null,
+      phase: battle?.phase ?? null,
+      active: battle?.active ?? null,
+      pending: battle?.pending
+        ? { actor: battle.pending.actor, moveLabel: battle.pending.moveLabel, damage: battle.pending.damage }
+        : null,
+      host: sideState(battle?.you),
+      guest: sideState(guestBattle?.you),
+      historyCount: battle?.history.length ?? 0,
+    });
+  };
 
   const say = async (deviceId: string, text: string): Promise<string> => {
     const result = await client.say(deviceId, text);
-    transcript.push({ step: transcript.length + 1, device: deviceId, text, reply: result.reply });
     if (!result.ok) throw new Error(`${deviceId} 调用失败：${result.reply}`);
+    await capture(deviceId, text, result.reply);
     return result.reply;
   };
 
@@ -147,30 +223,36 @@ async function playDuel(options: DuelOptions, round: number): Promise<Record<str
   if (!hostBattle || !guestBattle) throw new Error('结算后应仍能取到对局');
   if (hostBattle.phase === 'battle') throw new Error(`打了 ${MAX_STEPS} 步还没分出胜负`);
 
-  const winner = hostBattle.phase === 'victory' ? host : guest;
+  const winner = hostBattle.phase === 'victory' ? 'host' : 'guest';
   assertMirror(finalHost, finalGuest);
   if (guestBattle.phase !== flipPhase(hostBattle.phase)) throw new Error('胜负视角不一致');
 
-  const summary = {
+  const result: DuelResult = {
     round,
     room,
+    players: { host, guest },
+    firstMover: hostBattle.firstMover === 'player' ? 'host' : 'guest',
     winner,
     turns: hostBattle.round,
     steps,
     mirrorChecks: checks,
     hostHp: hostBattle.you.hp,
     guestHp: guestBattle.you.hp,
+    transcript,
   };
 
   if (!options.asJson) {
-    console.log(`\n第 ${round} 局 · 房间 ${room}`);
+    console.log(`\n第 ${round} 局 · 房间 ${room} · 先手 ${result.firstMover === 'host' ? '房主' : '访客'}`);
     for (const line of transcript) {
-      console.log(`  ${String(line.step).padStart(2, ' ')}. ${line.device} 说「${line.text}」→ ${short(line.reply)}`);
+      const who = line.device === host ? '房主' : '访客';
+      const reply = options.verbose ? line.reply : short(line.reply);
+      console.log(`  ${String(line.step).padStart(2, ' ')}. ${who} 说「${line.text}」→ ${reply}`);
+      console.log(`      ${stateLine(line)}`);
     }
-    console.log(`  结果：${winner} 胜，${hostBattle.round} 轮结束；镜像校验 ${checks} 次通过`);
+    console.log(`  结果：${winner === 'host' ? '房主' : '访客'} 胜，${hostBattle.round} 轮结束；镜像校验 ${checks} 次通过`);
   }
 
-  return summary;
+  return result;
 }
 
 async function main(): Promise<number> {
@@ -178,6 +260,7 @@ async function main(): Promise<number> {
   const roundsFlag = argv.indexOf('--rounds');
   const rounds = roundsFlag >= 0 ? Math.max(1, Number.parseInt(argv[roundsFlag + 1] ?? '', 10) || DEFAULT_ROUNDS) : DEFAULT_ROUNDS;
   const asJson = argv.includes('--json');
+  const verbose = argv.includes('--verbose');
 
   const config = loadSandboxConfig();
   const client = new SandboxClient({
@@ -188,9 +271,9 @@ async function main(): Promise<number> {
     logger: createLogger('error'),
   });
 
-  const summaries: Record<string, unknown>[] = [];
+  const summaries: DuelResult[] = [];
   for (let round = 1; round <= rounds; round += 1) {
-    summaries.push(await playDuel({ rounds, client, asJson }, round));
+    summaries.push(await playDuel({ client, asJson, verbose }, round));
   }
 
   if (asJson) console.log(JSON.stringify({ ok: true, rounds: summaries }, null, 2));

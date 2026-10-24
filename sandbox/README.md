@@ -78,7 +78,12 @@ pnpm sandbox:tools
 
 # 一条命令把整局打完：开房、加入、轮流出招，顺带校验双方视角是否镜像
 pnpm sandbox:selfplay --rounds 3
+
+# 每一步都记下原话、播报与双方状态，--json 导出后可以写复盘
+pnpm sandbox:selfplay --rounds 6 --json
 ```
+
+跑出来的对局样例见 [`test-cases.md`](./test-cases.md)：3 局真实对局，逐轮记录双方原话、听到的播报与局面变化。
 
 HTTP 接口同理（`curl` 可用）：
 
