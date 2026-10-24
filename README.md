@@ -39,8 +39,9 @@
 - **完整回合制玩法**：普攻 / 强攻 / 大招 / 蓄力 / 格挡 / 闪避 / 承受；能量上限 5、主动阶段恢复能量、第 3 轮起伤害加成、先手 14点生命值 / 后手 18点生命值、大招一局一次。
 - **原话透传，判断在服务端**：平台把玩家原话原样交给 `game_say`，招式、战况、玩法、开局、开房都由服务端分类；规则认不出时才落到 JEV 意图模型，任何模型异常都当作没认出来，回合不丢。
 - **语音即操作，不止认关键词**：口语别名（强攻 / 猛攻 / 抡、格挡 / 防御、承受 / 硬抗）、句中夹杂（「我要公鸡你」）、ASR 同音误识别（「公鸡」「工击」→ 普攻，「墙攻」「抢攻」→ 强攻，「大召」→ 大招）；每招另有中二唤出指令（「共鸣斩破军」「天倾共此声」），念出来会被回念一句。
-- **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；问句（如「我的大招还剩几次」）、否定（如「不要大招」）和一句话里点到两种招式（如「大招还是强攻」）同样不执行，只播当前局面或提示重说，对局状态一点不动；配了 OpenRouter Key 时再叠一层 JEV 意图模型（decisions 接口，把「这句话对应哪一招」做成阶段内选择题），把「给我狠狠来一下」这类自由说法归一化成招式，规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。
-- **JEV 决策对手**：每次出招与应对都把「当前局面 + 最近六条战报 + 玩家出招/应对习惯 → 合法选项」做成选择题交给 OpenRouter 的 JEV 决策模型（`typesafe/jev-1.13`），让模型能顺着局势预判玩家下一步；本地先按能量与大招次数过滤出合法选项，模型只能从里面选；选择越界、超时 1.2 秒或返回异常时回退本地效用决策，回合不会卡住，置信度与概率只写进日志。本地兜底策略见 [docs/game/ai-enemy.md](docs/game/ai-enemy.md)；`ENEMY_AI=local` 可整体关掉模型层。
+- **规则外问答**：问天气、算数、翻译这类与对局无关的问题，关键词表分流后透传给 Command Code 的语言模型（`deepseek/deepseek-v4.1-flash`），回答仍清成两句、60 字内；问答不动对局、不扣资源，没配 Key 或调用失败只回一句固定话术。对局内的问句（战况、大招次数、怎么玩）仍由本地规则回答，不消耗模型。
+- **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；问句（如「我的大招还剩几次」）、否定（如「不要大招」）和一句话里点到两种招式（如「大招还是强攻」）同样不执行，只播当前局面或提示重说，对局状态一点不动；配了 Command Code Key 时再叠一层 JEV 意图模型（System One 决策接口，把「这句话对应哪一招」做成阶段内选择题），把「给我狠狠地来一下」这类自由说法归一化成招式，规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。
+- **JEV 决策对手**：每次出招与应对都把「当前局面 + 最近六条战报 + 玩家出招/应对习惯 → 合法选项」做成选择题交给 Command Code 的 JEV 决策模型（`typesafe/jev`），让模型能顺着局势预判玩家下一步；本地先按能量与大招次数过滤出合法选项，模型只能从里面选；选择越界、超时 1.2 秒或返回异常时回退本地效用决策，回合不会卡住，置信度与概率只写进日志。本地兜底策略见 [docs/game/ai-enemy.md](docs/game/ai-enemy.md)；`ENEMY_AI=local` 可整体关掉模型层。
 - **双人联机**：说「联机」「开房间」得到 4 位房间号，对手说「加入房间1234」即可开打；平台模型没把这些词转成参数时，服务端也会从玩家原话里兜底识别。对局键仍是 `deviceId#agentId`，每个玩家看到自己的视角，服务端做镜像。换房间会先加入新房，再撤掉旧房间与那一局（双方补账一起清），原对手下次开口会另开一局单人局；加入失败（满员或房间号不存在）时原房间完全不动，一个玩家同一时间只在一个有效房间里。
 - **没有对局也能直接开口**：首句「普攻」自动开局，降低演示与试玩门槛。
 - **对局按「设备 + 智能体」归属**：断线重连、多轮对话不丢对局；不同设备天然隔离。
@@ -177,6 +178,7 @@ flowchart TB
   Mcp --> Service["GameService<br/>按命令分派 · 一手一张桌子"]
   Service --> Command["一句话读成命令<br/>command.ts"]
   Service --> Intent["JEV 意图模型<br/>intent.ts"]
+  Service --> Chat["规则外问答<br/>questions.ts · chat.ts"]
   Service --> Engine["回合引擎（纯函数）<br/>engine.ts · rules.ts · rng.ts"]
   Engine --> Enemy["对手决策<br/>本地效用 / JEV"]
   Service --> Pvp["双人联机<br/>房间号 · 视角镜像"]
@@ -198,6 +200,7 @@ flowchart TB
 | 桌子与事务 | `src/game/table.ts`、`serialize.ts` | 单人局与双人局共用同一套接口（存储键、座位、视角、等对手、补账给谁）与对局事务（排队、写回前校验） | 不认招式、不拼文案 |
 | 规则层 | `src/game/engine.ts`、`rules.ts`、`rng.ts` | 创建对局、双阶段结算、胜负，纯函数，随机数由 seed 派生 | 不感知协议 |
 | 策略层 | `src/game/enemy.ts`、`enemy-jev.ts`、`intent.ts` | 对手决策与「这句话是哪一招」的归一化，只选动作 | 不产出数值、不改状态 |
+| 问答层 | `src/game/questions.ts`、`chat.ts`、`commandcode.ts` | 区分规则内 / 规则外的提问，调用语言模型并清洗成两句短句 | 不动对局、不产数值 |
 | 联机层 | `src/game/pvp.ts`、`src/store/rooms.ts` | 房间号、视角镜像与写回、事件换视角 | 不复制引擎 |
 | 表现层 | `src/game/narrator.ts` | 为「听」写的播报，只依赖对局状态与事件 | 不拼业务判断 |
 | 命令与视图 | `src/game/command.ts`、`state.ts` | 把原话读成命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手）与界面用的局面快照 | 不写状态 |
@@ -264,6 +267,7 @@ flowchart TB
 | 对手 AI | `src/game/enemy.ts`（本地兜底）、`src/game/enemy-jev.ts`（JEV 决策） |
 | 双人房间与视角 | `src/game/pvp.ts`、`src/store/rooms.ts` |
 | 意图模型 | `src/game/intent.ts`（提示词与阈值在 `actions.ts` / `intent.ts`） |
+| 规则外问答 | `src/game/questions.ts`（分流关键词）、`src/game/chat.ts`（系统提示与清洗） |
 | 播报文案 | `src/game/narrator.ts` |
 | 业务流程（开局 / 出招 / 战况 / 说明） | `src/game/service.ts` |
 | 工具定义与参数 | `src/mcp/tools.ts`、`src/mcp/server.ts` |
@@ -286,9 +290,12 @@ flowchart TB
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error`，日志为单行 JSON |
 | `BATTLE_TTL_SECONDS` | `1800` | 对局与房间的空闲过期时间 |
 | `ENABLE_DEBUG_ENDPOINTS` | 非生产环境开启 | 是否暴露 `/debug/*` |
-| `OPENROUTER_API_KEY` | 空 | 配置后启用 JEV 意图模型（OpenRouter decisions 接口）；为空只用规则匹配 |
-| `OPENROUTER_MODEL` | `typesafe/jev-1.13` | JEV 决策模型名 |
+| `COMMAND_CODE_API_KEY` | 空 | 配置后启用 JEV 意图模型、对手决策与规则外问答；为空只用规则匹配与本地决策 |
+| `COMMAND_CODE_BASE_URL` | 官方地址 | Command Code Provider 根地址，换代理或网关时覆盖 |
+| `COMMAND_CODE_DECISION_MODEL` | `typesafe/jev` | JEV 决策模型名（意图归一化与对手决策共用） |
+| `COMMAND_CODE_CHAT_MODEL` | `deepseek/deepseek-v4.1-flash` | 规则外问答的语言模型 |
 | `INTENT_TIMEOUT_MS` | `1500` | 意图模型超时，超时按没认出来处理 |
+| `CHAT_TIMEOUT_MS` | `3000` | 规则外问答超时，超时回固定话术 |
 | `ENEMY_AI` | `jev` | 对手 AI：`jev` 走 JEV 决策，`local` 只用本地决策模型 |
 | `ENEMY_TIMEOUT_MS` | `1200` | 对手单次决策超时，超时回退本地 |
 
@@ -296,7 +303,7 @@ flowchart TB
 
 [![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
 
-`node:test` + 内置覆盖率，不引入额外测试框架。当前 **229 个用例**，行覆盖 **99.2%**、分支覆盖 **94.3%**、函数覆盖 **98.8%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
+`node:test` + 内置覆盖率，不引入额外测试框架。用例数与行/分支/函数覆盖率以 `pnpm coverage` 的最新输出为准；CI 与本地都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
@@ -304,15 +311,17 @@ flowchart TB
 | `test/engine.test.ts` | 初始化与先手、伤害/暴击/格挡/闪避、强制承受、能量与大招限制、轮次加成、胜负、纯函数与 seed 复现、双人 pending |
 | `test/enemy.test.ts` | 本地 AI 主动/应对决策、斩杀优先、保大招、生命值积攒能量、致死规避 |
 | `test/enemy-jev.test.ts` | JEV 对手决策：合法选项过滤、题干（含战报与习惯）、解析、低置信度/超时/异常回退 |
-| `test/intent.test.ts` | JEV decisions 返回解析、置信度阈值、阶段校验、请求体与失败回退 |
+| `test/intent.test.ts` | System One 决策返回解析、置信度阈值、阶段校验、请求体与失败回退 |
 | `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
-| `test/command.test.ts` | 一句话读成命令：招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手，以及命令之间的优先级 |
+| `test/command.test.ts` | 一句话读成命令：招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 规则外问答 / 不该出手，以及命令之间的优先级 |
 | `test/state.test.ts` | 局面快照字段、等对手标记、中文标签、视角镜像、胜负折算与幂等 |
 | `test/pvp.test.ts` | 建房/加入、视角镜像、双人出招与应对、房间校验、超时、结算事件镜像 |
 | `test/rooms.test.ts` | 房间号生成与复用、加入/满员/重复加入、玩家索引、过期清理 |
-| `test/service.test.ts` | 开局 / 出招 / 战况 / 说明、单人 AI 先手、错误文案、双人分流、补账播报 |
+| `test/service.test.ts` | 开局 / 出招 / 战况 / 说明、单人 AI 先手、错误文案、双人分流、补账播报、规则外问答不动对局 |
 | `test/simulation.test.ts` | MT19937 复现 + 2000 局镜像快速对拍 |
 | `test/config.test.ts` | 环境变量解析、默认值与非法值回退 |
+| `test/questions.test.ts` | 提问识别、规则内 / 规则外分流、问句清洗与截断 |
+| `test/chat.test.ts` | 问答请求体、系统提示、输出清洗与截断、失败回 null |
 | `test/context.test.ts` | 请求头到身份、对局键、头缺失时的兜底 |
 | `test/store.test.ts` | 内存存储读写、TTL 过期、容量上限 |
 | `test/echoes.test.ts` | 补账消息：取走即清空、按序攒着、互不影响、过期与清理 |
@@ -418,9 +427,12 @@ src/
     enemy.ts          本地对手决策模型（JEV 失败时兜底）
     enemy-jev.ts      JEV 决策对手：把合法招式做成选择题
     intent.ts         JEV 意图模型：自然语言归一化招式（规则优先）
+    commandcode.ts    Command Code 客户端：System One 决策 + 语言模型问答
+    questions.ts      规则内 / 规则外分流：提问特征与对局话题关键词表
+    chat.ts           规则外问答：系统提示、回答清洗与 60 字截断
     pvp.ts            双人视角镜像与房间号工具
     narrator.ts       播报文案
-    command.ts        把一句话读成命令：招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间
+    command.ts        把一句话读成命令：招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 规则外问答
     state.ts          局面快照：给界面与脚本直接消费
     table.ts          桌子：单人局与双人局共用的存储键、座位、视角与补账对象
     serialize.ts      对局事务：按对局排队，写回前校验还是不是同一局

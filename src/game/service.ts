@@ -2,6 +2,7 @@ import type { Logger } from '../log.js';
 import type { BattleStore } from '../store/battles.js';
 import { EchoStore } from '../store/echoes.js';
 import type { Room, RoomStore } from '../store/rooms.js';
+import type { ChatAnswerer } from './chat.js';
 import { readCommand, type Command, type RefuseReason, type TurnIntent } from './command.js';
 import { advanceBattle, createBattle, resolveTurn } from './engine.js';
 import type { IntentResolver, IntentStage } from './intent.js';
@@ -15,6 +16,7 @@ import {
   narrateHelp,
   narrateNoBattle,
   narrateOpening,
+  narrateOutsideUnavailable,
   narrateRejection,
   narrateRoomCreated,
   narrateRoomFull,
@@ -78,6 +80,8 @@ export interface GameServiceDeps {
   intent?: IntentResolver;
   /** 对手 AI；不传则用内置的本地决策模型（JEV 决策模型从 index 注入） */
   ai?: BattleAI;
+  /** 规则外问答；不传则回固定话术（语言模型从 index 注入） */
+  chat?: ChatAnswerer;
   /** 双人联机的补账消息；不传则新建一个跟对局同样过期的 */
   echo?: EchoStore;
 }
@@ -100,6 +104,7 @@ export class GameService {
   private readonly random: () => number;
   private readonly intent?: IntentResolver;
   private readonly ai?: BattleAI;
+  private readonly chat?: ChatAnswerer;
   private readonly echo: EchoStore;
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
@@ -114,6 +119,7 @@ export class GameService {
     this.random = deps.random ?? Math.random;
     this.intent = deps.intent;
     this.ai = deps.ai;
+    this.chat = deps.chat;
     this.echo = deps.echo ?? new EchoStore({ now: this.now });
     this.battles = new BattleTransactions(deps.store, deps.logger);
     this.tables = { store: deps.store, rooms: deps.rooms, echo: this.echo, logger: deps.logger };
@@ -198,10 +204,33 @@ export class GameService {
         return this.startSolo(sessionKey);
       case 'refused':
         return this.refuse(sessionKey, command.why, options);
+      case 'ask':
+        return this.askOutside(sessionKey, command.text);
       case 'turn':
         return this.play(sessionKey, command, raw, options);
       case 'unknown':
         return this.play(sessionKey, null, raw, options);
+    }
+  }
+
+  /**
+   * 规则外的问题：交给语言模型答一句，不动对局。
+   *
+   * 这里刻意不取补账、不碰桌子：问答不消耗回合，也不该把错过的结算
+   * 混进一句闲聊里。模型没配或调用失败时回固定话术。
+   */
+  private async askOutside(sessionKey: string, question: string): Promise<ServiceResult> {
+    const view = this.viewFor(sessionKey);
+    if (!this.chat) return { text: narrateOutsideUnavailable(), battle: view };
+    try {
+      const answer = await this.chat.answer(question);
+      return { text: answer ?? narrateOutsideUnavailable(), battle: view };
+    } catch (error) {
+      this.logger.warn('规则外问答失败，回固定话术', {
+        sessionKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { text: narrateOutsideUnavailable(), battle: view };
     }
   }
 

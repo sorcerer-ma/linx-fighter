@@ -11,6 +11,7 @@
       → command.ts 读成命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手 / 认不出）
       → 招式找桌子（table.ts：单人局 / 房间号）并排进对局事务（serialize.ts）
       → 认不出时才问 JEV 意图模型，回来确认还是同一局同一座位
+      → 规则外的提问（questions.ts）直接交给 chat.ts，不碰对局
       → engine.ts（结算）+ enemy.ts（AI）+ pvp.ts（双人视角）+ narrator.ts（播报）
   → 工具返回 text
   → 平台模型把 text 念给玩家
@@ -33,9 +34,10 @@
 | 桌子与事务 | `src/game/table.ts`、`src/game/serialize.ts` | 单人局与双人局共用的接口（存储键、座位、视角、等对手、补账给谁）与对局事务（排队、写回前校验） |
 | 规则层 | `src/game/engine.ts`、`src/game/rules.ts` | 回合结算与全部数值，纯函数、随机数由 seed 派生 |
 | 策略层 | `src/game/enemy.ts` | AI 对手的决策模型，只读公开视角、不掷随机数 |
+| 问答层 | `src/game/questions.ts`、`chat.ts`、`commandcode.ts` | 区分规则内 / 规则外的提问，调用语言模型并清成可朗读的短句 | 不动对局、不产出数值 |
 | 联机层 | `src/game/pvp.ts` | 房间号、双人视角镜像与写回 |
 | 表现层 | `src/game/narrator.ts` | 播报文案，只依赖对局状态与事件 |
-| 命令与视图 | `src/game/command.ts`、`src/game/state.ts` | 把原话读成一条命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手）与界面用的局面快照 |
+| 命令与视图 | `src/game/command.ts`、`src/game/state.ts` | 把原话读成一条命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 规则外问答 / 不该出手）与界面用的局面快照 |
 | 存储层 | `src/store/battles.ts`、`src/store/rooms.ts` | 对局与房间的读写、过期清理 |
 
 依赖方向自上而下，规则层不感知 MCP，因此可以用 `scripts/demo.ts` 脱离协议直接跑玩法。
@@ -104,9 +106,11 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 ### 12. JEV：意图归一化与对手决策
 
-意图模型（`src/game/intent.ts`）接在 `matchAction` 之后：规则认不出、且轮到该玩家时，才把原话和当前阶段发给 OpenRouter 的 decisions 接口（`POST /api/alpha/decisions`），把「这句话对应哪一招」表达成一个 choice 选择题，选项按阶段限定。模型返回选择与概率，置信度 ≥ 0.6 才采纳；它不产出数值、不改对局状态；超时 1.5 秒、HTTP 异常、返回越界都回退为「没听出来」，因此断网也能玩。未配 `OPENROUTER_API_KEY` 时整层不启用。
+意图模型（`src/game/intent.ts`）接在 `matchAction` 之后：规则认不出、且轮到该玩家时，才把原话和当前阶段发给 Command Code 的 System One 接口（`POST /systemone`，决策模型默认 `typesafe/jev`），把「这句话对应哪一招」表达成一个 choice 选择题，选项按阶段限定。模型返回选择与概率，置信度 ≥ 0.6 才采纳；它不产出数值、不改对局状态；超时 1.5 秒、HTTP 异常、返回越界都回退为「没听出来」，因此断网也能玩。未配 `COMMAND_CODE_API_KEY` 时整层不启用。
 
 对手的每次出招与应对也走 JEV（`src/game/enemy-jev.ts`）：本地先按能量与大招次数过滤出合法选项，把「当前局面 + 最近六条战报 + 玩家出招/应对计数 → 选哪个」做成选择题；战报只来自已结算的公开历史，模型据此判断局势与预判玩家下一步，但仍看不到未结算的隐藏信息（暴击、闪避结果只以历史形式出现）。模型只能从合法选项里选，超时 1.2 秒、HTTP 异常、选项越界都回退 `ENEMY_AI`，置信度与概率只写日志。模型只选动作，数值与胜负仍只在 engine 算。因为要等模型返回，`resolveTurn` / `advanceBattle` 是 async，但仍不改入参、返回新状态；同一 seed 不再保证复现，单测与 256,000 局对拍都注入本地 AI，不受影响。`ENEMY_AI=local` 可关闭这层。
+
+规则外的提问在 `readCommand` 阶段单独分出来：`src/game/questions.ts` 的关键词表先判断「是不是提问」与「有没有谈对局」，命中对局话题（战况、能量、大招次数、玩法等）的仍由本地规则回答，只有与对局无关的提问才进 `src/game/chat.ts`。问答请求 Command Code 的 `/chat/completions`（默认 `deepseek/deepseek-v4.1-flash`），系统提示限定它只答游戏之外的问题、不编造对局数值，回来再清洗成两句、60 字内。这条路径不读补账、不碰对局与房间；模型缺失、超时或异常都只回一句固定话术，错误不进协议层。
 
 ### 13. 原话透传：MCP 只做传输，判断在服务端
 

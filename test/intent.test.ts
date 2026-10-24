@@ -56,7 +56,7 @@ describe('JEV 意图模型', () => {
     assert.equal(actionOfStage('response', 'charge'), false);
   });
 
-  it('调用 JEV decisions 接口：端点、模型、选项与状态都正确', async () => {
+  it('调用 System One 决策接口：端点、模型、选项与状态都正确', async () => {
     let captured: { url: string; init: RequestInit } | undefined;
     const resolver = createIntentResolver({
       apiKey: 'sk-test',
@@ -69,11 +69,11 @@ describe('JEV 意图模型', () => {
 
     assert.equal(await resolver.resolve('给我狠狠地来一下', 'active'), 'heavy');
     const seen = captured as unknown as { url: string; init: RequestInit };
-    assert.equal(seen.url, 'https://openrouter.ai/api/alpha/decisions');
+    assert.equal(seen.url, 'https://api.commandcode.ai/provider/v1/systemone');
     const headers = seen.init.headers as Record<string, string>;
     assert.equal(headers.Authorization, 'Bearer sk-test');
     const body = JSON.parse(String(seen.init.body));
-    assert.equal(body.model, 'typesafe/jev-1.13');
+    assert.equal(body.model, 'typesafe/jev');
     assert.equal(body.state.utterance, '给我狠狠地来一下');
     assert.equal(body.questions.move.type, 'choice');
     assert.deepEqual(Object.keys(body.questions.move.criteria).sort(), ['charge', 'heavy', 'light', 'none', 'ult']);
@@ -111,18 +111,22 @@ describe('JEV 意图模型', () => {
     assert.equal(await resolverWith((async () => decision('guard', 0.9)) as typeof fetch).resolve('打', 'active'), null);
   });
 
-  it('可以覆盖模型名', async () => {
+  it('可以覆盖模型名与根地址', async () => {
     let body: { model?: string } = {};
+    let url = '';
     const resolver = createIntentResolver({
       apiKey: 'sk-test',
-      model: 'typesafe/jev-1.13-20260917',
+      model: 'typesafe/jev-1.14.0',
+      baseUrl: 'http://127.0.0.1:9999/provider/v1',
       timeoutMs: 900,
-      fetchImpl: (async (_url: string, init: RequestInit) => {
+      fetchImpl: (async (seen: string, init: RequestInit) => {
+        url = String(seen);
         body = JSON.parse(String(init.body));
         return decision('charge', 0.8);
       }) as typeof fetch,
     });
     assert.equal(await resolver.resolve('凝聚力量', 'active'), 'charge');
-    assert.equal(body.model, 'typesafe/jev-1.13-20260917');
+    assert.equal(url, 'http://127.0.0.1:9999/provider/v1/systemone');
+    assert.equal(body.model, 'typesafe/jev-1.14.0');
   });
 });

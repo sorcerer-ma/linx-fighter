@@ -1,5 +1,6 @@
 import { matchAction, matchActionIds } from './actions.js';
 import { roomCodeFromPhrase, wantsOpenRoom } from './pvp.js';
+import { askScope, compactText } from './questions.js';
 import type { ActionId } from './types.js';
 
 /**
@@ -23,21 +24,15 @@ export type Command =
   | { kind: 'open-room' }
   | { kind: 'join-room'; code: string }
   | { kind: 'refused'; why: RefuseReason }
+  /** 规则外的问题：本地播报答不了，原话交给语言模型 */
+  | { kind: 'ask'; text: string }
   | { kind: 'unknown' };
 
 /** 不执行的原因：明确说不打，或一句话点了两招 */
 export type RefuseReason = 'negated' | 'ambiguous';
 
-/** 拦下这一手的原因：问句只是问，不是出手 */
-type BlockReason = 'query' | RefuseReason;
-
-/** 去空白与标点、英文转小写：语音转写常带逗号句号，先抹平再判断 */
-function compact(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/[\s，,。．.!！?？、"“”'‘’：:；;～~…·]/g, '');
-}
+/** 拦下这一手的原因：问句只是问，不是出手；规则外的问题交给模型 */
+type BlockReason = 'query' | 'outside' | RefuseReason;
 
 /** 问玩法：命中就回说明，不出招 */
 const HELP_RULES = ['怎么玩', '怎么打', '怎么出招', '怎么操作', '怎么用', '怎么放', '怎么赢', '才能赢', '玩法', '规则', '帮助', '教我', '说明一下'];
@@ -72,13 +67,6 @@ const NEGATE_RULES = [
 /** 带「别」但不是否定的词：判定前先剔掉，「特别强的攻击」仍是正常出招 */
 const NEGATE_FALSE_POSITIVES = ['特别', '区别', '告别', '别的', '分别'];
 
-/** 其它疑问：问剩余资源、轮次数、问局势、问怎么办；「吗/呢」与问号兜住口语提问 */
-const ASK_RULES = [
-  '还剩', '剩多少', '剩几次', '还有几', '还有多少', '几次', '多少',
-  '几回合', '几轮', '多久', '怎么',
-  '谁赢', '什么情况', '如何', '怎么办', '吗', '呢',
-];
-
 function includesAny(text: string, rules: string[]): boolean {
   return rules.some((rule) => text.includes(rule));
 }
@@ -95,16 +83,22 @@ function blockReason(raw: string, text: string): BlockReason | null {
   // 问号要在 compact 之前判断：compact 会把标点一起抹掉
   const asked = /[?？]/.test(raw);
 
-  if (includesAny(text, QUESTION_RULES)) return 'query';
-
-  // 先剔掉「特别/区别/告别」这类词，再判否定，免得形容词被当成「别打」
-  const negatable = NEGATE_FALSE_POSITIVES.reduce((rest, word) => rest.split(word).join(''), text);
+  // 先剔掉「特别/区别/告别」这类词和「要不要」里的「不要」，再判否定
+  const negatable = [...NEGATE_FALSE_POSITIVES, ...QUESTION_RULES].reduce(
+    (rest, word) => rest.split(word).join(''),
+    text,
+  );
   if (includesAny(negatable, NEGATE_RULES)) return 'negated';
 
   // 一句话点到两种招式，分不清要放哪一招，宁可让玩家重说
   if (matchActionIds(raw).length > 1) return 'ambiguous';
 
-  if (asked || includesAny(text, ASK_RULES)) return 'query';
+  // 问句再分一次：问的是对局内的事就播局面，问的是别的事就交给语言模型
+  const scope = askScope(raw);
+  if (scope === 'outside') return 'outside';
+  if (scope === 'game') return 'query';
+  // 「能不能」「够不够」这类疑问没谈到具体话题，或只喊了一个问号：都按问句处理
+  if (asked || includesAny(text, QUESTION_RULES)) return 'query';
 
   return null;
 }
@@ -121,7 +115,7 @@ function blockReason(raw: string, text: string): BlockReason | null {
  * - 战况与开局不含招式词，放在招式后面判断不会抢走出招。
  */
 export function readCommand(raw: string): Command {
-  const text = compact(raw);
+  const text = compactText(raw);
 
   // 带房间号的加入最明确：已经在房间里的玩家也要能凭这句话换房
   const code = text ? roomCodeFromPhrase(raw) : null;
@@ -134,6 +128,7 @@ export function readCommand(raw: string): Command {
 
   const block = blockReason(raw, text);
   if (block === 'negated' || block === 'ambiguous') return { kind: 'refused', why: block };
+  if (block === 'outside') return { kind: 'ask', text: raw.trim() };
   if (block === 'query') return { kind: 'status' };
 
   const match = text ? matchAction(raw) : null;

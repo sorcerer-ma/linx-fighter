@@ -12,7 +12,7 @@
 | SSH | `ssh linx-fighter-las`（`111.62.156.213:10653`，私钥登录） |
 | 应用服务 | `linx-fighter.service`，代码 `/opt/linx-fighter`，用户 `linx`，监听 `127.0.0.1:8000` |
 | 反向代理 | `nginx.service`，`/etc/nginx/conf.d/linx-fighter.conf`，80 → `127.0.0.1:8000` |
-| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`OPENROUTER_API_KEY`），不进仓库 |
+| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`COMMAND_CODE_API_KEY` 等），不进仓库 |
 
 常用操作：
 

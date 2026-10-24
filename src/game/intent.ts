@@ -1,7 +1,7 @@
 /**
  * JEV 意图模型：把自然语言归一化成招式。
  *
- * 走 OpenRouter 的 JEV 决策接口（`/api/alpha/decisions`）：把「这句话对应哪一招」
+ * 走 Command Code 的 System One 决策接口（`/systemone`）：把「这句话对应哪一招」
  * 表达成一个 choice 选择题，模型返回选择与概率，概率就是置信度。
  *
  * 约束（见 AGENTS.md）：
@@ -12,10 +12,8 @@
 
 import type { Logger } from '../log.js';
 import { ACTIVE_ACTIONS, RESPONSE_ACTIONS } from './actions.js';
+import { askDecision, DEFAULT_DECISION_MODEL } from './commandcode.js';
 import type { ActionId, ActiveActionId, ResponseMove } from './types.js';
-
-/** OpenRouter 上的 JEV 决策模型：低延迟、按输入 token 计费 */
-export const DEFAULT_INTENT_MODEL = 'typesafe/jev-1.13';
 
 /** 低于这个置信度就当没认出来，避免模型瞎猜导致玩家白丢一手 */
 export const INTENT_CONFIDENCE_THRESHOLD = 0.6;
@@ -31,12 +29,12 @@ export interface IntentResolverOptions {
   apiKey: string;
   model?: string;
   timeoutMs?: number;
+  /** 默认官方地址，测试或代理时覆盖 */
+  baseUrl?: string;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
   logger?: Pick<Logger, 'warn' | 'debug'>;
 }
-
-const JEV_ENDPOINT = 'https://openrouter.ai/api/alpha/decisions';
 
 const STAGE_MENU: Record<IntentStage, ActionId[]> = {
   active: ['light', 'heavy', 'ult', 'charge'],
@@ -77,7 +75,7 @@ interface JeVDecisionPayload {
       probabilities?: unknown;
     };
   };
-  usage?: { cost?: unknown };
+  usage?: { input_tokens?: unknown; output_tokens?: unknown };
 }
 
 /** 解析 JEV 返回；export 出来给单测用 */
@@ -121,55 +119,41 @@ export function actionOfStage(stage: IntentStage, action: ActionId): action is A
 }
 
 export function createIntentResolver(options: IntentResolverOptions): IntentResolver {
-  const model = options.model ?? DEFAULT_INTENT_MODEL;
+  const model = options.model ?? DEFAULT_DECISION_MODEL;
   const timeoutMs = options.timeoutMs ?? 1500;
-  const fetchImpl = options.fetchImpl ?? fetch;
 
   return {
     async resolve(text, stage) {
       const question = STAGE_QUESTIONS[stage];
       const startedAt = Date.now();
-      try {
-        const response = await fetchImpl(JEV_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${options.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model,
-            state: { stage: question.stage, utterance: text },
-            questions: {
-              move: {
-                type: 'choice',
-                instructions: question.instructions,
-                criteria: question.criteria,
-              },
+      // 失败、超时、非 200 都由客户端吞掉并回 null，这里按「没认出来」处理
+      const payload = await askDecision(
+        {
+          apiKey: options.apiKey,
+          baseUrl: options.baseUrl,
+          timeoutMs,
+          fetchImpl: options.fetchImpl,
+          logger: options.logger,
+        },
+        {
+          model,
+          state: { stage: question.stage, utterance: text },
+          questions: {
+            move: {
+              type: 'choice',
+              instructions: question.instructions,
+              criteria: question.criteria,
             },
-          }),
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        if (!response.ok) {
-          options.logger?.warn('意图模型返回异常状态', { status: response.status, stage });
-          return null;
-        }
-        const payload = await response.json();
-        const action = parseIntentDecision(payload, stage);
-        const usage = (payload as JeVDecisionPayload).usage;
-        options.logger?.debug('意图模型调用完成', {
-          stage,
-          action,
-          latencyMs: Date.now() - startedAt,
-          cost: typeof usage?.cost === 'number' ? usage.cost : undefined,
-        });
-        return action && actionOfStage(stage, action) ? action : null;
-      } catch (error) {
-        options.logger?.warn('意图模型调用失败，回退到规则匹配', {
-          stage,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return null;
-      }
+          },
+        },
+      );
+      const action = parseIntentDecision(payload, stage);
+      options.logger?.debug('意图模型调用完成', {
+        stage,
+        action,
+        latencyMs: Date.now() - startedAt,
+      });
+      return action && actionOfStage(stage, action) ? action : null;
     },
   };
 }

@@ -10,9 +10,12 @@ describe('配置解析', () => {
       logLevel: 'info',
       battleTtlMs: 1_800_000,
       enableDebugEndpoints: true,
-      openrouterApiKey: undefined,
-      openrouterModel: 'typesafe/jev-1.13',
+      commandCodeApiKey: undefined,
+      commandCodeBaseUrl: undefined,
+      commandCodeDecisionModel: 'typesafe/jev',
+      commandCodeChatModel: 'deepseek/deepseek-v4.1-flash',
       intentTimeoutMs: 1500,
+      chatTimeoutMs: 3000,
       enemyAi: 'jev',
       enemyTimeoutMs: 1200,
     });
@@ -46,14 +49,22 @@ describe('配置解析', () => {
     assert.equal(loadConfig({ ENABLE_DEBUG_ENDPOINTS: ' ' }).enableDebugEndpoints, true);
   });
 
-  it('意图模型配置：Key 去空白、模型可覆盖、超时钳制', () => {
-    assert.equal(loadConfig({ OPENROUTER_API_KEY: '  sk-test  ' }).openrouterApiKey, 'sk-test');
-    assert.equal(loadConfig({ OPENROUTER_API_KEY: '   ' }).openrouterApiKey, undefined);
-    assert.equal(loadConfig({}).openrouterApiKey, undefined);
-    assert.equal(loadConfig({ OPENROUTER_MODEL: ' typesafe/jev-1.13 ' }).openrouterModel, 'typesafe/jev-1.13');
+  it('模型配置：Key 去空白、模型与地址可覆盖、超时钳制', () => {
+    assert.equal(loadConfig({ COMMAND_CODE_API_KEY: '  cmd-test  ' }).commandCodeApiKey, 'cmd-test');
+    assert.equal(loadConfig({ COMMAND_CODE_API_KEY: '   ' }).commandCodeApiKey, undefined);
+    assert.equal(loadConfig({}).commandCodeApiKey, undefined);
+    assert.equal(loadConfig({ COMMAND_CODE_BASE_URL: ' http://127.0.0.1:9999/v1 ' }).commandCodeBaseUrl, 'http://127.0.0.1:9999/v1');
+    assert.equal(loadConfig({}).commandCodeBaseUrl, undefined);
+    assert.equal(loadConfig({ COMMAND_CODE_DECISION_MODEL: ' typesafe/jev-1.14.0 ' }).commandCodeDecisionModel, 'typesafe/jev-1.14.0');
+    assert.equal(loadConfig({}).commandCodeDecisionModel, 'typesafe/jev');
+    assert.equal(loadConfig({ COMMAND_CODE_CHAT_MODEL: ' deepseek/deepseek-v4-flash ' }).commandCodeChatModel, 'deepseek/deepseek-v4-flash');
+    assert.equal(loadConfig({}).commandCodeChatModel, 'deepseek/deepseek-v4.1-flash');
     assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '50' }).intentTimeoutMs, 200);
     assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '9000' }).intentTimeoutMs, 5000);
     assert.equal(loadConfig({ INTENT_TIMEOUT_MS: 'oops' }).intentTimeoutMs, 1500);
+    assert.equal(loadConfig({ CHAT_TIMEOUT_MS: '100' }).chatTimeoutMs, 500);
+    assert.equal(loadConfig({ CHAT_TIMEOUT_MS: '99999' }).chatTimeoutMs, 8000);
+    assert.equal(loadConfig({ CHAT_TIMEOUT_MS: 'oops' }).chatTimeoutMs, 3000);
   });
 
   it('对手决策配置：开关归一化、超时钳制', () => {

@@ -609,3 +609,64 @@ describe('异步与状态的边界', () => {
     assert.equal(rooms.get(code)?.guestKey, null);
   });
 });
+
+describe('规则外问答', () => {
+  it('交给语言模型回答，不推进对局、不记战报', async () => {
+    const asked: string[] = [];
+    const chat = {
+      async answer(question: string): Promise<string | null> {
+        asked.push(question);
+        return '今天多云，傍晚有雨。';
+      },
+    };
+    const { service, store } = setup({ chat });
+    const started = await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+
+    const result = await service.say(KEY, '今天天气怎么样？');
+    assert.deepEqual(asked, ['今天天气怎么样？']);
+    assert.equal(result.text, '今天多云，傍晚有雨。');
+    // 对局原样保留：不扣能量、不推进轮次、不加战报
+    assert.deepEqual(store.get(KEY), before);
+    assert.ok(before === store.get(KEY));
+    assert.deepEqual(result.battle?.history, started.battle?.history);
+  });
+
+  it('还没开局时也能问答，不会顺手开一局', async () => {
+    const chat = { async answer(): Promise<string | null> { return '今天多云。'; } };
+    const { service, store } = setup({ chat });
+    const asked = await service.say(KEY, '今天天气怎么样？');
+    assert.equal(asked.text, '今天多云。');
+    assert.equal(asked.battle, null);
+    assert.equal(store.get(KEY), undefined);
+  });
+
+  it('没配模型时回固定话术，对局同样不动', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+    const before = store.get(KEY);
+
+    const result = await service.say(KEY, '讲个笑话');
+    assert.match(result.text, /暂时答不上来/);
+    assert.ok(before === store.get(KEY));
+  });
+
+  it('模型返回空或抛异常时都回固定话术，不把错误抛给玩家', async () => {
+    const empty = setup({ chat: { async answer() { return null; } } });
+    await empty.service.start(KEY);
+    assert.match((await empty.service.say(KEY, '现在几点')).text, /暂时答不上来/);
+
+    const broken = setup({
+      chat: {
+        async answer(): Promise<string | null> {
+          throw new Error('boom');
+        },
+      },
+    });
+    await broken.service.start(KEY);
+    const result = await broken.service.say(KEY, '你是谁');
+    assert.match(result.text, /暂时答不上来/);
+    assert.equal(result.battle?.round, 1);
+  });
+});

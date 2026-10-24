@@ -12,6 +12,7 @@
  */
 
 import type { Logger } from '../log.js';
+import { askDecision, DEFAULT_DECISION_MODEL } from './commandcode.js';
 import { ENEMY_AI } from './enemy.js';
 import { ATTACKS, CRIT_BONUS, RESPONSES, RULES } from './rules.js';
 import type {
@@ -25,10 +26,8 @@ import type {
   TurnRecord,
 } from './types.js';
 
-/** OpenRouter 上的 JEV 决策模型 */
-export const DEFAULT_ENEMY_MODEL = 'typesafe/jev-1.13';
-
-const JEV_ENDPOINT = 'https://openrouter.ai/api/alpha/decisions';
+/** Command Code 上的 JEV 决策模型 */
+export const DEFAULT_ENEMY_MODEL = DEFAULT_DECISION_MODEL;
 
 const MOVE_LABELS: Record<AttackMove, string> = {
   light: '普攻',
@@ -55,6 +54,8 @@ export interface JevEnemyOptions {
   model?: string;
   /** 单次决策超时；超时立刻回退本地，避免拖住整次工具调用 */
   timeoutMs?: number;
+  /** 默认官方地址，测试或代理时覆盖 */
+  baseUrl?: string;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
   logger?: Pick<Logger, 'info' | 'warn' | 'debug'>;
@@ -70,7 +71,7 @@ interface JevAnswer {
       probabilities?: unknown;
     };
   };
-  usage?: { cost?: unknown };
+  usage?: { input_tokens?: unknown; output_tokens?: unknown };
 }
 
 interface ChoiceQuestion {
@@ -205,7 +206,6 @@ export function parseEnemyDecision(payload: unknown, legal: readonly string[]): 
 export function createJevEnemyAI(options: JevEnemyOptions): BattleAI {
   const model = options.model ?? DEFAULT_ENEMY_MODEL;
   const timeoutMs = options.timeoutMs ?? 1200;
-  const fetchImpl = options.fetchImpl ?? fetch;
   const fallback = options.fallback ?? ENEMY_AI;
 
   async function ask(
@@ -219,56 +219,43 @@ export function createJevEnemyAI(options: JevEnemyOptions): BattleAI {
     const criteria = Object.fromEntries(
       Object.entries(question.criteria).filter(([key]) => legal.includes(key)),
     );
-    try {
-      const response = await fetchImpl(JEV_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${options.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          state: { kind, situation: state },
-          questions: {
-            move: {
-              type: 'choice',
-              instructions: question.instructions,
-              criteria,
-            },
+    // 失败、超时、非 200 都由客户端吞掉并回 null
+    const payload = await askDecision(
+      {
+        apiKey: options.apiKey,
+        baseUrl: options.baseUrl,
+        timeoutMs,
+        fetchImpl: options.fetchImpl,
+        logger: options.logger,
+      },
+      {
+        model,
+        state: { kind, situation: state },
+        questions: {
+          move: {
+            type: 'choice',
+            instructions: question.instructions,
+            criteria,
           },
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (!response.ok) {
-        options.logger?.warn('对手决策返回异常状态，回退本地决策', { status: response.status, kind });
-        return null;
-      }
-      const payload = await response.json();
-      const choice = parseEnemyDecision(payload, legal);
-      const usage = (payload as JevAnswer).usage;
-      const answer = (payload as JevAnswer).answers?.move as { confidence?: unknown } | undefined;
-      const confidence = typeof answer?.confidence === 'number'
-        ? Number(answer.confidence.toFixed(3))
-        : undefined;
-      if (!choice) {
-        options.logger?.info('对手决策未采纳，回退本地', { kind, confidence });
-        return null;
-      }
-      options.logger?.info('对手决策调用完成', {
-        kind,
-        choice,
-        confidence,
-        latencyMs: Date.now() - startedAt,
-        cost: typeof usage?.cost === 'number' ? usage.cost : undefined,
-      });
-      return choice;
-    } catch (error) {
-      options.logger?.warn('对手决策调用失败，回退本地决策', {
-        kind,
-        error: error instanceof Error ? error.message : String(error),
-      });
+        },
+      },
+    );
+    const choice = parseEnemyDecision(payload, legal);
+    const answer = (payload as JevAnswer | null)?.answers?.move as { confidence?: unknown } | undefined;
+    const confidence = typeof answer?.confidence === 'number'
+      ? Number(answer.confidence.toFixed(3))
+      : undefined;
+    if (!choice) {
+      options.logger?.info('对手决策未采纳，回退本地', { kind, confidence });
       return null;
     }
+    options.logger?.info('对手决策调用完成', {
+      kind,
+      choice,
+      confidence,
+      latencyMs: Date.now() - startedAt,
+    });
+    return choice;
   }
 
   return {

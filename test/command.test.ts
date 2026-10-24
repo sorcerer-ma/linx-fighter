@@ -69,9 +69,11 @@ describe('一句话读成命令', () => {
   });
 
   it('认不出来的句子读成 unknown', () => {
-    for (const text of ['', '   ', '今天天气不错', '你是谁', '开', '打开菜单']) {
+    for (const text of ['', '   ', '今天天气不错', '开', '打开菜单']) {
       expectKind(text, 'unknown');
     }
+    // 规则外的提问不算「认不出来」，走问答
+    expectKind('你是谁', 'ask');
   });
 
   it('标点与大小写不影响判断', () => {
@@ -119,6 +121,37 @@ describe('不该出手的表达', () => {
   it('问号在去掉标点之前就要认出来', () => {
     expectKind('大招？', 'status');
     expectKind('大招?', 'status');
+  });
+});
+
+describe('规则外的问题', () => {
+  it('问天气、算数、常识交给语言模型，原话带过去', () => {
+    for (const text of ['今天天气怎么样', '讲个笑话', '1加1等于几', '现在几点', '你是谁', '帮我翻译一下这句话']) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'ask', `「${text}」应交给语言模型`);
+      assert.equal(command.kind === 'ask' ? command.text : '', text, '原话要原样带给模型');
+    }
+  });
+
+  it('问句里带了游戏词就留在本地，不被模型接走', () => {
+    for (const text of ['我的能量还剩多少', '我的大招还剩几次', '为什么我输了', '帮我算一下强攻伤害', '现在第几轮', '怎么回能量']) {
+      expectKind(text, 'status');
+    }
+    for (const text of ['怎么玩', '怎么放大招']) {
+      expectKind(text, 'help');
+    }
+  });
+
+  it('「能不能」开头的非游戏问题也算规则外，否定仍优先于疑问', () => {
+    expectKind('能不能讲个笑话', 'ask');
+    expectKind('能不能别打', 'refused');
+    expectKind('要不要放大招', 'status');
+  });
+
+  it('不是提问的闲聊不交给模型，仍按没听清处理', () => {
+    for (const text of ['今天挺热', '我饿了', '随便聊聊']) {
+      expectKind(text, 'unknown');
+    }
   });
 });
 
