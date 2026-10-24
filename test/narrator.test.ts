@@ -462,8 +462,8 @@ describe('挂起等对手的播报', () => {
   it('轮到自己、对手已经出招、超时各给一句收尾', () => {
     assert.equal(narrateWaitTurn(), '该我出招了，你说打哪一招就行。');
     assert.equal(narrateWaitRespond(), '对手已经出招，你说格挡、闪避还是承受。');
-    assert.equal(narrateWaitTimeout('opponent'), '对手还没出手。我继续盯着，你要是等不及就问战况。');
-    assert.equal(narrateWaitTimeout('guest'), '对手还没进房间。我继续盯着，进来了马上说。');
+    assert.equal(narrateWaitTimeout('opponent'), '对手还没出手，出了我马上说。');
+    assert.equal(narrateWaitTimeout('guest'), '对手还没进房间，进来了我马上说。');
     for (const text of [
       narrateWaitTurn(),
       narrateWaitRespond(),

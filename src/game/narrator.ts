@@ -418,9 +418,7 @@ export function narrateWaitRespond(): string {
  * `reason` 决定说的是「对手还没进房间」还是「对手还没出手」。
  */
 export function narrateWaitTimeout(reason: 'guest' | 'opponent'): string {
-  return reason === 'guest'
-    ? '对手还没进房间。我继续盯着，进来了马上说。'
-    : '对手还没出手。我继续盯着，你要是等不及就问战况。';
+  return reason === 'guest' ? '对手还没进房间，进来了我马上说。' : '对手还没出手，出了我马上说。';
 }
 
 /** 房主挂着等的时候对手进来了：先说人到了，再报开局 */
