@@ -273,3 +273,90 @@ describe('HTTP 外壳', () => {
     }
   });
 });
+
+describe('原始报文日志', () => {
+  it('debug 级别打出平台请求体，超长截断', async () => {
+    const records: Array<{ message: string; fields?: Record<string, unknown> }> = [];
+    const logger = {
+      debug: (message: string, fields?: Record<string, unknown>) => records.push({ message, fields }),
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+    };
+    const store = new BattleStore({ ttlMs: 60_000 });
+    const rooms = new RoomStore({ ttlMs: 60_000 });
+    const app = createApp({
+      config: { ...loadConfig({}), enableDebugEndpoints: true },
+      logger,
+      store,
+      rooms,
+      service: new GameService({ store, rooms, logger, random: () => 0 }),
+    });
+    const probe = await new Promise<Server>((resolve) => {
+      const s = app.listen(0, '127.0.0.1', () => resolve(s));
+    });
+    const { port } = probe.address() as AddressInfo;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'game_status', arguments: {}, _meta: { lang_code: 'zh' } },
+        }),
+      });
+      assert.equal(res.status, 200);
+    } finally {
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+    }
+
+    const raw = records.find((r) => r.message === 'MCP 原始报文');
+    assert.ok(raw, '应当留下一条原始报文日志');
+    const body = raw.fields?.body as { params?: { _meta?: { lang_code?: string } } };
+    assert.equal(body.params?._meta?.lang_code, 'zh');
+  });
+
+  it('超长报文只留开头并标注总长度', async () => {
+    const records: Array<{ message: string; fields?: Record<string, unknown> }> = [];
+    const logger = {
+      debug: (message: string, fields?: Record<string, unknown>) => records.push({ message, fields }),
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+    };
+    const store = new BattleStore({ ttlMs: 60_000 });
+    const rooms = new RoomStore({ ttlMs: 60_000 });
+    const app = createApp({
+      config: { ...loadConfig({}), enableDebugEndpoints: true },
+      logger,
+      store,
+      rooms,
+      service: new GameService({ store, rooms, logger, random: () => 0 }),
+    });
+    const probe = await new Promise<Server>((resolve) => {
+      const s = app.listen(0, '127.0.0.1', () => resolve(s));
+    });
+    const { port } = probe.address() as AddressInfo;
+    try {
+      await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: { name: 'game_say', arguments: { text: '啊'.repeat(5000) } },
+        }),
+      });
+    } finally {
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+    }
+
+    const raw = records.find((r) => r.message === 'MCP 原始报文');
+    const body = raw?.fields?.body;
+    assert.equal(typeof body, 'string');
+    assert.match(body as string, /共 \d+ 字/);
+  });
+});

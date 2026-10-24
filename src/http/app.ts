@@ -41,6 +41,26 @@ interface RpcMessage {
   };
 }
 
+/** 原始报文日志上限：够看清平台传了什么，又不至于把一整轮对话刷满屏 */
+const BODY_LOG_LIMIT = 4000;
+
+/**
+ * 调试用：把 JSON-RPC 原始报文原样带进日志，超长截断。
+ *
+ * 平台的头与 `_meta` 没有公开文档，与其猜字段名，不如把报文打出来看。
+ * 只影响日志，不改任何请求处理。
+ */
+function previewBody(body: unknown): unknown {
+  let text: string;
+  try {
+    text = JSON.stringify(body) ?? '';
+  } catch {
+    return '<无法序列化>';
+  }
+  if (text.length <= BODY_LOG_LIMIT) return body;
+  return `${text.slice(0, BODY_LOG_LIMIT)}…（共 ${text.length} 字）`;
+}
+
 /** 一条 SSE 连接对应一个 MCP 会话 */
 interface McpSession {
   transport: SSEServerTransport;
@@ -282,6 +302,7 @@ export function createApp(deps: AppDependencies): express.Express {
 
     // 每条 JSON-RPC 都记下方法名与身份头：排查「谁在调、为什么状态对不上」时先看这行
     const body = req.body as RpcMessage | RpcMessage[] | undefined;
+    logger.debug('MCP 原始报文', { body: previewBody(body) });
     const message = Array.isArray(body) ? body[0] : body;
     logger.info('MCP 请求', {
       method: message?.method ?? '',
@@ -346,6 +367,7 @@ export function createApp(deps: AppDependencies): express.Express {
     // 平台每次调用都会带上设备头，这里刷新上下文，兼容 GET 建连时拿不到头的实现
     applyRequestContext(session.ctx, req.headers, req.query as Record<string, unknown>);
     snapshotIdentity(req.headers);
+    logger.debug('MCP 原始报文', { body: previewBody(req.body) });
     await session.transport.handlePostMessage(req, res, req.body);
   });
 
