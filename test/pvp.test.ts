@@ -307,6 +307,8 @@ describe('双人联机', () => {
       agentId: 'agent-1',
       sessionId: 's-1',
       display: 'voice' as const,
+      speakerName: '',
+      speakerId: '',
       anonymousId: 'anon-1',
     };
     registerGameTools(server, { service, logger: createLogger('error'), ctx });
@@ -333,6 +335,8 @@ describe('载体形态下的补账播报', () => {
       agentId: 'agent-1',
       sessionId: 's-host',
       display: 'screen',
+      speakerName: '',
+      speakerId: '',
       anonymousId: 'a',
     };
     const guestCtx: DeviceContext = {
@@ -340,6 +344,8 @@ describe('载体形态下的补账播报', () => {
       agentId: 'agent-2',
       sessionId: 's-guest',
       display: 'voice',
+      speakerName: '',
+      speakerId: '',
       anonymousId: 'b',
     };
     const host = toolset(service, hostCtx);

@@ -75,12 +75,14 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         sessionKey: battleKey(ctx),
         deviceId: ctx.deviceId,
         agentId: ctx.agentId,
+        speaker: ctx.speakerName || undefined,
         args: previewArgs(args),
       });
       const result = await run();
       logger.info('工具返回', {
         tool,
         sessionKey: battleKey(ctx),
+        speaker: ctx.speakerName || undefined,
         text: result.text,
         round: result.battle?.round ?? 0,
         phase: result.battle?.phase ?? null,

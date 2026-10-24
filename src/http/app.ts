@@ -10,7 +10,13 @@ import { createRateLimiter } from '../admin/ratelimit.js';
 import type { GameService } from '../game/service.js';
 import type { BattleState } from '../game/state.js';
 import type { Logger } from '../log.js';
-import { applyRequestContext, battleKey, createDeviceContext, type DeviceContext } from '../mcp/context.js';
+import {
+  applyRequestContext,
+  battleKey,
+  createDeviceContext,
+  identityHeaders,
+  type DeviceContext,
+} from '../mcp/context.js';
 import { createMcpServer } from '../mcp/server.js';
 import { registerGameTools } from '../mcp/tools.js';
 import type { BattleStore } from '../store/battles.js';
@@ -54,6 +60,17 @@ export function createApp(deps: AppDependencies): express.Express {
   const { config, logger, store, rooms, service } = deps;
   const app = express();
   app.disable('x-powered-by');
+
+  // 平台会把设备、会话，可能还有说话人等上下文放进请求头。头名没有公开文档，
+  // 所以每个进程对「不同的头组合」只记一次快照，用来确认平台到底下发了什么。
+  const loggedIdentity = new Set<string>();
+  const snapshotIdentity = (headers: Parameters<typeof identityHeaders>[0]) => {
+    const identity = identityHeaders(headers);
+    const signature = Object.keys(identity).sort().join(',');
+    if (loggedIdentity.has(signature)) return;
+    loggedIdentity.add(signature);
+    logger.info('请求身份头快照', { headers: identity });
+  };
   // 只信任 loopback 上的反向代理给出的 X-Forwarded-For：nginx 同机反代时 req.ip 才是真实来源，
   // 否则恒为 127.0.0.1，按来源限速会退化成全局限速。
   app.set('trust proxy', 'loopback');
@@ -250,6 +267,7 @@ export function createApp(deps: AppDependencies): express.Express {
   app.post('/mcp', async (req, res) => {
     const ctx = createDeviceContext(randomUUID());
     applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
+    snapshotIdentity(req.headers);
 
     // 每条 JSON-RPC 都记下方法名与身份头：排查「谁在调、为什么状态对不上」时先看这行
     const body = req.body as
@@ -266,6 +284,7 @@ export function createApp(deps: AppDependencies): express.Express {
       deviceId: ctx.deviceId,
       agentId: ctx.agentId,
       sessionId: ctx.sessionId,
+      speaker: ctx.speakerName || undefined,
     });
 
     const server = createMcpServer();
@@ -317,6 +336,7 @@ export function createApp(deps: AppDependencies): express.Express {
 
     // 平台每次调用都会带上设备头，这里刷新上下文，兼容 GET 建连时拿不到头的实现
     applyRequestContext(session.ctx, req.headers, req.query as Record<string, unknown>);
+    snapshotIdentity(req.headers);
     await session.transport.handlePostMessage(req, res, req.body);
   });
 
@@ -406,6 +426,8 @@ function debugBattleKey(req: Request): string {
     agentId: asText(req.query.agent) || 'debug-agent',
     sessionId: '',
     display: 'voice',
+    speakerName: '',
+    speakerId: '',
     anonymousId: 'debug',
   };
   return battleKey(ctx);
