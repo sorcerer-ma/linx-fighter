@@ -170,6 +170,22 @@ export function narrateTurnHint(battle: Battle): string {
   return battle.active === 'player' ? '轮到你出招' : '等对手出招';
 }
 
+/**
+ * 这句话不像是在出招：否定与歧义都不执行，只说清为什么没出手。
+ *
+ * 查询不走这里——它直接播当前局面，让玩家听见气血、真气与大招次数。
+ */
+export function narrateActionBlocked(reason: 'negated' | 'ambiguous'): string {
+  return reason === 'negated'
+    ? '这一手没打出去，你说的像是先不动手。想出手就直接说招式。'
+    : '这一句话里提到了两种招式，没敢替你选。一次只说一种。';
+}
+
+/** 异步等待期间局面已经变了：这次识别作废，让玩家对着新局重说 */
+export function narrateStaleAction(): string {
+  return '这一手没生效，局面已经变了。重新说一次要出的招。';
+}
+
 /** 认不出招式：不消耗回合，只提示可选说法 */
 export function narrateUnknownAction(battle: Battle | null): string {
   if (battle?.pending && battle.mode === 'pvp' && battle.pending.actor === 'player') {

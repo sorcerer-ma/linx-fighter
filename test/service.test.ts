@@ -446,3 +446,150 @@ describe('双人补账播报', () => {
     assert.doesNotMatch(status.text, /刚才那一手/);
   });
 });
+
+/** 让出一轮事件循环，等异步流程真正跑到「等模型」那一步 */
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** 可手动放行的意图模型：模拟「模型还没回，局面已经变了」 */
+function gatedIntent(): { resolver: IntentResolver; release(id: 'light' | null): void } {
+  let release: ((id: 'light' | null) => void) | null = null;
+  const resolver: IntentResolver = {
+    resolve() {
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    },
+  };
+  return {
+    resolver,
+    release(id) {
+      assert.ok(release, '模型应该已经被问过一次');
+      release(id);
+    },
+  };
+}
+
+describe('异步与状态的边界', () => {
+  const HOST = 'device-b#agent-1';
+  const GUEST = 'device-c#agent-2';
+  const roomCodeOf = (text: string): string => {
+    const code = /房间(\d{4})/.exec(text)?.[1];
+    assert.ok(code, `播报里应带房间号：${text}`);
+    return code;
+  };
+
+  it('问句、否定、一句两招都不执行，也不动对局', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+    // 攒满真气、留着大招：这类句子最容易被识别成「真放一招」
+    store.set(KEY, { ...before, player: { ...before.player, ap: 5 } });
+    const armed = store.get(KEY);
+    assert.ok(armed);
+
+    const asked = await service.act(KEY, '我的大招还剩几次');
+    assert.match(asked.text, /真气/);
+    assert.equal(store.get(KEY), armed);
+
+    // 走统一入口也一样：这句话归成战况，不落进出招
+    const askedViaSay = await service.say(KEY, '我要放几次大招');
+    assert.match(askedViaSay.text, /真气/);
+    assert.equal(store.get(KEY), armed);
+
+    const negated = await service.act(KEY, '不要大招');
+    assert.match(negated.text, /没打出去/);
+    assert.equal(store.get(KEY), armed);
+
+    const ambiguous = await service.act(KEY, '大招还是强攻');
+    assert.match(ambiguous.text, /两种招式/);
+    assert.equal(store.get(KEY), armed);
+    assert.equal(armed.player.ap, 5);
+    assert.equal(armed.player.ultLeft, 1);
+  });
+
+  it('没有对局时，否定句不会顺手开一局', async () => {
+    const { service, store } = setup();
+
+    const negated = await service.act(KEY, '先不打');
+    assert.equal(store.get(KEY), undefined);
+    assert.match(negated.text, /没听清这一手/);
+
+    const ambiguous = await service.act(KEY, '大招还是强攻');
+    assert.equal(store.get(KEY), undefined);
+    assert.match(ambiguous.text, /没听清这一手/);
+  });
+
+  it('玩法问句从出招入口进来也只回说明', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+    const before = store.get(KEY);
+
+    const asked = await service.act(KEY, '怎么出招');
+    assert.match(asked.text, /普攻/);
+    assert.equal(asked.battle, null);
+    assert.equal(store.get(KEY), before);
+  });
+
+  it('同一玩家的两次出招按提交顺序结算', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+
+    // 先出手，再应对同一轮对手那一击：两次请求同时进来也要按顺序结算
+    const [first, second] = await Promise.all([service.act(KEY, '普攻'), service.act(KEY, '格挡')]);
+    assert.match(first.text, /普攻/);
+    assert.match(second.text, /格挡/);
+    // 两回合都完整结算了：没有一手被顶掉，也没有卡在「等对手应对」
+    assert.equal(store.get(KEY)?.history.length, 2);
+  });
+
+  it('模型还在想的时候进了房间，旧的这一手不再结算', async () => {
+    const intent = gatedIntent();
+    const { service, store, rooms } = setup({ intent: intent.resolver });
+
+    await service.start(KEY);
+    const opened = await service.start(HOST, { mode: 'pvp' });
+    const code = roomCodeOf(opened.text);
+
+    const pending = service.act(KEY, '上去揍他');
+    await tick();
+    // 模型还没回，玩家先凭语音进了房间
+    await service.act(KEY, `加入房间${code}`);
+    intent.release('light');
+
+    const stale = await pending;
+    assert.match(stale.text, /局面已经变了/);
+    // 旧单人局已经随着进房清掉，没有把那一手写到房间的局面上
+    assert.equal(store.get(KEY), undefined);
+    assert.equal(rooms.byPlayer(KEY)?.code, code);
+    assert.deepEqual(store.get(pvpBattleKey(code))?.history, []);
+  });
+
+  it('房主重开时，还在等模型的旧一手不会写进新局', async () => {
+    const intent = gatedIntent();
+    const { service, store, rooms } = setup({ intent: intent.resolver });
+
+    const opened = await service.start(HOST, { mode: 'pvp' });
+    const code = roomCodeOf(opened.text);
+    await service.start(GUEST, { room: code });
+    const key = pvpBattleKey(code);
+    const before = store.get(key);
+    assert.ok(before);
+
+    const pending = service.act(HOST, '上去揍他');
+    await tick();
+    // 房主改口再开一间：旧房连那局一起撤掉
+    await service.act(HOST, '开房');
+    intent.release('light');
+
+    const stale = await pending;
+    assert.match(stale.text, /局面已经变了/);
+
+    const current = store.get(key);
+    assert.ok(current);
+    assert.deepEqual(current.history, []);
+    assert.equal(rooms.get(code)?.guestKey, null);
+  });
+});

@@ -106,6 +106,24 @@ function matchTerms(meta: ActionMeta): string[] {
   return [meta.id, ...meta.aliases, ...(meta.asrErrors ?? [])];
 }
 
+/** 包含匹配用的长词候选；单字项（打、躲、防）不参与，避免「打开菜单」被误判 */
+interface TermCandidate {
+  id: ActionId;
+  term: string;
+  /** 该说法是唤出指令时带回原文，命中后播报要回念 */
+  chant?: string;
+}
+
+/** 全部可做包含匹配的说法，唤出指令也算对应招式的说法 */
+function containmentCandidates(): TermCandidate[] {
+  return Object.values(ACTIONS)
+    .flatMap((meta) => [
+      ...matchTerms(meta).map((term) => ({ id: meta.id, term, chant: undefined as string | undefined })),
+      ...meta.chants.map((chant) => ({ id: meta.id, term: chant, chant })),
+    ])
+    .filter(({ term }) => term.length >= 2);
+}
+
 export interface ActionMatch {
   id: ActionId;
   /** 命中的唤出指令原文；按普通说法命中时为 undefined */
@@ -140,13 +158,7 @@ export function matchAction(raw: string): ActionMatch | null {
   }
 
   // 2. 包含匹配：咒语与多字说法按长度从长到短，长句优先
-  const candidates = Object.values(ACTIONS)
-    .flatMap((meta) => [
-      ...matchTerms(meta).map((term) => ({ id: meta.id, term, chant: undefined as string | undefined })),
-      ...meta.chants.map((chant) => ({ id: meta.id, term: chant, chant })),
-    ])
-    .filter(({ term }) => term.length >= 2)
-    .sort((a, b) => b.term.length - a.term.length);
+  const candidates = containmentCandidates().sort((a, b) => b.term.length - a.term.length);
 
   for (const candidate of candidates) {
     if (text.includes(candidate.term)) {
@@ -154,6 +166,46 @@ export function matchAction(raw: string): ActionMatch | null {
     }
   }
   return null;
+}
+
+/**
+ * 一句话里点到的全部不同招式（用于判断「到底要出哪一招」）。
+ *
+ * 与 matchAction 同一套词表与口径，但返回全部命中而不是第一个：
+ * 「大招还是强攻」是商量，不是出招，调用方据此让玩家重说而不是替他选一个。
+ *
+ * 包含匹配按长度从长到短占用文本区间：「全力攻击」整体算强攻，
+ * 不能让里面的「攻击」再算一次，否则一句话会被判成两种招式。
+ * 返回顺序按招式表声明顺序，调用方不必关心匹配先后。
+ */
+export function matchActionIds(raw: string): ActionId[] {
+  const text = normalize(raw);
+  if (!text) return [];
+
+  // 整句就是一个说法：单字别名（打、躲）只在这一步生效，与 matchAction 保持一致
+  const exact = Object.values(ACTIONS).find((meta) => matchTerms(meta).includes(text));
+  if (exact) return [exact.id];
+
+  // 先找出所有说法在句中的出现位置，再按长度从长到短贪心占用
+  const hits = containmentCandidates()
+    .flatMap(({ id, term }) => {
+      const found: { id: ActionId; start: number; end: number }[] = [];
+      for (let at = text.indexOf(term); at !== -1; at = text.indexOf(term, at + 1)) {
+        found.push({ id, start: at, end: at + term.length });
+      }
+      return found;
+    })
+    .sort((a, b) => b.end - b.start - (a.end - a.start) || a.start - b.start);
+
+  const taken: { start: number; end: number }[] = [];
+  const ids = new Set<ActionId>();
+  for (const hit of hits) {
+    if (taken.some((span) => hit.start < span.end && span.start < hit.end)) continue;
+    taken.push({ start: hit.start, end: hit.end });
+    ids.add(hit.id);
+  }
+
+  return Object.keys(ACTIONS).filter((id) => ids.has(id as ActionId)) as ActionId[];
 }
 
 /** 只要招式（不需要回念唤出指令时用） */

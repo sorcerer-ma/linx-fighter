@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createBattle } from '../src/game/engine.js';
 import {
+  narrateActionBlocked,
   narrateAutoStart,
   narrateBattleStart,
   narrateCatchUp,
@@ -15,6 +16,7 @@ import {
   narrateRoomInvalid,
   narrateRoomJoined,
   narrateRoomMissing,
+  narrateStaleAction,
   narrateWaitingRoom,
   narrateStatus,
   narrateTurn,
@@ -249,5 +251,24 @@ describe('补账播报', () => {
   it('攒多了只补最近两段，不把播报拖长', () => {
     const text = narrateCatchUp(['第一手。', '第二手。', '第三手。']);
     assert.equal(text, '刚才那一手。第二手。第三手。');
+  });
+});
+
+describe('不该出手的表达', () => {
+  it('否定与歧义都说清没出手，不报数值', () => {
+    const negated = narrateActionBlocked('negated');
+    assert.match(negated, /没打出去/);
+    assert.doesNotMatch(negated, /气血|真气/);
+    assertSpeakable(negated);
+
+    const ambiguous = narrateActionBlocked('ambiguous');
+    assert.match(ambiguous, /两种招式/);
+    assertSpeakable(ambiguous);
+  });
+
+  it('局面变了让玩家重说，不再复述旧结果', () => {
+    const text = narrateStaleAction();
+    assert.match(text, /重新说/);
+    assertSpeakable(text);
   });
 });

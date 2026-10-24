@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { GameService } from '../src/game/service.js';
-import { mirrorEvents, normalizeRoomCode } from '../src/game/pvp.js';
+import { mirrorEvents, normalizeRoomCode, pvpBattleKey } from '../src/game/pvp.js';
 import { battleKey, type DeviceContext } from '../src/mcp/context.js';
 import { registerGameTools } from '../src/mcp/tools.js';
 import type { IntentResolver } from '../src/game/intent.js';
@@ -481,5 +481,92 @@ describe('结算事件镜像', () => {
       },
       { type: 'end', round: 3, winner: 'player' },
     ]);
+  });
+});
+
+describe('房间与席位的边界', () => {
+  it('已经在房间里的玩家能凭语音换房，旧房与那局一起撤掉', async () => {
+    const { service, rooms, store } = setup();
+    await service.start(HOST, { mode: 'pvp' });
+    const oldCode = findRoom(service, HOST);
+    await service.start(GUEST, { room: oldCode });
+
+    await service.start(OTHER, { mode: 'pvp' });
+    const newCode = findRoom(service, OTHER);
+    assert.notEqual(newCode, oldCode);
+
+    // 访客已经在房间里了：这句话原先会被当成「没听清这一手」，人还留在原地
+    const moved = await service.act(GUEST, `加入房间${newCode}`);
+    assert.match(moved.text, /房间/);
+    assert.equal(moved.battle?.mode, 'pvp');
+    assert.equal(rooms.byPlayer(GUEST)?.code, newCode);
+
+    // 旧房、旧局一起撤掉：房主不会对着作废的局面继续等响应
+    assert.equal(rooms.get(oldCode), undefined);
+    assert.equal(store.get(pvpBattleKey(oldCode)), undefined);
+    assert.equal(rooms.byPlayer(HOST), undefined);
+    const hostAct = await service.act(HOST, '普攻');
+    assert.equal(hostAct.battle?.mode, 'solo');
+  });
+
+  it('换房失败时原来的房间与对局一点不动', async () => {
+    const { service, rooms, store } = setup();
+    await service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    await service.start(GUEST, { room: code });
+    const battleBefore = store.get(pvpBattleKey(code));
+    assert.ok(battleBefore);
+
+    // 房间号不存在
+    const missing = await service.act(GUEST, '加入房间9999');
+    assert.match(missing.text, /没找到房间9999/);
+    assert.equal(rooms.byPlayer(GUEST)?.code, code);
+    assert.equal(store.get(pvpBattleKey(code)), battleBefore);
+
+    // 目标房已经满员
+    await service.start(OTHER, { mode: 'pvp' });
+    const otherCode = findRoom(service, OTHER);
+    const fourth = 'device-d#agent-4';
+    await service.start(fourth, { room: otherCode });
+    const full = await service.act(GUEST, `加入房间${otherCode}`);
+    assert.match(full.text, /已经满员/);
+    assert.equal(rooms.byPlayer(GUEST)?.code, code);
+    assert.equal(store.get(pvpBattleKey(code)), battleBefore);
+  });
+
+  it('双人房里问大招次数只播局面，不动对局', async () => {
+    const { service, store } = setup();
+    await service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    await service.start(GUEST, { room: code });
+
+    const key = pvpBattleKey(code);
+    const before = store.get(key);
+    assert.ok(before);
+    store.set(key, { ...before, player: { ...before.player, ap: 5 } });
+    const armed = store.get(key);
+    assert.ok(armed);
+
+    const asked = await service.act(HOST, '我的大招还剩几次');
+    assert.match(asked.text, /真气/);
+    assert.equal(store.get(key), armed);
+    assert.equal(armed.player.ap, 5);
+    assert.equal(armed.player.ultLeft, 1);
+
+    const negated = await service.act(GUEST, '不要闪避');
+    assert.match(negated.text, /没打出去/);
+    assert.equal(store.get(key), armed);
+  });
+
+  it('房主拿自己的房间号不会把自己登记成加入者', async () => {
+    const { service, rooms } = setup();
+    await service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+
+    const again = await service.act(HOST, `加入房间${code}`);
+    assert.match(again.text, /还等着对手加入/);
+    const room = rooms.get(code);
+    assert.ok(room);
+    assert.equal(room.guestKey, null);
   });
 });
