@@ -184,7 +184,7 @@ it('原话Agent经真实MCP执行一次game_say；查询不出招、身份隔离
   assert.equal(start.tool,'game_say');assert.ok(start.state?.battle);
   const status=await client.say('agent-one','战况如何');
   assert.equal(status.tool,'game_say');assert.deepEqual(status.state?.battle?.you,start.state?.battle?.you);
-  assert.equal(status.reply,status.sourceReply);assert.equal(status.rewriteStatus,'awaiting-facts');
+  assert.equal(status.reply,status.sourceReply);assert.equal(status.rewriteStatus,'original');
   const calls=status.trace.requests.filter(r=>r.method==='tools/call');
   assert.equal(calls.length,1);assert.equal(calls[0]?.tool,'game_say');
   const other=await client.say('agent-two','战况如何');assert.equal(other.state?.battle,null);

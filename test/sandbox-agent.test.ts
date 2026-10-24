@@ -15,7 +15,7 @@ it('每条原话包括查询、开房都只执行一次game_say且不改原文',
   const agent=new SandboxAgent('test');
   const result=await agent.run(text,{async callTool(name,args){calls.push({name,args});return {text:'对手受伤，我剩3点能量。',isError:false}}});
   assert.deepEqual(calls,[{name:'game_say',args:{text}}]);
-  assert.equal(result.text,result.sourceText);assert.equal(result.rewriteStatus,'awaiting-facts');
+  assert.equal(result.text,result.sourceText);assert.equal(result.rewriteStatus,'original');
  }
 });
 it('工具异常绝不再执行或换工具；明确错误原样保留',async()=>{
@@ -38,5 +38,36 @@ it('表达HTTP失败或无有效内容明确失败，不将推理过程当回复
  for(const response of [new Response('unavailable',{status:503}),new Response(JSON.stringify({choices:[{message:{reasoning_content:'不能当作最终回复'}}]}),{status:200})]){
   const model=new OpenAiReplyModel({baseUrl:'http://mock.invalid',model:'mock',apiKey:'fake',timeoutMs:1000,fetchImpl:async()=>response});
   await assert.rejects(model.rewrite('人设','真实结果'));
+ }
+});
+it('表达必须匹配完整候选，颠倒归属/胜负/下一步即使数字相同也回原文',async()=>{
+ const {presentation}=await import('../src/game/presentation.js');
+ const facts=presentation('turn',null,{renderings:['我受伤5点，对手获胜。','我掉5点生命值，对手赢了。']});
+ for(const candidate of ['我掉5点生命值，对手赢了。','对手受伤5点，我获胜。','我受伤5点，对手获胜。该我出招。']){
+  let calls=0;
+  const agent=new SandboxAgent('test',{async rewrite(){return candidate}});
+  const result=await agent.run('强攻',{async callTool(){calls++;return {text:facts.renderings[0]!,isError:false,presentation:facts}}});
+  assert.equal(calls,1);
+  assert.equal(result.text,facts.renderings.includes(candidate)?candidate:facts.renderings[0]);
+ }
+});
+it('表达失败回已有工具原文；未知结果及无事实不调用模型',async()=>{
+ const {presentation}=await import('../src/game/presentation.js');let modelCalls=0,toolCalls=0;
+ const agent=new SandboxAgent('test',{async rewrite(){modelCalls++;throw new Error('timeout')}});
+ const facts=presentation('turn',null,{renderings:['真实结果。','真正的结果。']});
+ const result=await agent.run('出招',{async callTool(){toolCalls++;return {text:'真实结果。',isError:false,presentation:facts}}});
+ assert.equal(result.text,'真实结果。');assert.equal(result.rewriteStatus,'fallback-error');assert.equal(toolCalls,1);
+ await agent.run('状态',{async callTool(){return {text:'结果未确认。',isError:true,presentation:presentation('error',null)}}});
+ await agent.run('状态',{async callTool(){return {text:'没有演绎事实。',isError:false}}});assert.equal(modelCalls,1);
+});
+
+it('表达失败只返回受控错误码，不回显异常中的配置或认证内容',async()=>{
+ const {presentation}=await import('../src/game/presentation.js');
+ const facts=presentation('status',null,{renderings:['原文。','另一种表达。']});
+ for(const message of ['表达模型请求失败：HTTP 403','request failed with Bearer fake-secret']){
+  const agent=new SandboxAgent('test',{async rewrite(){throw new Error(message)}});
+  const result=await agent.run('战况',{async callTool(){return {text:'原文。',isError:false,presentation:facts}}});
+  assert.equal(result.text,'原文。');assert.ok(!JSON.stringify(result).includes('fake-secret'));
+  assert.equal('expressionError' in result ? result.expressionError : '',message.startsWith('表达模型请求失败')?message:'表达模型不可用');
  }
 });

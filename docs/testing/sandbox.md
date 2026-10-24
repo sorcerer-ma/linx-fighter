@@ -277,10 +277,12 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 
 单源提示词为 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md)，`startSandbox` 在服务端启动时读取一次。`sandbox/config.ts` 的 `agent` 组读取 `SANDBOX_AGENT_MODEL`、`SANDBOX_AGENT_BASE_URL`、`SANDBOX_AGENT_API_KEY`，不继承游戏服务模型或密钥；不自动读取.env，模型名和服务商没有默认值。提示词路径按项目位置解析，不随启动工作目录改变。缺失或空提示词报错。
 
-`SandboxAgent`不再选择工具。每条输入原文只调用一次game_say，服务端负责理解执行；保留旧五工具契约与身份安全规则。工具文本／isError原样保留，sourceReply记录事实来源，reply是页面实际展示／朗读的文字。当前MCP没有可验证演绎facts，Agent转发模式标记rewriteStatus=awaiting-facts，reply仍为原工具文本；不会调用表达模型，也不会用仅匹配数字的检查冒充语义事实保证。
+`SandboxAgent`每条原话只调用一次game_say，由服务端理解与执行。工具文本/isError及sourceReply保留，reply是页面实际展示和朗读的文字。MCP新增兼容字段structuredContent.presentation（version=1）：kind、certainty、facts和renderings。facts包括真实双方资源、轮次阶段、裁决events、下一步与明确拒绝原因；来自ServiceResult、Battle和引擎事件，不解析播报。等待朋友加入时不伪造对手资源；异常确定性为unknown，不能说未执行。
 
-用户已允许人设整句改写，但必须保留战果、必要数字、数值归属、谁做什么、成功失败、胜负与下一步；落地该验证边界前不启用实际改写，也不擅自扩展MCP返回契约。表达失败时可保留已有工具原文，不再执行game_say。表达网络适配器为独立OpenAI兼容非流式Chat Completions客户端，仅本地假fetch验证，不含游戏工具或额外行动能力，不处理reasoning_content为最终话术。
+战况与已提交的行动结果提供由同一事实生成的完整句子候选；补账、唤出词与必要前缀完整保留。未覆盖的开局、帮助或异常等场景仅原文，不强行自由生成。服务端默认text保持兼容；异常文案改为结果未确认、先核实战况，避免泛化“没生效，再说一次”。
 
-用户已指定非秘密配置：baseURL=https://opencode.ai/inference/openai/v1，model=deepseek-v4.1-flash-free；[官方模型表](https://opencode.ai/v2/docs/console/models/)列出此模型与chat/completions端点。真实调用和账号权限未测。密钥由用户在本地受忽略的.env中填写；未经明确授权不读取、保存、打印或调用，启动使用Node --env-file显式加载而非shell source。当前未创建.env、未加载真实密钥或调用远端。
+用户允许整句人设表达；首版模型只能选择服务端renderings中的完整句子，输出须逐字匹配某个候选才采用。该校验保护整句的行动归属、成功失败、胜负、数字与下一步，非仅数字正则；它是受控句式选择，不是无限制自由改写。没有候选、结果未知、模型异常或输出不匹配时，直接使用已有工具原文，永不重试game_say。rewriteStatus区分rewritten、original、fallback-invalid、fallback-error；受控expressionError只含HTTP状态或通用不可用提示，不包含认证头和响应正文。
 
-全部模型参数未配置时保留明确原话直连模式；不完整配置报错。完整参数可建立原话Agent转发层，但不代表人设改写可用；缺事实契约时仍只返回原文。模型参数、密钥与提示词不返回/api/config，只返回模式。现有运行服务不热加载服务端变更，未经授权不重启；浏览器与真实ASR／TTS仍需验收。
+表达适配器采用非流式OpenAI兼容Chat Completions，不提供游戏工具。非秘密设置为baseURL=https://opencode.ai/inference/openai/v1、model=deepseek-v4.1-flash-free；[官方模型表](https://opencode.ai/v2/docs/console/models/)列出相应端点。提示词启动读取一次，密钥仅通过用户本地受忽略.env和Node --env-file加载，不能source、入库、返浏览器或记录。游戏服务不继承沙箱表达密钥。
+
+模型参数未配时是原话直连，不声称已有人设模型；不完整配置报错，完整配置创建表达层。当前运行进程不会热加载服务端改动，重启前须确认进程归属和无待保护的活动对局。实际模型服务可用性、平台结构化返回消费、真实ASR／TTS与手机体验须按本轮实测报告判断，不能用离线假模型通过代替。

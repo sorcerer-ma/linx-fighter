@@ -2,7 +2,7 @@
 
 ## Agent目标链路与当前兼容实现
 
-目标链路：ASR → 平台／沙箱Agent原话固定调用game_say → MCP理解、校验与裁决 → Agent按真实结果与人设表达 → TTS。提示词来自 [项目配置](../../config/linx-agent-prompt.md)。当前转发路径已收敛，表达适配器仅有假fetch测试；由于MCP仍只返回文本，没有可验证的完整演绎事实契约，实际回复暂使用工具原文，并标记awaiting-facts。
+目标链路：ASR → 平台／沙箱Agent原话固定调用game_say → MCP理解、校验与裁决 → Agent按真实结果与人设表达 → TTS。提示词来自 [项目配置](../../config/linx-agent-prompt.md)。当前转发路径已收敛；MCP在保留text的同时添加structuredContent.presentation，包含从实际状态与裁决生成的事实及完整候选话术。表达模型只从候选中选句，候选外输出或失败回已有工具原文；不再执行游戏操作。不提供任意自由生成的战果改写。
 
 以下是游戏服务真实执行链路，Agent不在调用前自主选游戏工具：
 

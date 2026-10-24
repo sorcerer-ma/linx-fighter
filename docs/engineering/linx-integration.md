@@ -175,7 +175,7 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 平台／沙箱Agent每条原话固定调用一次game_say，由游戏服务理解、执行并返回结果，不在Agent端分类或把查询／开房当作选其他工具的例外。允许根据人设改写整句，但必须保留战果、数字、归属、成功失败、胜负与下一步。请求结果未知时先核实，不能断言未生效或换工具重试。双人房无人加入时继续等待，不自动补AI。
 
-已确认表达模型为deepseek-v4.1-flash-free，baseURL为https://opencode.ai/inference/openai/v1。官方[模型表](https://opencode.ai/v2/docs/console/models/)将其列为OpenAI兼容Chat Completions端点；适配器仅做本地假fetch测试，未验证真实账号与模型可用性。MCP可验证演绎事实契约尚待确认，实际回复未接模型，不能宣称人设演绎已交付。
+已确认表达模型为deepseek-v4.1-flash-free，baseURL为https://opencode.ai/inference/openai/v1。官方[模型表](https://opencode.ai/v2/docs/console/models/)将其列为OpenAI兼容Chat Completions端点；适配器仅做本地假fetch测试，未验证真实账号与模型可用性。MCP现新增兼容text的structuredContent.presentation，供沙箱以真实事实和受控完整句式进行人设表达；旧平台可继续只读text。平台是否消费结构化返回及最终现场人设体验仍需单独验证，不因本地实现而宣称平台已同步。
 
 ## 常见问题
 
