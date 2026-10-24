@@ -13,7 +13,15 @@ export interface SandboxTls {
   key: string;
 }
 
+export interface SandboxAgentConfig {
+  model?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  promptPath: string;
+}
+
 export interface SandboxConfig {
+  agent: SandboxAgentConfig;
   port: number;
   host: string;
   /** 游戏服务地址：MCP 调用与状态查询都走它 */
@@ -55,6 +63,12 @@ export function loadSandboxConfig(env: NodeJS.ProcessEnv = process.env): Sandbox
   const key = env.SANDBOX_TLS_KEY?.trim();
 
   return {
+    agent: {
+      model: env.SANDBOX_AGENT_MODEL?.trim() || undefined,
+      baseUrl: env.SANDBOX_AGENT_BASE_URL?.trim() || undefined,
+      apiKey: env.SANDBOX_AGENT_API_KEY?.trim() || undefined,
+      promptPath: resolve(dirname(fileURLToPath(import.meta.url)), '../config/linx-agent-prompt.md'),
+    },
     port: Math.max(1, Math.min(65535, parseInteger(env.SANDBOX_PORT, 8100))),
     host: env.SANDBOX_HOST?.trim() || '0.0.0.0',
     upstream: (env.SANDBOX_UPSTREAM?.trim() || 'http://127.0.0.1:8000').replace(/\/+$/, ''),
