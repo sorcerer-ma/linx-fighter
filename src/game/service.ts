@@ -211,8 +211,9 @@ export class GameService {
     });
     this.store.set(pvpBattleKey(room.code), battle);
     this.logger.info('房间创建', { sessionKey, room: room.code, battleId: battle.id });
+    // 开房时对手还没进来，不能提前播「对决开始」，否则玩家会以为已经有对手了
     return {
-      text: `${narrateRoomCreated(room.code)}。${narrateBattleStart(battle)}`,
+      text: `${narrateRoomCreated(room.code)}。等对手进来再开打。`,
       battle,
     };
   }

@@ -57,13 +57,25 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     run: () => ServiceResult | Promise<ServiceResult>,
   ) => {
     try {
-      // 入参记进日志：平台侧模型到底传了什么，是排查联机/意图问题的第一手证据
-      logger.info('工具调用', { tool, sessionKey: battleKey(ctx), args: previewArgs(args) });
-      const result = await run();
-      logger.debug('工具调用完成', {
+      // 入参、身份头与返回文案都进日志：平台侧模型传了什么、系统回了什么，都能逐轮回放
+      logger.info('工具调用', {
         tool,
         sessionKey: battleKey(ctx),
+        deviceId: ctx.deviceId,
+        agentId: ctx.agentId,
+        args: previewArgs(args),
+      });
+      const result = await run();
+      logger.info('工具返回', {
+        tool,
+        sessionKey: battleKey(ctx),
+        text: result.text,
         round: result.battle?.round ?? 0,
+        phase: result.battle?.phase ?? null,
+        active: result.battle?.active ?? null,
+        pending: result.battle?.pending
+          ? `${result.battle.pending.actor}:${result.battle.pending.move}`
+          : null,
       });
       return { content: [{ type: 'text' as const, text: result.text }] };
     } catch (error) {

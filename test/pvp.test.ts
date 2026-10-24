@@ -53,6 +53,8 @@ describe('双人联机', () => {
     assert.equal(result.battle?.mode, 'pvp');
     assert.match(result.text, /房间\d{4}/);
     assert.match(result.text, /加入房间\d{4}/);
+    // 对手还没加入，不能提前播「对决开始」
+    assert.doesNotMatch(result.text, /对决开始/);
     assert.equal(rooms.size, 1);
     assert.ok(rooms.byPlayer(HOST));
   });
@@ -64,6 +66,7 @@ describe('双人联机', () => {
 
     const joined = service.start(GUEST, { room: code });
     assert.match(joined.text, /进了房间/);
+    assert.match(joined.text, /对决开始/);
     assert.equal(joined.battle?.player.name, '你');
     assert.equal(joined.battle?.enemy.name, '对手');
     assert.equal(joined.battle?.history.length, 0);
