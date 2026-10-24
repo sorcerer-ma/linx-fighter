@@ -371,7 +371,12 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | 文档 | 内容 |
 | --- | --- |
 | [README.md](README.md) | 现状、命令、接口、部署 |
-| [docs/product/product-design.md](docs/product/product-design.md) | 产品定位、玩家旅程、语音交互、范围与验收；区分现有能力和建议设计 |
+| [docs/product/product-design.md](docs/product/product-design.md) | 产品设计总览、专题导航与跨专题待决策项 |
+| [docs/product/positioning-and-scope.md](docs/product/positioning-and-scope.md) | 定位与范围：讨论为谁做、主要场景、体验目标，以及本轮做什么。 |
+| [docs/product/player-journey.md](docs/product/player-journey.md) | 玩家旅程：讨论从进入、配对、战斗到结束与再战的完整流程。 |
+| [docs/product/voice-and-feedback.md](docs/product/voice-and-feedback.md) | 语音与信息反馈：讨论玩家怎么说、伙伴怎么回应，以及有屏和无屏如何获知战况。 |
+| [docs/product/exceptions-and-exit.md](docs/product/exceptions-and-exit.md) | 异常与退出：讨论换房、掉线、等待、认输和退出的处理边界。 |
+| [docs/product/acceptance-and-playtest.md](docs/product/acceptance-and-playtest.md) | 验收与试玩：讨论怎样验证体验，以及试玩需要记录哪些证据。 |
 | [docs/engineering/architecture.md](docs/engineering/architecture.md) | 逐条设计决策的来龙去脉、替代方案与扩展指引（总览见上文「架构设计」） |
 | [docs/game/game-design.md](docs/game/game-design.md) | v0.2 规则、数值、AI、双人联机与验证 |
 | [docs/archive/v0.2/mechanics-and-balance.md](docs/archive/v0.2/mechanics-and-balance.md) | 早期候选机制设计与数值依据，仅作设计参考 |
@@ -438,7 +443,13 @@ test/
   fixtures/           v02-validation.json
   *.test.ts           单元测试 + MCP 端到端
 docs/
-  product/            产品定位、玩家旅程与验收
+  product/            产品设计总览与五个专题
+    product-design.md         总览、导航与待决策项
+    positioning-and-scope.md  定位、场景、目标与范围
+    player-journey.md         进入、配对、战斗与再战
+    voice-and-feedback.md     语音交互、播报与载体差异
+    exceptions-and-exit.md    异常、换房与退出
+    acceptance-and-playtest.md 验收清单与试玩记录
   game/               现行玩法与 AI 决策
   engineering/        架构决策与平台接入
   testing/            沙箱使用说明与对局验证案例

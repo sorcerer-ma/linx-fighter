@@ -61,6 +61,8 @@ CI 门禁以 `.github/workflows/ci.yml` 与 `package.json` 为准，包含类型
 
 ## 文档维护约定
 
+产品设计按专题独立讨论与维护：具体设计更新 `docs/product/` 对应专题，跨专题待决策项同步 `product-design.md` 总览，不再把详细设计堆回总览。
+
 根目录 `README.md` 是项目和文档统一入口；`AGENTS.md` 只维护协作约束。所有专题文档集中在 `docs/`，临时草稿、日志和备份保存在仓库外。`archive/` 是历史依据，不覆盖现行规则。
 
 | 发生变化 | 同步文档 |
