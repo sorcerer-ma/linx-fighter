@@ -131,6 +131,27 @@ describe('不该出手的表达', () => {
     }
   });
 
+  it('点名的对手是打击目标，不是叙述对手的那半句', () => {
+    // 目标介词后面的「对手」不是这句话的主语，剥掉就成了没人称的「我要对」
+    for (const [text, action] of [
+      ['我要对对手强攻。', 'heavy'],
+      ['我要对对手普攻', 'light'],
+      ['我要对对手格挡', 'guard'],
+    ] as const) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应照常出招`);
+      if (command.kind === 'turn') assert.equal(command.action, action, `「${text}」读成了 ${command.action}`);
+    }
+    // 两招并存仍旧拦下：剥掉目标只剩强攻，会让歧义句直接打出强攻
+    assert.deepEqual(readCommand('我要对对手普攻，还是强攻'), { kind: 'refused', why: 'ambiguous' });
+    // 以对手为主语的子句照旧剥掉，只看自己那半句
+    for (const text of ['对手放大招，我格挡', '格挡对手的强攻']) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应照常出招`);
+      if (command.kind === 'turn') assert.equal(command.action, 'guard', `「${text}」读成了 ${command.action}`);
+    }
+  });
+
   it('问号在去掉标点之前就要认出来', () => {
     for (const text of ['大招？', '大招?']) {
       const command = readCommand(text);

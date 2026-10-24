@@ -38,7 +38,10 @@ export interface EchoRule {
 
 export const ECHO_RULES: readonly EchoRule[] = [
   // —— 结算与数值：一次念出「掉多少、剩多少」，玩家指挥时不会这么报数 ——
-  { name: 'hp-result', pattern: new RegExp(`${NUM}点生命值`) },
+  { name: 'hp-result', pattern: new RegExp(`掉${NUM}点生命值`) },
+  // 只报当前数值的半句：「我9点生命值、3点能量」既可能是播报，也可能是我在自报家门，
+  // 后面还接着一句明确招式时按指令处理（见 FRAGMENT_RULES）
+  { name: 'hp-report', pattern: new RegExp(`${NUM}点生命值`) },
   { name: 'ap-charge', pattern: new RegExp(`能量涨到${NUM}`) },
   // 播报原句是「我只有3点能量，大招要4点。」：带上后面的消耗半句才认，玩家单独问「我只有3点能量」不算
   { name: 'ap-short', pattern: new RegExp(`只有${NUM}点能量.{0,4}要${NUM}点`) },
@@ -52,7 +55,8 @@ export const ECHO_RULES: readonly EchoRule[] = [
   { name: 'pending-choice', pattern: /还是承受/ },
   { name: 'await-opponent', pattern: /等对手应对|等对手出招/ },
   { name: 'already-acted', pattern: /已经出招|已经出手/ },
-  { name: 'turn-hint', pattern: /该我出招|轮到我|轮到你|轮到我们/ },
+  // 回合提示只认播报的完整说法：裸「轮到我」也是玩家常说的（「轮到我了，普攻」），不能算回灌
+  { name: 'turn-hint', pattern: /该我出招|轮到我出招|轮到你出招|轮到我们/ },
   // —— 不生效的说明：这些解释只有播报会说 ——
   { name: 'action-blocked', pattern: /没打出去|两种招式/ },
   { name: 'unheard', pattern: /没听清这一手/ },
@@ -108,6 +112,33 @@ const SELF_ACTION = /我.{0,6}(格挡|挡|闪避|躲|承受|硬扛|硬抗|扛)/;
 const SOFT_RULES = new Set(['opponent-narration', 'legacy-attack']);
 
 /**
+ * 数字与回合类的片段：玩家自己也这么报数，后面接着一句明确招式时那是在下指令。
+ * 真机踩过：「我还有14点生命值，普攻」被判成回灌，只回一声「嗯」，普攻没出去。
+ * 只放行这几条；结算结果、待应对、结局与说明这类播报独有的结构仍旧一律算回灌。
+ */
+const FRAGMENT_RULES = new Set(['hp-report', 'ap-charge', 'ap-short', 'ap-full', 'round-line']);
+
+/**
+ * 播报念的招式名：单个子句里只剩这一手时，只可能是玩家在下指令。
+ * 只收七个标准招式名，「出招」「攻击」这类泛称会撞上播报的「直接出招」，不能进表。
+ */
+const ACTION_WORDS = ['普攻', '强攻', '大招', '蓄力', '格挡', '闪避', '承受'];
+
+/** 招式前面常带的语气、主语与时间词：「那就普攻吧」剥掉后仍是普攻 */
+const ACTION_PREFIX = /^(?:我|你|咱|那|就|先|再|直接|马上|赶紧|立刻|用|出|放|来|使|给我|帮我|咱们)+/;
+
+/** 招式后面常带的语气词 */
+const ACTION_SUFFIX = /(?:吧|了|啊|呀|哦|呗|嘛|哈|呢)+$/;
+
+/** 这句话里有没有一句独立的招式指令（「我还有14点生命值，普攻」里的「普攻」） */
+function hasStandaloneAction(raw: string): boolean {
+  return raw.split(/[，,。．.!！?？、；;：:\s]+/).some((clause) => {
+    const word = clause.trim().replace(ACTION_SUFFIX, '').replace(ACTION_PREFIX, '');
+    return ACTION_WORDS.includes(word);
+  });
+}
+
+/**
  * 玩家在提问：播报极少提问，句子里有疑问就一律不算回灌。
  * 真机踩过的坑：「轮到你了吗」被当成回合提示、「我只有3点能量」被当成能量播报，两声都不回。
  *
@@ -147,7 +178,11 @@ export function matchEchoRule(text: string): string | null {
   const normalized = squash(text);
   if (!normalized) return null;
   if (SELF_INTENT.test(normalized)) return null;
-  const rule = ECHO_RULES.find((item) => item.pattern.test(normalized));
+  // 玩家在句子里明确补了一句招式：数值类的片段给指令让路，别只回一声「嗯」
+  const directed = hasStandaloneAction(text);
+  const rule = ECHO_RULES.find(
+    (item) => !(directed && FRAGMENT_RULES.has(item.name)) && item.pattern.test(normalized),
+  );
   // 整段播报可能把「…还是承受？」接在别的句子后面，所以按「整段里有没有播报问句」判
   const broadcastQuestion = ECHO_RULES.some(
     (item) => BROADCAST_QUESTIONS.has(item.name) && item.pattern.test(normalized),

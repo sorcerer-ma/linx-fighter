@@ -178,6 +178,11 @@ const playerPhrases = [
   '能不能放大招',
   '格挡对手的强攻',
   '如果对手强攻，我就格挡',
+  '我要对对手强攻',
+  '轮到我了，普攻',
+  '我还有14点生命值，普攻',
+  '第3轮了，普攻',
+  '我能量已经满了，普攻',
   '战况如何',
   '怎么玩',
   '双人怎么玩',
@@ -295,6 +300,19 @@ describe('回灌识别', () => {
     assert.equal(readCommand('对手强攻还没结算，我该格挡、闪避，还是承受？').kind, 'echo');
   });
 
+  it('报了数值再补一句招式，这一声是在下指令', () => {
+    // 真机踩过：这两句被判成回灌，刚开局轮到玩家时只回「嗯。」，普攻根本没出去
+    for (const text of ['轮到我了，普攻', '我还有14点生命值，普攻']) {
+      assert.equal(looksLikeAssistantEcho(text), false, `真指令被误判成回灌：${text}`);
+      expectTurn(text, 'light');
+    }
+    // 只报数值的播报照旧算回灌：没有第二句招式，就不是在指挥
+    assert.equal(readCommand('第1轮，我14点生命值、3点能量，对手18点生命值、3点能量').kind, 'echo');
+    // 回合提示里的招式词是播报的一部分，不能被当成独立指令
+    assert.equal(readCommand('轮到我们了，大招').kind, 'echo');
+    assert.equal(matchEchoRule('轮到你出招'), 'turn-hint');
+  });
+
   it('真人把对手当主语叙述时判回灌：那不是替我出招', () => {
     assert.equal(matchEchoRule('对手普攻'), 'opponent-narration');
     assert.equal(matchEchoRule('对手一记普攻'), 'legacy-attack');
@@ -344,6 +362,21 @@ describe('读命令时的归属判定', () => {
     assert.equal(readCommand('开始游戏').kind, 'start');
     // 闲聊问句：规则不接，交给模型路由去答
     assert.equal(readCommand('你是谁').kind, 'route');
+  });
+
+  it('目标介词后面的对手是打击对象，不是这句话的主语', () => {
+    // 「我要对对手普攻，还是强攻」原先整段剥到只剩「我要对」，两种招式被漏成强攻
+    const both = readCommand('我要对对手普攻，还是强攻');
+    assert.equal(both.kind, 'refused');
+    if (both.kind === 'refused') assert.equal(both.why, 'ambiguous');
+    // 点名打谁的那一手照旧解析出来，不能因为提到对手就变成没听清
+    expectTurn('我要对对手强攻。', 'heavy');
+    expectTurn('我要对对手普攻', 'light');
+    expectTurn('我要对对手格挡', 'guard');
+    expectTurn('我要强攻对手', 'heavy');
+    // 「对手的大招」这类名词短语仍是叙述，剥掉后只看自己那半句
+    expectTurn('格挡对手的强攻', 'guard');
+    expectTurn('我要对对手放大招', 'ult');
   });
 });
 
@@ -476,6 +509,41 @@ describe('串音落地到对局', () => {
     const guestTried = await service.say(GUEST, '普攻');
     assert.equal(guestTried.text, '还没轮到我出招。');
     assert.equal(guestTried.battle?.history.length, 0);
+  });
+
+  it('轮到我了、报完生命值再补的招式，在刚开局的单人局里真的出得去', async () => {
+    // 评论复现：这两句被判成回灌，刚开局轮到玩家时只回「嗯。」或空串，能量和回合都不动
+    for (const text of ['轮到我了，普攻', '我还有14点生命值，普攻']) {
+      const { service } = setup();
+      const started = await service.start(SOLO);
+      const before = started.battle;
+      assert.ok(before);
+
+      const said = await service.say(SOLO, text);
+      assert.match(said.text, /^我普攻/, text);
+      assert.equal(said.battle?.history.length, 1, text);
+      assert.equal(said.battle?.player.ap, before.player.ap - 1, text);
+    }
+  });
+
+  it('点名对手的明确招式照旧执行，一句话里两种招式仍然拦下', async () => {
+    // 评论复现：这两句原先都读不对——明确的一手被剥掉，两招并存时又漏判成强攻
+    const first = setup();
+    const started = await first.service.start(SOLO);
+    const before = started.battle;
+    assert.ok(before);
+    const heavyHit = await first.service.say(SOLO, '我要对对手强攻。');
+    assert.match(heavyHit.text, /^我强攻/);
+    assert.equal(heavyHit.battle?.history.length, 1);
+    assert.equal(heavyHit.battle?.player.ap, before.player.ap - 2);
+
+    const second = setup();
+    const fresh = await second.service.start(SOLO);
+    assert.ok(fresh.battle);
+    const blocked = await second.service.say(SOLO, '我要对对手普攻，还是强攻');
+    assert.match(blocked.text, /两种招式/);
+    // 歧义句既不耗资源也不推进对局，只让玩家重说
+    assert.deepEqual(blocked.battle, fresh.battle);
   });
 });
 
