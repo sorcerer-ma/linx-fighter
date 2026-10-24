@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#080b12" />
+    <title>共鸣 · 闻声对决</title>
+    <!-- 内联 SVG 图标，页面完全离线可用 -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23080b12'/%3E%3Cg stroke='%235aa9ff' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M9 13v6'/%3E%3Cpath d='M13 9v14'/%3E%3Cpath d='M17 11v10'/%3E%3Cpath d='M21 14v4'/%3E%3C/g%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- 顶栏：轮次 + 连接状态点（点不带文字，含义放在 title/aria-label） -->
+      <header class="top">
+        <span class="round" id="round" hidden>第 1 轮</span>
+        <span
+          class="dot"
+          id="dot"
+          data-state="connecting"
+          role="status"
+          aria-label="连接中"
+          title="连接中"
+        ></span>
+      </header>
+
+      <main class="main">
+        <!-- 局面整体（双方 + 状态）作为一块垂直居中，播报贴在底部控制栏上方 -->
+        <div class="board">
+          <!-- 双方局面：名字 / 气血条 / 真气点 / 大招状态 -->
+          <div class="players" id="players" hidden>
+            <section class="player" data-side="you" aria-label="你的局面">
+              <div class="prow">
+                <span class="pname" id="you-name">你</span>
+                <span class="hp-num" id="you-hp-num">0/0</span>
+              </div>
+              <div
+                class="hp-bar"
+                id="you-hp-bar"
+                role="progressbar"
+                aria-label="你的气血"
+                aria-valuemin="0"
+                aria-valuemax="0"
+                aria-valuenow="0"
+              >
+                <i class="hp-fill" id="you-hp-fill"></i>
+              </div>
+              <div class="pmeta">
+                <span class="dots" id="you-dots" role="img" aria-label="真气 0/5"></span>
+                <span class="ult" id="you-ult">大招可用</span>
+              </div>
+            </section>
+
+            <section class="player" data-side="foe" aria-label="对手的局面">
+              <div class="prow">
+                <span class="pname" id="foe-name">对手</span>
+                <span class="hp-num" id="foe-hp-num">0/0</span>
+              </div>
+              <div
+                class="hp-bar"
+                id="foe-hp-bar"
+                role="progressbar"
+                aria-label="对手的气血"
+                aria-valuemin="0"
+                aria-valuemax="0"
+                aria-valuenow="0"
+              >
+                <i class="hp-fill" id="foe-hp-fill"></i>
+              </div>
+              <div class="pmeta">
+                <span class="dots" id="foe-dots" role="img" aria-label="真气 0/5"></span>
+                <span class="ult" id="foe-ult">大招可用</span>
+              </div>
+            </section>
+          </div>
+
+          <!-- 中间状态区：该谁动 / 胜负 / 等待，外加对手已锁定的招式 -->
+          <div class="status-wrap">
+            <p class="status" id="status">还没有对局，说「开始」或「开房间」</p>
+            <p class="alert" id="alert" hidden></p>
+          </div>
+        </div>
+
+        <!-- 最近播报：最多两条小字，不做聊天记录 -->
+        <ul class="replies" id="replies" aria-live="polite" aria-label="最近播报"></ul>
+      </main>
+
+      <!-- 文字输入：默认收起，点键盘键展开一行 -->
+      <form class="composer" id="composer" hidden>
+        <input
+          class="text"
+          id="text"
+          type="text"
+          maxlength="200"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          enterkeyhint="send"
+          placeholder="说句话，比如「强攻」"
+          aria-label="输入一句话"
+        />
+        <button class="send" id="send" type="submit">发送</button>
+      </form>
+
+      <!-- 底部控制：麦克风居中，右侧键盘与播报开关 -->
+      <div class="bar">
+        <button class="mic" id="mic" type="button" aria-label="按住或点击说话" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4Z" />
+            <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
+            <path d="M12 17v3" />
+          </svg>
+        </button>
+        <div class="bar-tools">
+          <button class="tool" id="kb" type="button" aria-label="文字输入" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
+              <path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M8 14h8" />
+            </svg>
+          </button>
+          <button
+            class="tool"
+            id="sound"
+            type="button"
+            data-on="true"
+            aria-label="语音播报开"
+            aria-pressed="true"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M4 9.5h3L12 5v14L7 14.5H4Z" />
+              <g class="wave">
+                <path d="M15.5 9a4.2 4.2 0 0 1 0 6" />
+                <path d="M18 6.8a7.5 7.5 0 0 1 0 10.4" />
+              </g>
+              <g class="cross">
+                <path d="M16 9.5 21 14.5" />
+                <path d="M21 9.5 16 14.5" />
+              </g>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

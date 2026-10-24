@@ -1,0 +1,554 @@
+/*
+ * 共鸣 · 闻声对决 —— 沙箱页面样式（极简游戏画面版）
+ *
+ * 只画游戏本身：双方气血/真气/大招、轮次与状态、最近播报、底部麦克风。
+ * 暗色克制，双方用蓝/红区分；桌面最大 720px 居中，≤560px 单列。
+ * 不引外部字体、图片或 CDN，图标全部内联 SVG。
+ */
+
+:root {
+  --bg: #080b12;
+  --panel: #0c121b;
+  --line: #1b2430;
+  --text: #e7eef7;
+  --dim: #808fA3;
+  --you: #5aa9ff;
+  --foe: #ff6b6b;
+  --ok: #34d399;
+  --warn: #ffb020;
+  --bad: #f87171;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: radial-gradient(120% 70% at 50% -20%, #101a26 0%, #080b12 58%) no-repeat, var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 720px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px))
+    calc(10px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+}
+
+/* ---------------- 顶栏：轮次 + 连接点 ---------------- */
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 20px;
+}
+
+.round {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 连接状态点：灰=连接中、绿=已连接、红=断开，不写文字 */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7a8f;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.dot[data-state="connected"] {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.14);
+}
+
+.dot[data-state="offline"] {
+  background: var(--bad);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.14);
+}
+
+/* ---------------- 主区 ---------------- */
+
+/* 两段式：局面整体（双方 + 状态）垂直居中，播报贴在底部控制栏上方 */
+.main {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+  min-height: 0;
+}
+
+.board {
+  display: flex;
+  grid-row: 1;
+  flex-direction: column;
+  align-self: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* 双方局面：桌面左右并排，手机单列 */
+.players {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.player {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.player[data-side="you"] {
+  border-color: rgba(90, 169, 255, 0.32);
+}
+
+.player[data-side="foe"] {
+  border-color: rgba(255, 107, 107, 0.28);
+}
+
+.prow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pname {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player[data-side="you"] .pname {
+  color: var(--you);
+}
+
+.player[data-side="foe"] .pname {
+  color: var(--foe);
+}
+
+.hp-num {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 气血：细长条 + 过渡，低血变色 */
+.hp-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: #16202c;
+  overflow: hidden;
+}
+
+.hp-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #2f7ddb, var(--you));
+  transition: width 280ms ease, background-color 200ms ease;
+}
+
+.player[data-side="foe"] .hp-fill {
+  background: linear-gradient(90deg, #c94b4b, var(--foe));
+}
+
+.hp-fill[data-low="true"] {
+  background: linear-gradient(90deg, #d97706, var(--warn));
+}
+
+.pmeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 14px;
+}
+
+/* 真气：5 个小圆点 */
+.dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #223040;
+  transition: background-color 160ms ease;
+}
+
+.player[data-side="you"] .dots i[data-on="true"] {
+  background: var(--you);
+}
+
+.player[data-side="foe"] .dots i[data-on="true"] {
+  background: var(--foe);
+}
+
+.ult {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.player[data-side="you"] .ult[data-used="false"] {
+  color: rgba(90, 169, 255, 0.9);
+}
+
+.player[data-side="foe"] .ult[data-used="false"] {
+  color: rgba(255, 107, 107, 0.9);
+}
+
+.ult[data-used="true"] {
+  color: #56657a;
+}
+
+/* 状态区 */
+.status-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  text-align: center;
+  max-width: 100%;
+}
+
+.status {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.status[data-tone="idle"] {
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.status[data-tone="you"] {
+  color: var(--you);
+}
+
+.status[data-tone="alert"] {
+  color: var(--warn);
+}
+
+.status[data-tone="wait"] {
+  color: #a9b8ca;
+}
+
+.status[data-tone="win"] {
+  color: var(--ok);
+}
+
+.status[data-tone="lose"] {
+  color: var(--bad);
+}
+
+/* 对手已锁定的招式 */
+.alert {
+  margin: 0;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  color: #ffd08a;
+  background: rgba(255, 176, 32, 0.08);
+  border: 1px solid rgba(255, 176, 32, 0.3);
+  border-radius: 999px;
+}
+
+/* 最近播报：一两行小字 */
+.replies {
+  display: flex;
+  grid-row: 2;
+  align-self: end;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #6f7e92;
+  text-align: center;
+}
+
+.replies li {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.replies li[data-fresh="true"] {
+  color: #a8b7c9;
+}
+
+.replies li[data-tone="warn"] {
+  color: #ffb4b4;
+}
+
+/* ---------------- 文字输入 ---------------- */
+
+.composer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: auto;
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  /* 16px：iOS 聚焦时不会自动放大页面 */
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.text::placeholder {
+  color: #5d6b7d;
+}
+
+.text:focus {
+  border-color: rgba(90, 169, 255, 0.55);
+  outline: none;
+}
+
+.send {
+  flex: none;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(90, 169, 255, 0.42);
+  border-radius: 12px;
+  background: rgba(90, 169, 255, 0.14);
+  color: #cfe6ff;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.send:active {
+  background: rgba(90, 169, 255, 0.24);
+}
+
+/* ---------------- 底部控制 ---------------- */
+
+.bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.mic {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid rgba(90, 169, 255, 0.45);
+  border-radius: 50%;
+  background: radial-gradient(80% 80% at 50% 30%, #1b2b3d, #0d1520);
+  color: #9dcbff;
+  cursor: pointer;
+  transition: transform 120ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mic svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mic:active,
+.mic[data-listening="true"] {
+  transform: scale(0.96);
+  background: linear-gradient(180deg, #5aa9ff, #3d84d6);
+  color: #071019;
+  box-shadow: 0 0 0 6px rgba(90, 169, 255, 0.12);
+}
+
+/* 录音时唯一保留的动画：向外扩散的脉动 */
+.mic[data-listening="true"] {
+  animation: mic-pulse 1.6s ease-out infinite;
+}
+
+.mic:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(90, 169, 255, 0.42);
+  }
+  70% {
+    box-shadow: 0 0 0 18px rgba(90, 169, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(90, 169, 255, 0);
+  }
+}
+
+/* 右侧两个小按钮：键盘、播报开关 */
+.bar-tools {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  transform: translateY(-50%);
+}
+
+.tool {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #7d8b9e;
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tool svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tool:hover {
+  color: #c3d2e4;
+}
+
+.tool:active {
+  background: rgba(90, 169, 255, 0.1);
+}
+
+#kb[aria-expanded="true"] {
+  color: var(--you);
+  background: rgba(90, 169, 255, 0.1);
+}
+
+/* 播报开关：开=有声波，关=打叉 */
+#sound[data-on="true"] {
+  color: #9dcbff;
+}
+
+#sound[data-on="true"] .cross,
+#sound[data-on="false"] .wave {
+  display: none;
+}
+
+/* ---------------- 焦点与可达性 ---------------- */
+
+.mic:focus-visible,
+.tool:focus-visible,
+.send:focus-visible,
+.text:focus-visible {
+  outline: 2px solid var(--you);
+  outline-offset: 2px;
+}
+
+/* ---------------- 手机 ---------------- */
+
+@media (max-width: 560px) {
+  .app {
+    gap: 14px;
+    padding-left: calc(14px + env(safe-area-inset-left, 0px));
+    padding-right: calc(14px + env(safe-area-inset-right, 0px));
+  }
+
+  .players {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .player {
+    padding: 11px 13px 12px;
+  }
+
+  .status {
+    font-size: 14px;
+  }
+}
+
+/* 减少动效：关掉脉动与过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .mic[data-listening="true"] {
+    animation: none;
+  }
+
+  .hp-fill,
+  .mic,
+  .tool,
+  .dot,
+  .dots i {
+    transition: none;
+  }
+}

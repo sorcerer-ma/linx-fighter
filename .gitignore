@@ -1,2 +1,9 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+coverage/
 work/
 __pycache__/
+docs/xrobot-dev-spec/
