@@ -269,6 +269,8 @@ async function main(): Promise<number> {
     timeoutMs: config.timeoutMs,
     // CLI 只要结果，不要每请求日志
     logger: createLogger('error'),
+    // 默认模拟无屏终端（硬件那条链路，播报里会补上错过的结算）；要看网页那种不补账的加 --screen
+    display: argv.includes('--screen') ? 'screen' : 'voice',
   });
 
   const summaries: DuelResult[] = [];

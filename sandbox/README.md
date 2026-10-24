@@ -82,6 +82,9 @@ pnpm sandbox:selfplay --rounds 3
 
 # 每一步都记下原话、播报与双方状态，--json 导出后可以写复盘
 pnpm sandbox:selfplay --rounds 6 --json
+
+# 自对弈默认按无屏终端跑（播报里会出现「刚才那一手。」补账）；加 --screen 走网页那条不补账的路径
+pnpm sandbox:selfplay --rounds 1 --screen
 ```
 
 跑出来的对局样例见 [`test-cases.md`](./test-cases.md)：3 局真实对局，逐轮记录双方原话、听到的播报与局面变化。
