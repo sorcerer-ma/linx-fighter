@@ -11,6 +11,7 @@ import {
   narrateHelp,
   narrateNoBattle,
   narrateOpening,
+  narrateOutsideUnavailable,
   narrateRejection,
   narrateRoomCreated,
   narrateRoomFull,
@@ -427,6 +428,16 @@ describe('补账播报', () => {
   it('攒多了只补最近两段，不把播报拖长', () => {
     const text = narrateCatchUp(['第一手。', '第二手。', '第三手。']);
     assert.equal(text, '刚才那一手。第二手。第三手。');
+  });
+});
+
+describe('规则外问答的兜底', () => {
+  it('答不上来时给一句台阶，不打断对局', () => {
+    const text = narrateOutsideUnavailable();
+    assert.match(text, /暂时答不上来/);
+    assert.match(text, /游戏里的事/);
+    assert.doesNotMatch(text, /生命值|能量|大招/);
+    assertSpeakable(text);
   });
 });
 

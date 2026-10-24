@@ -5,7 +5,7 @@ import { GameService } from '../src/game/service.js';
 import { mirrorEvents, normalizeRoomCode, pvpBattleKey } from '../src/game/pvp.js';
 import { battleKey, type DeviceContext } from '../src/mcp/context.js';
 import { registerGameTools } from '../src/mcp/tools.js';
-import type { IntentResolver } from '../src/game/intent.js';
+import type { CommandRouter } from '../src/game/router.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
 import { EchoStore } from '../src/store/echoes.js';
@@ -364,29 +364,32 @@ describe('载体形态下的补账播报', () => {
   });
 });
 
-describe('双人联机的意图模型兜底', () => {
-  it('轮到自己时用模型补应对；等对手时完全不调用模型', async () => {
-    const calls: string[] = [];
-    const intent: IntentResolver = {
-      async resolve(text) {
-        calls.push(text);
-        return 'guard';
+describe('双人联机的模型路由兜底', () => {
+  it('轮到自己时用模型补应对；等对手时模型只给查询类选项', async () => {
+    const calls: { text: string; stage: string }[] = [];
+    const router: CommandRouter = {
+      async resolve(text, stage) {
+        calls.push({ text, stage });
+        return stage === 'response' ? { kind: 'turn', action: 'guard' } : null;
       },
     };
-    const { service } = setup({ intent });
+    const { service } = setup({ router });
     await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
     await service.start(GUEST, { room: code });
 
-    // 房主先出招，随后轮到对手应对；房主此时再说话不该惊动模型
+    // 房主先出招，随后轮到对手应对；房主此时再说话只会拿到查询类选项
     await service.say(HOST, '普攻');
     const hostAgain = await service.say(HOST, '我稳如泰山');
     assert.match(hostAgain.text, /已经出招了/);
-    assert.deepEqual(calls, []);
+    assert.deepEqual(calls, [{ text: '我稳如泰山', stage: 'waiting' }]);
 
     const guestBlock = await service.say(GUEST, '我稳如泰山');
     assert.match(guestBlock.text, /格挡/);
-    assert.deepEqual(calls, ['我稳如泰山']);
+    assert.deepEqual(calls, [
+      { text: '我稳如泰山', stage: 'waiting' },
+      { text: '我稳如泰山', stage: 'response' },
+    ]);
   });
 });
 

@@ -328,6 +328,11 @@ export function narrateEnded(battle: Battle): string {
   return joinLines([result, '说「开始游戏」可以再来一局']);
 }
 
+/** 规则外的问题暂时答不上来：没配语言模型或调用失败，给一句台阶，不打断对局 */
+export function narrateOutsideUnavailable(): string {
+  return '这个我暂时答不上来。游戏里的事，随时问我。';
+}
+
 /** 还没有对局 */
 export function narrateNoBattle(): string {
   return '现在没有进行中的对局。说「开始游戏」，我陪你练一局。';

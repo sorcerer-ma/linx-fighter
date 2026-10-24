@@ -224,7 +224,7 @@ describe('JEV 对手 AI：调用与回退', () => {
     const view = actionViewFixture({ ap: 1 });
     assert.equal(await ai.chooseAction(view), 'light');
     const seen = captured as unknown as { url: string; init: RequestInit };
-    assert.equal(seen.url, 'https://openrouter.ai/api/alpha/decisions');
+    assert.equal(seen.url, 'https://api.commandcode.ai/provider/v1/systemone');
     const headers = seen.init.headers as Record<string, string>;
     assert.equal(headers.Authorization, 'Bearer sk-test');
     const body = JSON.parse(String(seen.init.body));

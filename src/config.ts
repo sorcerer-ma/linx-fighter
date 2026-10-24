@@ -15,12 +15,18 @@ export interface AppConfig {
   battleTtlMs: number;
   /** 是否暴露 /debug/* 调试端点，生产环境建议关闭 */
   enableDebugEndpoints: boolean;
-  /** OpenRouter API Key；为空时不启用意图模型，只用规则匹配 */
-  openrouterApiKey?: string;
-  /** 意图模型名，默认 typesafe/jev-1.13（JEV 决策接口） */
-  openrouterModel: string;
-  /** 意图模型超时（毫秒），超时按没认出来处理 */
-  intentTimeoutMs: number;
+  /** Command Code API Key；为空时不启用命令路由与规则外问答，只用规则匹配 */
+  commandCodeApiKey?: string;
+  /** Command Code Provider 根地址；换代理或自建网关时覆盖 */
+  commandCodeBaseUrl?: string;
+  /** 决策模型名，默认 typesafe/jev（System One 接口） */
+  commandCodeDecisionModel: string;
+  /** 规则外问答模型名，默认 deepseek/deepseek-v4.1-flash */
+  commandCodeChatModel: string;
+  /** 命令路由模型超时（毫秒），超时按没认出来处理 */
+  routerTimeoutMs: number;
+  /** 问答超时（毫秒），超时回固定话术 */
+  chatTimeoutMs: number;
   /** 对手 AI：jev 走 JEV 决策接口，local 用内置决策模型；未配 Key 时自动回落 local */
   enemyAi: 'jev' | 'local';
   /** 对手单次决策超时（毫秒），超时回退本地 */
@@ -50,9 +56,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel,
     battleTtlMs: Math.max(60, parseInteger(env.BATTLE_TTL_SECONDS, 1800)) * 1000,
     enableDebugEndpoints: parseBoolean(env.ENABLE_DEBUG_ENDPOINTS, env.NODE_ENV !== 'production'),
-    openrouterApiKey: env.OPENROUTER_API_KEY?.trim() || undefined,
-    openrouterModel: env.OPENROUTER_MODEL?.trim() || 'typesafe/jev-1.13',
-    intentTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.INTENT_TIMEOUT_MS, 1500))),
+    commandCodeApiKey: env.COMMAND_CODE_API_KEY?.trim() || undefined,
+    commandCodeBaseUrl: env.COMMAND_CODE_BASE_URL?.trim() || undefined,
+    commandCodeDecisionModel: env.COMMAND_CODE_DECISION_MODEL?.trim() || 'typesafe/jev',
+    commandCodeChatModel: env.COMMAND_CODE_CHAT_MODEL?.trim() || 'deepseek/deepseek-v4.1-flash',
+    routerTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ROUTER_TIMEOUT_MS, 1500))),
+    chatTimeoutMs: Math.max(500, Math.min(8000, parseInteger(env.CHAT_TIMEOUT_MS, 3000))),
     enemyAi: (env.ENEMY_AI ?? '').trim().toLowerCase() === 'local' ? 'local' : 'jev',
     enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 1200))),
   };

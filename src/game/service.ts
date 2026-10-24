@@ -2,9 +2,9 @@ import type { Logger } from '../log.js';
 import type { BattleStore } from '../store/battles.js';
 import { EchoStore } from '../store/echoes.js';
 import type { Room, RoomStore } from '../store/rooms.js';
+import type { ChatAnswerer } from './chat.js';
 import { readCommand, type Command, type RefuseReason, type TurnIntent } from './command.js';
 import { advanceBattle, createBattle, resolveTurn } from './engine.js';
-import type { IntentResolver, IntentStage } from './intent.js';
 import {
   narrateActionBlocked,
   narrateAutoStart,
@@ -15,6 +15,7 @@ import {
   narrateHelp,
   narrateNoBattle,
   narrateOpening,
+  narrateOutsideUnavailable,
   narrateRejection,
   narrateRoomCreated,
   narrateRoomFull,
@@ -28,6 +29,7 @@ import {
   narrateWaitingRoom,
 } from './narrator.js';
 import { mirrorEvents, normalizeRoomCode, pvpBattleKey, viewAs } from './pvp.js';
+import type { CommandRouter, RouterStage } from './router.js';
 import { BattleTransactions, type BattleTx } from './serialize.js';
 import { battleState, type BattleState } from './state.js';
 import { dropRoom, tableFor, type Table, type TableDeps } from './table.js';
@@ -67,6 +69,20 @@ export interface SayOptions {
   catchUp?: boolean;
 }
 
+/**
+ * 模型异步返回的一手：它只能落回模型开始思考时的那一局。
+ *
+ * 等模型的这段时间里玩家可能重开、换房，或者对局过期；光在排队之前比一次
+ * 挡不住「重开排在中间」这种交错。所以把当时那一局一起带进事务，取到锁之后
+ * 再核对一次（见 playOnTable），对不上就作废让玩家重说。
+ */
+interface RoutedHand {
+  /** 模型开始思考时这句话落在哪张桌上，这一手仍按这张桌子取锁 */
+  table: Table;
+  /** 当时那一局的 id；当时还没有对局则为 null */
+  battleId: string | null;
+}
+
 export interface GameServiceDeps {
   store: BattleStore;
   rooms: RoomStore;
@@ -74,10 +90,12 @@ export interface GameServiceDeps {
   /** 便于单测注入固定时间与随机数，生产用默认值 */
   now?: () => number;
   random?: () => number;
-  /** JEV 意图模型；不传则只走规则匹配 */
-  intent?: IntentResolver;
+  /** 混合路由的模型侧；不传则规则认不出时报没听清 */
+  router?: CommandRouter;
   /** 对手 AI；不传则用内置的本地决策模型（JEV 决策模型从 index 注入） */
   ai?: BattleAI;
+  /** 规则外问答；不传则回固定话术（语言模型从 index 注入） */
+  chat?: ChatAnswerer;
   /** 双人联机的补账消息；不传则新建一个跟对局同样过期的 */
   echo?: EchoStore;
 }
@@ -98,8 +116,9 @@ export class GameService {
   private readonly logger: Logger;
   private readonly now: () => number;
   private readonly random: () => number;
-  private readonly intent?: IntentResolver;
+  private readonly router?: CommandRouter;
   private readonly ai?: BattleAI;
+  private readonly chat?: ChatAnswerer;
   private readonly echo: EchoStore;
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
@@ -112,8 +131,9 @@ export class GameService {
     this.logger = deps.logger;
     this.now = deps.now ?? Date.now;
     this.random = deps.random ?? Math.random;
-    this.intent = deps.intent;
+    this.router = deps.router;
     this.ai = deps.ai;
+    this.chat = deps.chat;
     this.echo = deps.echo ?? new EchoStore({ now: this.now });
     this.battles = new BattleTransactions(deps.store, deps.logger);
     this.tables = { store: deps.store, rooms: deps.rooms, echo: this.echo, logger: deps.logger };
@@ -178,30 +198,57 @@ export class GameService {
    *
    * 「在不在房间」只决定这一手记到哪张桌上，不再影响这句话怎么理解——
    * 所以已经在房间里的玩家说「加入房间1234」照样能换房。
+   *
+   * `routed` 只有模型路由回来的命令才带：开局、开房会改对局归属，执行前要
+   * 核对还是不是问模型时那一局（见 discardIfStale）。
    */
   private execute(
     sessionKey: string,
     command: Command,
     raw: string,
     options: SayOptions,
+    routed?: RoutedHand,
   ): ServiceResult | Promise<ServiceResult> {
     switch (command.kind) {
       case 'join-room':
         return this.joinRoom(sessionKey, command.code);
       case 'open-room':
-        return this.openRoom(sessionKey);
+        return this.openRoom(sessionKey, routed);
       case 'help':
         return this.help();
       case 'status':
         return this.status(sessionKey, options);
       case 'start':
-        return this.startSolo(sessionKey);
+        return this.startSolo(sessionKey, undefined, routed);
       case 'refused':
         return this.refuse(sessionKey, command.why, options);
+      case 'ask':
+        return this.askOutside(sessionKey, command.text);
       case 'turn':
         return this.play(sessionKey, command, raw, options);
-      case 'unknown':
-        return this.play(sessionKey, null, raw, options);
+      case 'route':
+        return this.routeCommand(sessionKey, command.question, raw, options);
+    }
+  }
+
+  /**
+   * 规则外的问题：交给语言模型答一句，不动对局。
+   *
+   * 这里刻意不取补账、不碰桌子：问答不消耗回合，也不该把错过的结算
+   * 混进一句闲聊里。模型没配或调用失败时回固定话术。
+   */
+  private async askOutside(sessionKey: string, question: string): Promise<ServiceResult> {
+    const view = this.viewFor(sessionKey);
+    if (!this.chat) return { text: narrateOutsideUnavailable(), battle: view };
+    try {
+      const answer = await this.chat.answer(question);
+      return { text: answer ?? narrateOutsideUnavailable(), battle: view };
+    } catch (error) {
+      this.logger.warn('规则外问答失败，回固定话术', {
+        sessionKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { text: narrateOutsideUnavailable(), battle: view };
     }
   }
 
@@ -211,11 +258,12 @@ export class GameService {
     direct: TurnIntent | null,
     raw: string,
     options: SayOptions,
+    routed?: RoutedHand,
   ): Promise<ServiceResult> {
     // 先按当前所在的桌子取锁；进门之后再确认一次桌子没换
-    const queued = tableFor(this.tables, sessionKey);
+    const queued = routed?.table ?? tableFor(this.tables, sessionKey);
     return this.battles.run(queued.key, (tx) =>
-      this.playOnTable(sessionKey, queued, tx, direct, raw, options),
+      this.playOnTable(sessionKey, queued, tx, direct, raw, options, routed),
     );
   }
 
@@ -232,21 +280,37 @@ export class GameService {
     direct: TurnIntent | null,
     raw: string,
     options: SayOptions,
+    routed?: RoutedHand,
   ): Promise<ServiceResult> {
     const table = tableFor(this.tables, sessionKey);
     if (table.key !== tx.key) {
       // 排队期间换桌或撤房：这一手不落到别的桌子上
       this.logger.debug('排到队时已经换桌', { sessionKey, from: queued.key, to: table.key });
-      return queued.room
-        ? { text: narrateRoomMissing(queued.room), battle: null }
-        : { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+      // 人还在别的房间：那句话说的是旧局面，让他重说；旧房彻底没了才报房间不在
+      if (queued.room && !this.rooms.byPlayer(sessionKey)) {
+        return { text: narrateRoomMissing(queued.room), battle: null };
+      }
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
     }
 
     const seat = table.seat(sessionKey);
     if (!seat) return { text: narrateRoomMissing(table.room ?? ''), battle: null };
 
-    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
     let canonical = tx.load();
+    // 排到队时已经是另一局（这中间重开、换房或过期）：这一手说的是旧局面，
+    // 落到新局上就是凭空出招。只能在这里核——进队后加载的是最新那一局，
+    // tx.alive() 保护的也只是这一份快照，排队前比一次挡不住重开抢在中间。
+    if (routed && routed.battleId !== (canonical?.id ?? null)) {
+      this.logger.info('排到队时已经是另一局，丢弃这一手', {
+        sessionKey,
+        room: table.room,
+        expected: routed.battleId,
+        current: canonical?.id ?? null,
+      });
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+    }
+
+    const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
     let prefix = '';
 
     if (!canonical) {
@@ -284,7 +348,7 @@ export class GameService {
       return { text: `${catchUp}${prefix}${narrateEnded(view)}`, battle: view };
     }
 
-    const match = direct ?? (await this.resolveWithIntent(raw, view, 'player'));
+    const match = direct;
     if (!match) {
       this.logger.debug('招式无法识别', { sessionKey, room: table.room, raw });
       return { text: `${catchUp}${prefix}${narrateUnknownAction(view)}`, battle: view };
@@ -381,11 +445,20 @@ export class GameService {
   }
 
   /** 单人开局：与出招共用同一把钥匙，对手先手时不会有人插进来读改写 */
-  private startSolo(sessionKey: string, opponent?: string): Promise<ServiceResult> {
-    return this.battles.runExclusive(sessionKey, () => this.startSoloLocked(sessionKey, opponent));
+  private startSolo(sessionKey: string, opponent?: string, routed?: RoutedHand): Promise<ServiceResult> {
+    return this.battles.runExclusive(sessionKey, () => this.startSoloLocked(sessionKey, opponent, routed));
   }
 
-  private async startSoloLocked(sessionKey: string, opponent?: string): Promise<ServiceResult> {
+  private async startSoloLocked(
+    sessionKey: string,
+    opponent?: string,
+    routed?: RoutedHand,
+  ): Promise<ServiceResult> {
+    // 模型回来时玩家可能自己重开过、进了别人的房间：这时再开局会把刚开的新局重置，
+    // 下面的 dropRoom 甚至会把别人房间里的那一局一起撤掉
+    const stale = this.discardIfStale(sessionKey, routed, '开局');
+    if (stale) return stale;
+
     // 单人重新开局：撤掉仍在的房间，避免对手对着已失效的局面出招
     const existing = this.rooms.byPlayer(sessionKey);
     if (existing) dropRoom(this.tables, existing, '重新开局');
@@ -412,7 +485,12 @@ export class GameService {
    * 已经在等人时又喊一次「开房」就复用原房间号，别让玩家每说一次就换一个码；
    * 已经开打则撤掉旧房重开——旧房里等着的对手不会对着作废的局面继续出招。
    */
-  private openRoom(sessionKey: string): ServiceResult {
+  private openRoom(sessionKey: string, routed?: RoutedHand): ServiceResult {
+    // 同开局：模型回来时已经不是当时那一局（多半是刚进了别人的房间），
+    // 这时再开房会把玩家从原来的房间里撤出来，连对手那一局一起清掉
+    const stale = this.discardIfStale(sessionKey, routed, '开房');
+    if (stale) return stale;
+
     const existing = this.rooms.byPlayer(sessionKey);
     if (existing && existing.hostKey === sessionKey && existing.guestKey === null) {
       return {
@@ -520,23 +598,69 @@ export class GameService {
     return { text: opening, battle: view };
   }
 
-  /** 规则没认出来时，交给 JEV 模型归一化；不在自己的回合就不打扰模型 */
-  private async resolveWithIntent(raw: string, battle: Battle, side: Side): Promise<TurnIntent | null> {
-    if (!this.intent) return null;
-    const stage = stageFor(battle, side);
-    if (!stage) return null;
-    let id: Awaited<ReturnType<IntentResolver['resolve']>>;
-    try {
-      id = await this.intent.resolve(raw, stage);
-    } catch (error) {
-      this.logger.warn('意图模型调用异常，按没认出来处理', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
+  /**
+   * 混合路由：本地规则没定下来的句子，按当前阶段交给模型挑一类命令。
+   *
+   * 阶段由对局状态决定：没有对局只允许开局、查询或闲聊；轮到自己才给招式；
+   * 待应对只给防守；上一局结束了只给查询、玩法、开局和闲聊；提问只给「问什么」
+   * ——问句和结束局都不会被判成出手。
+   * 模型没配、超时或认不出，一律按「没听清」处理，不消耗资源、不推进对局。
+   */
+  private async routeCommand(
+    sessionKey: string,
+    question: boolean,
+    raw: string,
+    options: SayOptions,
+  ): Promise<ServiceResult> {
+    // 先记住这句话落在哪张桌上、当时是哪一局：模型思考期间换房或重开，
+    // 这一手要按旧局丢弃，不能写进新局——出招在进事务之后核对（见 playOnTable），
+    // 开局、开房在真正动手之前核对（见 discardIfStale）
+    const table = tableFor(this.tables, sessionKey);
+    const routed: RoutedHand = { table, battleId: table.battle()?.id ?? null };
+    const stage = routeStage(table.view(sessionKey), question);
+    let command: Command | null = null;
+    if (this.router) {
+      try {
+        command = await this.router.resolve(raw, stage);
+      } catch (error) {
+        this.logger.warn('命令路由调用异常，按没认出来处理', {
+          stage,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
-    if (!id) return null;
-    this.logger.info('意图模型归一化', { text: raw, action: id, stage });
-    return { action: id };
+    if (!command) {
+      // 交给招式流水线收尾：带上补账，播「没听清」，对局原样不动
+      return this.play(sessionKey, null, raw, options);
+    }
+    if (command.kind === 'turn') return this.play(sessionKey, command, raw, options, routed);
+    // 开局、开房会改对局归属，也要带着当时那一局过去核对（见 discardIfStale）
+    return this.execute(sessionKey, command, raw, options, routed);
+  }
+
+  /**
+   * 模型回来时已经不是当时那一局，就作废这一手；返回 null 表示还能照做。
+   *
+   * 开局与开房都会改对局归属：等模型的这段时间里玩家可能已自己重开、换房，
+   * 或者进了别人的双人房，此时再执行会把刚开的新局重置，甚至把两个人的房间
+   * 一起撤掉。查询与闲聊只是回答当前局面，不走这一关。
+   */
+  private discardIfStale(
+    sessionKey: string,
+    routed: RoutedHand | undefined,
+    action: string,
+  ): ServiceResult | null {
+    if (!routed) return null;
+    const table = tableFor(this.tables, sessionKey);
+    const battleId = table.battle()?.id ?? null;
+    if ((table.room ?? null) === (routed.table.room ?? null) && battleId === routed.battleId) return null;
+    this.logger.info('排到队时已经不是当时那一局，丢弃这一手', {
+      sessionKey,
+      action,
+      expected: routed.battleId,
+      current: battleId,
+    });
+    return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
   }
 
   /**
@@ -584,9 +708,12 @@ export class GameService {
   }
 }
 
-/** 当前视角所处的阶段：等自己出招 → active，等自己应对 → response，其余 null */
-function stageFor(battle: Battle, side: Side): IntentStage | null {
-  if (battle.phase !== 'battle') return null;
-  if (battle.pending) return battle.pending.actor === side ? null : 'response';
-  return battle.active === side ? 'active' : null;
+/** 当前视角所处的路由阶段：提问优先，其次看有没有对局、打没打完、等谁动 */
+function routeStage(battle: Battle | null, question: boolean): RouterStage {
+  if (question) return 'question';
+  if (!battle) return 'none';
+  // 上一局已经结束：只允许重开、开房、查询、玩法与闲聊，菜单里没有任何招式
+  if (battle.phase !== 'battle') return 'ended';
+  if (battle.pending) return battle.pending.actor === 'player' ? 'waiting' : 'response';
+  return battle.active === 'player' ? 'active' : 'waiting';
 }
