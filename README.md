@@ -335,14 +335,16 @@ python3 tests/simulation/v02_validation.py
 
 ## 部署
 
-演示环境跑在七牛云内网机器 `100.100.61.41`（`linx-fighter.service`，用户 `linx`，代码在 `/opt/linx-fighter`）。内网地址 `http://100.100.61.41:8000/mcp` 平台访问不到，另用 `linx-tunnel.service`（bore 内网穿透）暴露到公网，控制台填 **`http://bore.pub:3216/mcp`**。
+演示服务跑在独立服务器上：SSH 别名 `linx-fighter-las`（公网 `111.62.156.213`，端口 `10653`），systemd 单元 `linx-fighter.service`，代码在 `/opt/linx-fighter`（用户 `linx`），配置读 `/etc/linx-fighter.env`。前置 nginx 把 80 端口反向代理到本机 `127.0.0.1:8000`（关了缓冲，SSE 与 Streamable HTTP 都能过），控制台填 **`http://111.62.156.213/mcp`**。
 
 ```bash
-scripts/deploy.sh                 # 编译 → 同步 → 装生产依赖 → 重启 → 自检
+scripts/deploy.sh                 # 编译 → 同步 → 装生产依赖 → 重启 → 自检（直连 + 反代）
 systemctl status linx-fighter     # 应用状态
 journalctl -u linx-fighter -f     # 实时日志
-systemctl status linx-tunnel      # 隧道状态（实际端口见 journalctl -u linx-tunnel）
+systemctl reload nginx            # 反代配置改动后
 ```
+
+systemd 单元、环境变量样例与 nginx 配置的副本放在 `deploy/`，机器上改过之后要同步回仓库。配置项（端口、TTL、模型密钥）走 `/etc/linx-fighter.env`，不进仓库。
 
 也可以用 Docker：
 
@@ -351,7 +353,7 @@ docker build -t linx-fighter .
 docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 ```
 
-> bore 公网地址随机分配、随隧道重建变化，仅适用于内部演示；正式上线需要自建反向代理与 TLS，并关闭对 SSE 的缓冲（配置见 [docs/engineering/linx-integration.md](docs/engineering/linx-integration.md)）。
+> 反向代理与排障细节见 [docs/engineering/linx-integration.md](docs/engineering/linx-integration.md)。
 
 ## 真机待验收
 
@@ -442,7 +444,11 @@ scripts/
   demo.ts             脱离 MCP 直接跑播报
   smoke.ts            真实调用链自检
   validate-v02.ts     256,000 局规则对拍
-  deploy.sh           内网部署脚本
+  deploy.sh           发布脚本：编译 → 同步 → 重启 → 自检
+deploy/
+  linx-fighter.service        systemd 单元
+  linx-fighter.env.example    运行配置样例（端口、TTL、模型密钥）
+  nginx-linx-fighter.conf     nginx 反代（80 → 8000，关缓冲）
 test/
   helpers/            MT19937、仿真策略与夹具
   fixtures/           v02-validation.json

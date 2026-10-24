@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 发布到内网服务器：本地编译 → 同步产物 → 安装生产依赖 → 重启 systemd 服务
-# 用法：scripts/deploy.sh [root@100.100.61.41] [/opt/linx-fighter]
+# 发布到部署服务器：本地编译 → 同步产物 → 安装生产依赖 → 重启 systemd 服务
+# 用法：scripts/deploy.sh [root@linx-fighter-las] [/opt/linx-fighter]
 set -euo pipefail
 
-HOST="${1:-root@100.100.61.41}"
+HOST="${1:-root@linx-fighter-las}"
 DIR="${2:-/opt/linx-fighter}"
 TARGET="${HOST#*@}"
 PORT=8000
@@ -26,7 +26,8 @@ su -s /bin/sh linx -c 'cd ${DIR} && HOME=/home/linx pnpm install --prod --frozen
 systemctl restart linx-fighter
 sleep 1
 systemctl is-active linx-fighter
-curl -s --max-time 3 http://127.0.0.1:${PORT}/health"
+echo -n '直连：'; curl -s --max-time 3 http://127.0.0.1:${PORT}/health
+echo -n '反代：'; curl -s --max-time 3 http://127.0.0.1/health"
 
 echo
-echo "完成：http://${TARGET}:${PORT}/health"
+echo "完成：${TARGET}（本机 ${PORT} 端口已自检，公网访问走 nginx 的 80 端口）"
