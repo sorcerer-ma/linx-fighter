@@ -94,13 +94,23 @@ body {
 
 /* ---------------- 主区 ---------------- */
 
-/* 三段式：双方局面在顶、状态垂直居中、播报贴在底部控制栏上方 */
+/* 两段式：局面整体（双方 + 状态）垂直居中，播报贴在底部控制栏上方 */
 .main {
   display: grid;
   flex: 1 1 auto;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 12px;
   min-height: 0;
+}
+
+.board {
+  display: flex;
+  grid-row: 1;
+  flex-direction: column;
+  align-self: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
 }
 
 /* 双方局面：桌面左右并排，手机单列 */
@@ -242,6 +252,7 @@ body {
   gap: 8px;
   padding: 2px 0;
   text-align: center;
+  max-width: 100%;
 }
 
 .status {
@@ -290,6 +301,8 @@ body {
 /* 最近播报：一两行小字 */
 .replies {
   display: flex;
+  grid-row: 2;
+  align-self: end;
   flex-direction: column;
   gap: 4px;
   margin: 0;

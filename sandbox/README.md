@@ -259,6 +259,6 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 | --- | --- |
 | 页面显示「连不上沙箱」 | 沙箱进程是否在跑，端口是否被占 |
 | 播报是「沙箱连不上游戏服务」 | `pnpm dev` 是否在跑，`SANDBOX_UPSTREAM` 是否指错 |
-| 局面一直「等待局面」 | 打开调试面板看 `eventsUrl` 与 SSE 连接状态；服务端是否开了 CORS（`/events` 自带） |
+| 局面一直「等待局面」 | 页面右上角的连接状态圆点是否绿色；`curl 'http://127.0.0.1:8100/api/config'` 看 `eventsUrl`；服务端是否开了 CORS（`/events` 自带） |
 | 两个窗口是同一个玩家 | 用了复制标签页；换 `?player=2` 或「＋ 新窗口」 |
 | 手机点麦克风没反应 | 页面不是 HTTPS；看页面上的降级提示 |
