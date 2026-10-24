@@ -1,3 +1,4 @@
+import type { SandboxAgent } from './agent.js';
 import { randomUUID } from 'node:crypto';
 import type { BattleState } from '../../src/game/state.js';
 import type { Logger } from '../../src/log.js';
@@ -13,6 +14,7 @@ import { LinxMcpClient, UpstreamError, type McpDisplay, type McpTrace, type Tool
  * 这样两次调用之间不会串身份，trace 也只属于这一轮。
  */
 export interface SandboxClientOptions {
+  agent?: SandboxAgent;
   upstream: string;
   agentId: string;
   timeoutMs: number;
@@ -45,7 +47,9 @@ export interface SayResult {
 export class SandboxClient {
   constructor(private readonly options: SandboxClientOptions) {}
 
-  /** 玩家说一句话：转给 game_say，回播报与最新局面 */
+  get agentMode(): 'agent' | 'compatibility' { return this.options.agent ? 'agent' : 'compatibility'; }
+
+  /** Agent selects a tool; legacy direct mode remains explicitly labelled. */
   async say(deviceId: string, text: string): Promise<SayResult> {
     const sessionId = `s-${randomUUID().slice(0, 8)}`;
     const mcp = new LinxMcpClient({
@@ -58,10 +62,13 @@ export class SandboxClient {
       display: this.options.display,
     });
 
-    const base = { tool: 'game_say', deviceId, agentId: this.options.agentId, sessionId };
+    const base = { tool: this.options.agent ? 'agent' : 'game_say', deviceId, agentId: this.options.agentId, sessionId };
     try {
       await mcp.initialize();
-      const { text: reply, isError } = await mcp.callTool('game_say', { text });
+      const outcome = this.options.agent
+        ? await this.options.agent.run(deviceId + '#' + this.options.agentId, text, mcp)
+        : {tool:'game_say',...await mcp.callTool('game_say', { text })};
+      const { text: reply, isError } = outcome;
       // 局面只是展示用：查不到不影响这一句播报
       const state = await this.state(deviceId).catch(() => null);
       const trace = mcp.takeTrace();
@@ -72,22 +79,22 @@ export class SandboxClient {
         isError,
         round: state?.battle?.round ?? 0,
         room: state?.room,
-        tool: 'game_say',
+        tool: outcome.tool,
         ms: trace.ms,
       });
-      return { ok: true, reply, isError, ...base, state, trace };
+      return { ok: true, reply, isError, ...base, tool:outcome.tool, state, trace };
     } catch (error) {
       const message = error instanceof UpstreamError ? error.message : error instanceof Error ? error.message : String(error);
       const trace = mcp.takeTrace();
-      this.options.logger.warn('沙箱调用游戏服务失败', { deviceId, error: message, ms: trace.ms });
+      this.options.logger.warn('沙箱Agent或工具调用失败', { deviceId, error: message, ms: trace.ms });
       return {
         ok: false,
-        reply: `沙箱连不上游戏服务（${this.options.upstream}），先确认那边在跑。`,
+        reply: this.options.agent ? 'Agent或工具调用失败，结果未确认，请先核实战况。' : `沙箱连不上游戏服务（${this.options.upstream}），先确认那边在跑。`,
         isError: true,
         ...base,
         state: null,
         trace,
-        error: 'upstream_unreachable',
+        error: this.options.agent ? 'agent_or_tool_failed' : 'upstream_unreachable',
       };
     }
   }

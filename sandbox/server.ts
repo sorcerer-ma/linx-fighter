@@ -1,3 +1,4 @@
+import { createSandboxAgent, type AgentModel } from './platform/agent.js';
 import { readFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
@@ -80,6 +81,7 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
     res.set('Cache-Control', 'no-store');
     res.json({
       ok: true,
+      agentMode: client.agentMode,
       sandbox: 'linx-sandbox',
       version: SANDBOX_VERSION,
       upstream: config.upstream,
@@ -193,8 +195,9 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
 }
 
 /** 起服务；返回 server 便于测试里关掉 */
-export function startSandbox(config: SandboxConfig, logger = createLogger(config.logLevel)): Server {
+export function startSandbox(config: SandboxConfig, logger = createLogger(config.logLevel), agentModel?: AgentModel): Server {
   const client = new SandboxClient({
+    agent: createSandboxAgent(config.agent, agentModel),
     upstream: config.upstream,
     agentId: config.agentId,
     timeoutMs: config.timeoutMs,

@@ -164,6 +164,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       })
       .then(function (data) {
         config = data;
+        $('agent-mode').textContent = data.agentMode === 'agent' ? '模拟平台Agent · 工具结果回复' : '兼容直连模式 · 非Agent模拟（尚未配置）';
         connectStream(data);
       })
       .catch(function () {
