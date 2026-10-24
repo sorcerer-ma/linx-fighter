@@ -185,8 +185,9 @@ export function narrateRejection(battle: Battle, rejection: TurnRejection): stri
     case 'ended':
       return narrateEnded(battle);
     case 'wrong-stage':
-      return battle.pending
-        ? '对手已经出招，现在只能应对。可以说格挡、闪避或硬抗。'
+      if (battle.pending) return '对手已经出招，现在只能应对。可以说格挡、闪避或硬抗。';
+      return battle.active === 'player'
+        ? '轮到你了，主动阶段可以说普攻、强攻、大招或蓄力。'
         : '现在还没轮到你出招，等对手先动。';
     case 'insufficient-ap':
       return '真气不够，这一招没有打出去。可以先蓄力，或者换一招。';

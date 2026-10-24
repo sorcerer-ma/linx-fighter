@@ -208,7 +208,13 @@ describe('提示与房间播报', () => {
 
   it('五种不合法原因都有玩家能听懂的解释', () => {
     const state = battle();
-    assert.match(narrateRejection(state, { reason: 'wrong-stage', action: 'light' }), /只能应对|还没轮到你/);
+    assert.match(narrateRejection(state, { reason: 'wrong-stage', action: 'light' }), /轮到你了/);
+    const enemyTurn = battle();
+    enemyTurn.active = 'enemy';
+    assert.match(narrateRejection(enemyTurn, { reason: 'wrong-stage', action: 'light' }), /等对手先动/);
+    const pending = battle();
+    pending.pending = { actor: 'enemy', move: 'light', damage: 3 };
+    assert.match(narrateRejection(pending, { reason: 'wrong-stage', action: 'light' }), /只能应对/);
     assert.match(narrateRejection(state, { reason: 'insufficient-ap', action: 'heavy' }), /真气不够/);
     assert.match(narrateRejection(state, { reason: 'no-ult', action: 'ult' }), /已经用过了/);
     assert.match(narrateRejection(state, { reason: 'full-ap', action: 'charge' }), /已经满了/);
