@@ -117,7 +117,12 @@ export function resolveTurn(battle: Battle, action: ActionId, now: number, deps:
   const draft = createDraft(battle, now, deps);
   let rejection: TurnRejection | undefined;
   if (draft.battle.pending) {
-    rejection = performResponse(draft, action);
+    // 视角里的 pending.actor=player 表示「自己刚出招」，此时必须等对手应对；
+    // 不拦住的话攻击方能替对手把这一手结算掉，双人联机会直接卡死。
+    rejection =
+      draft.battle.pending.actor === 'player'
+        ? { reason: 'waiting-opponent', action }
+        : performResponse(draft, action);
   } else if (draft.battle.active !== 'player') {
     rejection = { reason: 'wrong-stage', action };
   } else {

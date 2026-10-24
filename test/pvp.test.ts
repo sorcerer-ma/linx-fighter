@@ -284,6 +284,29 @@ describe('双人联机的意图模型兜底', () => {
   });
 });
 
+describe('双人回合不能被自己顶掉', () => {
+  it('房主出手后自己再按防守，会被拒绝并继续等对手', async () => {
+    const { service } = setup();
+    await service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    await service.start(GUEST, { room: code });
+
+    // 房间随机先手，先找到轮到的一方
+    const first = (await service.status(HOST)).battle?.active === 'player' ? HOST : GUEST;
+    const second = first === HOST ? GUEST : HOST;
+
+    const attack = await service.act(first, '强攻');
+    assert.match(attack.text, /等对手应对/);
+    const selfGuard = await service.act(first, '格挡');
+    assert.match(selfGuard.text, /等对手应对/);
+    assert.equal(selfGuard.battle?.pending?.actor, 'player');
+
+    const defend = await service.act(second, '格挡');
+    assert.match(defend.text, /格挡/);
+    assert.equal(defend.battle?.pending, null);
+  });
+});
+
 describe('语音原话兜底开房与加入', () => {
   it('没有对局时直接说「开个房间」也能开房', async () => {
     const { service } = setup();

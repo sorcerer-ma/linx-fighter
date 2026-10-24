@@ -127,7 +127,14 @@ export interface TurnDeps {
   ai?: BattleAI;
 }
 
-export type RejectReason = 'ended' | 'wrong-stage' | 'insufficient-ap' | 'no-ult' | 'full-ap';
+export type RejectReason =
+  | 'ended'
+  | 'wrong-stage'
+  /** 双人联机：自己已经出招，正等对手应对，不能替对手结算 */
+  | 'waiting-opponent'
+  | 'insufficient-ap'
+  | 'no-ult'
+  | 'full-ap';
 
 /** 不合法操作：不推进对局、不改数值，只回一句提示 */
 export interface TurnRejection {

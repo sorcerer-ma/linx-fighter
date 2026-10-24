@@ -356,6 +356,18 @@ describe('双人联机', () => {
     assert.equal(next.pending, null);
   });
 
+  it('自己刚出招时再输入应对会被拒绝，不能替对手结算', () => {
+    const canonical = createBattle({ now: 0, seed: 1, firstMover: 'player', mode: 'pvp' });
+    const hostTurn = resolveTurn(canonical, 'light', 1);
+    assert.equal(hostTurn.battle.pending?.actor, 'player');
+
+    const again = resolveTurn(hostTurn.battle, 'guard', 2);
+    assert.equal(again.rejection?.reason, 'waiting-opponent');
+    assert.equal(again.battle, hostTurn.battle);
+    assert.equal(again.battle.pending?.actor, 'player');
+    assert.equal(again.events.length, 0);
+  });
+
   it('双人模式下 advanceBattle 不会代跑对手阶段', () => {
     const battle = createBattle({ now: 0, seed: 1, firstMover: 'enemy', mode: 'pvp' });
     const result = advanceBattle(battle, 1);

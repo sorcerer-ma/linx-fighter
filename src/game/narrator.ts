@@ -184,6 +184,8 @@ export function narrateRejection(battle: Battle, rejection: TurnRejection): stri
   switch (rejection.reason) {
     case 'ended':
       return narrateEnded(battle);
+    case 'waiting-opponent':
+      return '你已经出招，这一手等对手应对。';
     case 'wrong-stage':
       if (battle.pending) return '对手已经出招，现在只能应对。可以说格挡、闪避或硬抗。';
       return battle.active === 'player'

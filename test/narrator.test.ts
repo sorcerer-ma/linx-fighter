@@ -206,7 +206,7 @@ describe('提示与房间播报', () => {
     assertSpeakable(text);
   });
 
-  it('五种不合法原因都有玩家能听懂的解释', () => {
+  it('六种不合法原因都有玩家能听懂的解释', () => {
     const state = battle();
     assert.match(narrateRejection(state, { reason: 'wrong-stage', action: 'light' }), /轮到你了/);
     const enemyTurn = battle();
@@ -215,6 +215,7 @@ describe('提示与房间播报', () => {
     const pending = battle();
     pending.pending = { actor: 'enemy', move: 'light', damage: 3 };
     assert.match(narrateRejection(pending, { reason: 'wrong-stage', action: 'light' }), /只能应对/);
+    assert.match(narrateRejection(state, { reason: 'waiting-opponent', action: 'guard' }), /等对手应对/);
     assert.match(narrateRejection(state, { reason: 'insufficient-ap', action: 'heavy' }), /真气不够/);
     assert.match(narrateRejection(state, { reason: 'no-ult', action: 'ult' }), /已经用过了/);
     assert.match(narrateRejection(state, { reason: 'full-ap', action: 'charge' }), /已经满了/);
