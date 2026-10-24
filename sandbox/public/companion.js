@@ -1,7 +1,7 @@
 /** Presentation only: snapshots and settled history come from the service. */
-export function companionView(battle, connected, event = null) {
+export function companionView(battle, connected, event = null, listening = false) {
   if (!connected) return { visual: 'offline', ultimate: 'unknown' };
-  if (!battle) return { visual: 'idle', ultimate: 'unknown' };
+  if (!battle) return { visual: listening ? 'listening' : 'idle', ultimate: 'unknown' };
   const you = battle.you;
   const ultimate = battle.phase !== 'battle' ? 'ended'
     : you.ultLeft <= 0 ? 'used'
@@ -10,6 +10,7 @@ export function companionView(battle, connected, event = null) {
   let visual = 'idle';
   if (battle.phase === 'victory') visual = 'victory';
   else if (battle.phase === 'defeat') visual = 'defeat';
+  else if (listening) visual = 'listening';
   else if (event) {
     if (event.actor === 'player') visual = 'attacking';
     else if (event.dodged) visual = 'dodgeSuccess';

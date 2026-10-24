@@ -296,9 +296,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   function render() {
     const battle = state.battle;
-    const view = companionView(battle, connected && !unconfirmed, settlement);
-    // Recording is a browser event, never an inferred successful command.
-    if (connected && !unconfirmed && listening) view.visual = 'listening';
+    const view = companionView(battle, connected && !unconfirmed, settlement, listening);
+    // Microphone state stays independent; settled victory/defeat has visual priority.
     if (busy) view.ultimate = 'unknown';
     renderCompanion($('app'), battle, view);
     $('opponent-debug').textContent = opponentDetails(battle, connected && !unconfirmed);

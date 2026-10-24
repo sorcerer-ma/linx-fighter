@@ -45,3 +45,17 @@ it('对手调试只显示可信公开快照，明确缺席与阶段视角', () =
   assert.ok(text.includes('18 / 18'));assert.ok(text.includes('需要应对'));assert.ok(!text.includes('999'));
   assert.ok(opponentDetails(battle({phase:'victory'}),true).includes('对手已被击倒'));
 });
+
+it('终局胜负优先于实际收音，只有服务端新对局解除终局', () => {
+  for (const phase of ['victory','defeat'] as const) {
+    const ended=battle({phase});
+    // ASR start/end, manual stop and TTS pause/resume only change active recording.
+    for (const listening of [true,false,true,false,true]) {
+      const view=companionView(ended,true,null,listening);
+      assert.equal(view.visual,phase);assert.equal(view.ultimate,'ended');
+    }
+    assert.equal(companionView({...ended},true,null,true).visual,phase); // refused/query: same terminal snapshot
+    assert.equal(companionView(battle(),true,null,true).visual,'listening'); // actual newly-created battle
+    assert.equal(companionView(battle(),true,null,false).visual,'idle');
+  }
+});
