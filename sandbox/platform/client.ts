@@ -43,6 +43,7 @@ export interface SayResult {
   trace: McpTrace;
   sourceReply?: string;
   rewriteStatus?: string;
+  expressionError?: string;
   error?: string;
 }
 
@@ -69,7 +70,7 @@ export class SandboxClient {
       await mcp.initialize();
       const outcome = this.options.agent
         ? await this.options.agent.run(text, mcp)
-        : {tool:'game_say',...await mcp.callTool('game_say', { text })};
+        : await mcp.callTool('game_say',{text}).then(result=>({tool:'game_say',...result,sourceText:result.text,rewriteStatus:'original',expressionError:undefined}));
       const { text: reply, isError } = outcome;
       // 局面只是展示用：查不到不影响这一句播报
       const state = await this.state(deviceId).catch(() => null);
@@ -84,7 +85,7 @@ export class SandboxClient {
         tool: outcome.tool,
         ms: trace.ms,
       });
-      return { ok: true, reply, isError, ...base, tool:outcome.tool, sourceReply:reply, rewriteStatus:this.options.agent ? 'awaiting-facts' : 'original', state, trace };
+      return { ok: true, reply, isError, ...base, tool:outcome.tool, sourceReply:outcome.sourceText, rewriteStatus:outcome.rewriteStatus, expressionError:'expressionError' in outcome && typeof outcome.expressionError === 'string' ? outcome.expressionError : undefined, state, trace };
     } catch (error) {
       const message = error instanceof UpstreamError ? error.message : error instanceof Error ? error.message : String(error);
       const trace = mcp.takeTrace();

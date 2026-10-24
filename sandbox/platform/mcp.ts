@@ -1,3 +1,4 @@
+import type { Presentation } from '../../src/game/presentation.js';
 import type { Logger } from '../../src/log.js';
 import { SANDBOX_VERSION } from '../config.js';
 
@@ -135,9 +136,9 @@ export class LinxMcpClient {
   }
 
   /** 调一个工具，返回可直接朗读的文本 */
-  async callTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
+  async callTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean; presentation?: Presentation }> {
     const result = (await this.rpc('tools/call', { name, arguments: args }, name)) as
-      | { content?: Array<{ type?: string; text?: string }>; isError?: boolean }
+      | { content?: Array<{ type?: string; text?: string }>; isError?: boolean; structuredContent?: { presentation?: Presentation } }
       | undefined;
 
     const text = (result?.content ?? [])
@@ -146,7 +147,7 @@ export class LinxMcpClient {
       .join('\n')
       .trim();
 
-    return { text: text || '（游戏服务没有返回内容）', isError: result?.isError === true };
+    return { text: text || '（游戏服务没有返回内容）', isError: result?.isError === true, presentation:result?.structuredContent?.presentation };
   }
 
   private async rpc(method: string, params?: unknown, tool?: string): Promise<unknown> {

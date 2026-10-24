@@ -1,8 +1,10 @@
+import { OpenAiReplyModel } from './reply-model.js';
+import type { Presentation } from '../../src/game/presentation.js';
 import { readFileSync } from 'node:fs';
 import type { SandboxAgentConfig } from '../config.js';
 
 export interface AgentTools {
-  callTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }>;
+  callTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean; presentation?: Presentation }>;
 }
 export function loadAgentPrompt(path: string): string {
   const prompt = readFileSync(path, 'utf8').trim();
@@ -11,13 +13,29 @@ export function loadAgentPrompt(path: string): string {
 }
 
 /** Relay understanding and execution to MCP. Never retry a possibly applied turn. */
+export interface ReplyModel {
+  rewrite(system:string,sourceText:string,facts?:Presentation):Promise<string>;
+}
 export class SandboxAgent {
-  constructor(readonly prompt: string) {}
+  constructor(readonly prompt: string, private readonly model?: ReplyModel) {}
   async run(text: string, tools: AgentTools) {
     const result = await tools.callTool('game_say', {text});
-    // Current MCP replies contain no verifiable rendering facts. Until that
-    // contract is agreed, do not submit them for an unchecked model rewrite.
-    return {tool:'game_say', ...result, sourceText:result.text, rewriteStatus:'awaiting-facts' as const};
+    const original = {tool:'game_say',...result,sourceText:result.text};
+    const facts = result.presentation;
+    if (!this.model || result.isError || !facts || facts.certainty !== 'confirmed'
+      || !Array.isArray(facts.renderings) || facts.renderings.length < 2) {
+      return {...original,rewriteStatus:'original'};
+    }
+    try {
+      const candidate=await this.model.rewrite(this.prompt,result.text,facts);
+      // Exact membership protects the whole statement, not just its numerals:
+      // ownership, success/failure, winner, next step and protected catch-up text.
+      if (!facts.renderings.includes(candidate)) return {...original,rewriteStatus:'fallback-invalid'};
+      return {...original,text:candidate,rewriteStatus:candidate===result.text?'original':'rewritten'};
+    } catch (error) {
+      const expressionError=error instanceof Error && /^表达模型请求失败：HTTP \d+$/.test(error.message) ? error.message : '表达模型不可用';
+      return {...original,rewriteStatus:'fallback-error',expressionError};
+    }
   }
 }
 
@@ -25,5 +43,5 @@ export function createSandboxAgent(config: SandboxAgentConfig): SandboxAgent | u
   const prompt = loadAgentPrompt(config.promptPath);
   if (!config.model && !config.baseUrl && !config.apiKey) return undefined;
   if (!config.model || !config.baseUrl || !config.apiKey) throw new Error('沙箱Agent配置未完成：需要model、baseUrl和apiKey');
-  return new SandboxAgent(prompt);
+  return new SandboxAgent(prompt,new OpenAiReplyModel({baseUrl:config.baseUrl,model:config.model,apiKey:config.apiKey,timeoutMs:8000}));
 }
