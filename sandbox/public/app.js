@@ -1,3 +1,4 @@
+import { createListeningSession } from './listening.js';
 import { companionView, newSettlement, renderCompanion } from './companion.js';
 
 /*
@@ -60,9 +61,7 @@ import { companionView, newSettlement, renderCompanion } from './companion.js';
   var replies = []; // [{ text, tone }]，最多 REPLY_LIMIT 条
   var lastReply = '';
 
-  var rec = null; // 正在进行的识别
-  var recText = '';
-  var recFailed = false;
+  var activeUtterance = null;
   var connected = false;
   var unconfirmed = false;
   var settlement = null;
@@ -230,7 +229,7 @@ import { companionView, newSettlement, renderCompanion } from './companion.js';
     busy = true;
     el.transcript.textContent = '已发送：' + value;
     el.micStatus.textContent = '等待伙伴回复';
-    el.mic.disabled = true;
+    listener.pause();
     closeComposer();
     render();
     fetch('/api/say', {
@@ -256,8 +255,7 @@ import { companionView, newSettlement, renderCompanion } from './companion.js';
       })
       .then(function () {
         busy = false;
-        el.mic.disabled = false;
-        el.micStatus.textContent = '点按或按住说话';
+        if (!activeUtterance) listener.resume();
         render();
       });
   }
@@ -342,189 +340,75 @@ import { companionView, newSettlement, renderCompanion } from './companion.js';
   }
 
   function speak(text) {
-    if (!canSpeak()) return;
-    var value = String(text == null ? '' : text).trim();
-    if (!value) return;
-    try {
-      stopSpeaking(); // 每次新回复前打断上一条
-      var utter = new window.SpeechSynthesisUtterance(value);
-      utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
-      utter.rate = TTS_RATE;
-      utter.onstart = function () { el.replies.setAttribute('aria-label', '伙伴回复，正在朗读'); };
-      utter.onend = utter.onerror = function () { el.replies.setAttribute('aria-label', '最近伙伴回复'); };
-      window.speechSynthesis.speak(utter);
-    } catch (err) {
-      /* TTS 不可用时静默降级 */
+    if (!canSpeak() || !text.trim()) return;
+    stopSpeaking();
+    listener.pause();
+    var utter = new window.SpeechSynthesisUtterance(text);
+    activeUtterance = utter;
+    utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
+    utter.rate = TTS_RATE;
+    utter.onstart = function () {
+      if (activeUtterance === utter) el.replies.setAttribute('aria-label', '伙伴回复，正在朗读');
+    };
+    function finish() {
+      if (activeUtterance !== utter) return;
+      activeUtterance = null;
+      el.replies.setAttribute('aria-label', '最近伙伴回复');
+      if (!busy) listener.resume();
     }
+    utter.onend = utter.onerror = finish;
+    try { window.speechSynthesis.speak(utter); }
+    catch { finish(); }
   }
 
   function stopSpeaking() {
+    activeUtterance = null;
     el.replies.setAttribute('aria-label', '最近伙伴回复');
-    if (!canSpeak()) return;
-    try {
-      window.speechSynthesis.cancel();
-    } catch (err) {
-      /* 忽略 */
-    }
+    if (canSpeak()) window.speechSynthesis.cancel();
   }
 
-  /* ---------------- 语音识别 ---------------- */
+  /* ---------------- 持续聆听 ---------------- */
 
-  function micAvailable() {
-    return !!SpeechRecognitionCtor && window.isSecureContext !== false;
-  }
-
-  function setListening(on) {
-    listening = on;
-    el.micStatus.textContent = on ? '正在倾听，再点停止' : '点按或按住说话';
-    render();
-    el.mic.dataset.listening = on ? 'true' : 'false';
-    el.mic.setAttribute('aria-pressed', on ? 'true' : 'false');
-    el.mic.setAttribute('aria-label', on ? '正在聆听，再点一下停止' : '按住或点击说话');
-  }
-
-  function startListening() {
-    if (busy) return;
-    if (!micAvailable()) {
-      // 内网 HTTP 页面拿不到麦克风：麦克风留着，点到就在播报区说清楚
-      pushReply(MIC_NO_HTTPS, 'warn');
+  var listener = createListeningSession({
+    Recognition: SpeechRecognitionCtor,
+    onState: function (session) {
+      listening = session.active;
+      el.mic.dataset.listening = session.active ? 'true' : 'false';
+      el.mic.setAttribute('aria-pressed', String(session.enabled));
+      el.mic.setAttribute('aria-label', session.enabled ? '停止持续聆听' : '开启持续聆听');
+      el.micStatus.textContent = session.active ? '正在聆听，点击停止'
+        : session.enabled ? (session.paused ? '聆听已开启，等待伙伴回复' : '聆听已开启，正在接续收音')
+        : '点击开启持续聆听';
+      render();
+    },
+    onText: function (text, final) {
+      el.transcript.textContent = (final ? '已识别：' : '识别中：') + text;
+    },
+    onFinal: function (text) { say(text); },
+    onError: function (code) {
+      pushReply(code === 'not-allowed' || code === 'service-not-allowed'
+        ? '麦克风权限未允许，聆听已停止。请允许权限后重新开启。'
+        : '语音识别已中断，聆听已停止。请检查麦克风后重新开启。', 'warn');
       openComposer(false);
-      return;
     }
-    stopListening(); // 上一轮没结束就重开
-    recText = '';
-    recFailed = false;
-    var instance;
-    try {
-      instance = new SpeechRecognitionCtor();
-    } catch (err) {
-      pushReply(MIC_NO_HTTPS, 'warn');
-      openComposer(false);
-      return;
-    }
-    instance.lang = 'zh-CN';
-    instance.interimResults = true;
-    instance.continuous = false;
-    instance.maxAlternatives = 1;
+  });
 
-    instance.onstart = function () { if (rec === instance) setListening(true); };
-    instance.onresult = function (event) {
-      if (rec !== instance) return;
-      var text = '';
-      var finalText = '';
-      for (var i = 0; i < event.results.length; i++) {
-        text += event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
-      }
-      recText = finalText.replace(/\s+/g, ' ').trim();
-      setInputText(text.replace(/\s+/g, ' ').trim());
-      el.transcript.textContent = (event.results[event.results.length - 1].isFinal ? '已识别：' : '识别中：') + text; // 边说边填进输入框
-    };
-    instance.onerror = function (event) {
-      if (rec !== instance) return;
-      recFailed = true;
-      var code = event && event.error;
-      if (code === 'not-allowed' || code === 'service-not-allowed') {
-        pushReply(MIC_NO_HTTPS, 'warn');
-      openComposer(false);
-      } else if (code !== 'no-speech' && code !== 'aborted') {
-        pushReply('没听清，再说一次。', 'warn');
-      }
-    };
-    instance.onend = function () {
-      if (rec !== instance) return;
-      rec = null;
-      setListening(false);
-      var text = recText.trim();
-      recText = '';
-      if (text) {
-        var failed = recFailed;
-        recFailed = false;
-        if (!failed && !busy) {
-          el.text.value = '';
-          say(text); // 说完即发送，无需再按一次
-        }
-      }
-    };
-
-    rec = instance;
-    el.micStatus.textContent = '正在启动麦克风';
-    try {
-      instance.start();
-    } catch (err) {
-      rec = null;
-      setListening(false);
-      pushReply('麦克风没启动起来，用文字输入继续。', 'warn');
-      return;
-    }
-  }
-
-  function stopListening() {
-    var instance = rec;
-    if (!instance) return;
-    rec = null; // 先摘掉引用，避免 onend 里重复处理
-    try {
-      instance.abort();
-    } catch (err) {
-      /* 忽略 */
-    }
-    setListening(false);
-  }
-
+  function stopListening() { listener.stop(); }
   function toggleListening() {
-    if (rec) rec.stop();
-    else startListening();
-  }
-
-  function setInputText(text) {
-    el.text.value = text;
+    if (listener.enabled) { listener.stop(); return; }
+    if (!SpeechRecognitionCtor || window.isSecureContext === false) {
+      pushReply(MIC_NO_HTTPS, 'warn');
+      openComposer(false);
+      return;
+    }
+    listener.start();
+    if (busy || activeUtterance) listener.pause();
   }
 
   /* ---------------- 事件绑定 ---------------- */
 
-  // 麦克风：按住说话（松手停）、轻点开始/再点停止都支持
-  (function bindMic() {
-    var holdTimer = null;
-    var held = false;
-
-    el.mic.addEventListener('pointerdown', function (event) {
-      if (event.button !== undefined && event.button !== 0) return;
-      event.preventDefault();
-      if (rec) {
-        rec.stop();
-        return;
-      }
-      startListening();
-      held = false;
-      if (holdTimer) clearTimeout(holdTimer);
-      holdTimer = setTimeout(function () {
-        held = true; // 按住超过 450ms 算「按住说话」，松手就停
-      }, 450);
-    });
-
-    el.mic.addEventListener('pointerup', function () {
-      if (holdTimer) {
-        clearTimeout(holdTimer);
-        holdTimer = null;
-      }
-      if (held && rec) rec.stop();
-      held = false;
-    });
-
-    el.mic.addEventListener('pointercancel', function () {
-      if (holdTimer) {
-        clearTimeout(holdTimer);
-        holdTimer = null;
-      }
-      held = false;
-      stopListening();
-    });
-
-    // 键盘（Enter/Space）触发的 click 没有 pointerdown，单独补一条
-    el.mic.addEventListener('click', function (event) {
-      if (event.detail === 0) toggleListening();
-    });
-  })();
+  el.mic.addEventListener('click', toggleListening);
+  el.mic.addEventListener('pointercancel', stopListening);
 
   el.composer.addEventListener('submit', function (event) {
     event.preventDefault();
@@ -554,7 +438,7 @@ import { companionView, newSettlement, renderCompanion } from './companion.js';
       render();
     }
   });
-  window.addEventListener('pagehide', stopSpeaking);
+  window.addEventListener('pagehide', function () { stopListening(); stopSpeaking(); });
 
   /* ---------------- 启动 ---------------- */
 
