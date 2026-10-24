@@ -54,11 +54,22 @@ export interface ChatMessage {
   content: string;
 }
 
+/** 推理开关：部分厂商的模型默认把 token 全花在思考上，正文是空的 */
+export type ChatReasoning = 'off' | 'low';
+
 export interface ChatInput {
   model?: string;
   messages: ChatMessage[];
   temperature?: number;
   maxTokens?: number;
+  reasoning?: ChatReasoning;
+}
+
+/** 把推理开关翻成各厂商通用的 OpenRouter 写法 */
+function reasoningBody(reasoning: ChatReasoning | undefined): Record<string, unknown> {
+  if (reasoning === 'off') return { reasoning: { enabled: false } };
+  if (reasoning === 'low') return { reasoning: { effort: 'low' } };
+  return {};
 }
 
 export interface TokenUsage {
@@ -133,6 +144,7 @@ export async function askChat(
     messages: input.messages,
     temperature: input.temperature,
     max_tokens: input.maxTokens,
+    ...reasoningBody(input.reasoning),
   });
   if (typeof payload !== 'object' || payload === null) return null;
   const choices = (payload as { choices?: unknown }).choices;

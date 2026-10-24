@@ -91,7 +91,8 @@ COMMAND_CODE_BASE_URL=https://openrouter.ai/api
 COMMAND_CODE_DECISION_PATH=/alpha/decisions
 COMMAND_CODE_CHAT_PATH=/v1/chat/completions
 COMMAND_CODE_DECISION_MODEL=typesafe/jev-1.13
-COMMAND_CODE_CHAT_MODEL=google/gemini-2.5-flash-lite
+COMMAND_CODE_CHAT_MODEL=qwen/qwen3.7-flash
+COMMAND_CODE_CHAT_REASONING=off
 ```
 
 另外这台机器没有可用的 IPv6 出网，Node 默认会先试 IPv6，表现为请求在连接阶段快速失败（`fetch failed` / `ETIMEDOUT`，约 0.5 s）。`NODE_OPTIONS` 里的 `--dns-result-order=ipv4first` 不生效，必须写进 systemd 的命令行，并关掉 happy-eyeballs：

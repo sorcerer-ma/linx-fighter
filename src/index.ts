@@ -45,6 +45,7 @@ const chat = config.commandCodeApiKey
       baseUrl: config.commandCodeBaseUrl,
       chatPath: config.commandCodeChatPath,
       model: config.commandCodeChatModel,
+      reasoning: config.commandCodeChatReasoning,
       timeoutMs: config.chatTimeoutMs,
       logger,
     })

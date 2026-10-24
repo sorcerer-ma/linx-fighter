@@ -299,6 +299,7 @@ flowchart TB
 | `COMMAND_CODE_BASE_URL` | 官方地址 | Provider 根地址，换代理、网关或厂商时覆盖 |
 | `COMMAND_CODE_DECISION_PATH` | `/systemone` | 决策模型路径；OpenRouter 这类厂商填 `/alpha/decisions` |
 | `COMMAND_CODE_CHAT_PATH` | `/chat/completions` | 语言模型路径；换厂商时一起改 |
+| `COMMAND_CODE_CHAT_REASONING` | 空 | 语言模型推理开关（`off`/`low`）；推理模型不关会只输出思考 |
 | `COMMAND_CODE_DECISION_MODEL` | `typesafe/jev` | JEV 决策模型名（命令路由与对手决策共用） |
 | `COMMAND_CODE_CHAT_MODEL` | `deepseek/deepseek-v4.1-flash` | 规则外问答的语言模型 |
 | `ATTRIBUTION_MODE` | `off` | 双人房的座位归属：`off` 按轮次仲裁，`strict` 时句子要带「红方／蓝方」；两种模式下回灌判定都生效 |

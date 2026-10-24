@@ -9,7 +9,7 @@
  */
 
 import type { Logger } from '../log.js';
-import { askChat, DEFAULT_CHAT_MODEL } from './commandcode.js';
+import { askChat, DEFAULT_CHAT_MODEL, type ChatReasoning } from './commandcode.js';
 
 /** 和战斗播报同一套长度约束：一次最多两句、60 字 */
 const MAX_ANSWER_CHARS = 60;
@@ -35,6 +35,8 @@ export interface ChatAnswererOptions {
   baseUrl?: string;
   /** 语言模型路径；换 Provider 时覆盖 */
   chatPath?: string;
+  /** 推理开关：推理模型开思考会只输出思考、不回正文 */
+  reasoning?: ChatReasoning;
   /** 单测注入，生产用全局 fetch */
   fetchImpl?: typeof fetch;
   logger?: Pick<Logger, 'warn' | 'debug'>;
@@ -108,6 +110,7 @@ export function createChatAnswerer(options: ChatAnswererOptions): ChatAnswerer {
           ],
           temperature: 0.6,
           maxTokens: 120,
+          reasoning: options.reasoning,
         },
       );
       return sanitizeChatAnswer(content);

@@ -105,6 +105,23 @@ describe('规则外问答：调用语言模型', () => {
     assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
   });
 
+  it('推理模型可以关掉思考，避免只回思考不回正文', async () => {
+    let body = '';
+    const answerer = createChatAnswerer({
+      apiKey: 'cmd-test',
+      baseUrl: 'https://openrouter.ai/api',
+      chatPath: '/v1/chat/completions',
+      reasoning: 'off',
+      fetchImpl: (async (_seen: string, init: RequestInit) => {
+        body = String(init.body);
+        return completion('好。');
+      }) as typeof fetch,
+    });
+
+    assert.equal(await answerer.answer('在吗'), '好。');
+    assert.deepEqual(JSON.parse(body).reasoning, { enabled: false });
+  });
+
   it('非 2xx、网络异常、空 choices 都返回 null', async () => {
     const answerWith = (impl: typeof fetch) => createChatAnswerer({ apiKey: 'cmd-test', fetchImpl: impl, logger });
 
