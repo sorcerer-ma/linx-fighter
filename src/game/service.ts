@@ -24,7 +24,7 @@ import {
   narrateWaitingRoom,
 } from './narrator.js';
 import { canonicalize, normalizeRoomCode, pvpBattleKey, roomCodeFromPhrase, viewAs, wantsOpenRoom } from './pvp.js';
-import type { Battle, BattleEvent, Side } from './types.js';
+import type { Battle, BattleAI, BattleEvent, Side } from './types.js';
 
 /** 一次工具调用的结果：可直接朗读的文本 + 当前玩家视角的最新对局状态 */
 export interface ServiceResult {
@@ -51,6 +51,8 @@ export interface GameServiceDeps {
   random?: () => number;
   /** JEV 意图模型；不传则只走规则匹配 */
   intent?: IntentResolver;
+  /** 对手 AI；不传则用内置的本地决策模型（JEV 决策模型从 index 注入） */
+  ai?: BattleAI;
 }
 
 /**
@@ -67,6 +69,7 @@ export class GameService {
   private readonly now: () => number;
   private readonly random: () => number;
   private readonly intent?: IntentResolver;
+  private readonly ai?: BattleAI;
 
   constructor(deps: GameServiceDeps) {
     this.store = deps.store;
@@ -75,10 +78,11 @@ export class GameService {
     this.now = deps.now ?? Date.now;
     this.random = deps.random ?? Math.random;
     this.intent = deps.intent;
+    this.ai = deps.ai;
   }
 
   /** 开一局：单人、开双人房，或凭房间号加入 */
-  start(sessionKey: string, options: StartOptions = {}): ServiceResult {
+  async start(sessionKey: string, options: StartOptions = {}): Promise<ServiceResult> {
     if (options.room) return this.joinRoom(sessionKey, options.room);
 
     // 语音链路常把整句话塞进参数：先看原话里有没有房间号和联机意图
@@ -106,7 +110,7 @@ export class GameService {
     // 单人重新开局：撤掉仍在的房间，避免对手对着已失效的局面出招
     if (existing) this.leaveRoom(existing, '重新开局');
 
-    const battle = this.spawnSolo(options.opponent);
+    const battle = await this.spawnSolo(options.opponent);
     this.store.set(sessionKey, battle);
     this.logger.info('对局开始', {
       sessionKey,
@@ -146,7 +150,7 @@ export class GameService {
 
     // 没有对局时先顺手开一局，首句「攻击」也能玩；上一局已结束则提示重开
     if (!battle) {
-      battle = this.spawnSolo();
+      battle = await this.spawnSolo();
       this.store.set(sessionKey, battle);
       prefix = narrateAutoStart(battle);
       this.logger.info('对局自动开始', {
@@ -167,7 +171,7 @@ export class GameService {
       return { text: `${prefix}${narrateUnknownAction(battle)}`, battle };
     }
 
-    const result = resolveTurn(battle, match.id, this.now());
+    const result = await resolveTurn(battle, match.id, this.now(), { ai: this.ai });
     if (result.rejection) {
       this.logger.debug('操作不合法', {
         sessionKey,
@@ -310,7 +314,7 @@ export class GameService {
       return { text: narrateWaitingRoom(live.code), battle: view };
     }
 
-    const result = resolveTurn(view, match.id, this.now());
+    const result = await resolveTurn(view, match.id, this.now(), { ai: this.ai });
     if (result.rejection) {
       this.logger.debug('双人操作不合法', {
         sessionKey,
@@ -406,14 +410,14 @@ export class GameService {
   }
 
   /** 创建单人局；对手先手时先推进它第一个主动阶段，避免玩家对着空局面出招 */
-  private spawnSolo(opponent?: string): Battle {
+  private async spawnSolo(opponent?: string): Promise<Battle> {
     const battle = createBattle({
       enemyName: opponent,
       now: this.now(),
       seed: Math.floor(this.random() * 0x7fffffff),
     });
     if (battle.firstMover !== 'enemy') return battle;
-    return advanceBattle(battle, this.now()).battle;
+    return (await advanceBattle(battle, this.now())).battle;
   }
 }
 

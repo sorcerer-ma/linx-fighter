@@ -21,6 +21,10 @@ export interface AppConfig {
   openrouterModel: string;
   /** 意图模型超时（毫秒），超时按没认出来处理 */
   intentTimeoutMs: number;
+  /** 对手 AI：jev 走 JEV 决策接口，local 用内置决策模型；未配 Key 时自动回落 local */
+  enemyAi: 'jev' | 'local';
+  /** 对手单次决策超时（毫秒），超时回退本地 */
+  enemyTimeoutMs: number;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -49,5 +53,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     openrouterApiKey: env.OPENROUTER_API_KEY?.trim() || undefined,
     openrouterModel: env.OPENROUTER_MODEL?.trim() || 'typesafe/jev-1.13',
     intentTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.INTENT_TIMEOUT_MS, 1500))),
+    enemyAi: (env.ENEMY_AI ?? '').trim().toLowerCase() === 'local' ? 'local' : 'jev',
+    enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 1200))),
   };
 }

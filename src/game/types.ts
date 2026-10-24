@@ -115,10 +115,16 @@ export interface ResponseView {
   dodgeChance: number;
 }
 
-/** 对手 AI：主动选招 + 被动应对，实现可替换（后续做关卡/难度时换实现即可） */
-export interface BattleAI {
+/** 本地对手 AI：纯函数，同一局面必然同一选择，便于单测与仿真复现 */
+export interface LocalBattleAI {
   chooseAction(view: ActionView): ActiveActionId;
   chooseResponse(view: ResponseView): ResponseMove;
+}
+
+/** 对手 AI：主动选招 + 被动应对；允许返回 Promise，用于接 JEV 这类决策模型 */
+export interface BattleAI {
+  chooseAction(view: ActionView): ActiveActionId | Promise<ActiveActionId>;
+  chooseResponse(view: ResponseView): ResponseMove | Promise<ResponseMove>;
 }
 
 /** 结算依赖：生产用 seed 派生随机数，单测与仿真可注入固定序列 */

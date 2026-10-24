@@ -8,7 +8,7 @@
 - **分工**：ASR、TTS、唤醒都在灵犀平台侧，本服务只接收文字、只返回文字。不要引入语音库、不要处理音频。
 - **命名**：中文名「共鸣：闻声对决」（暂定）；英文名 `linx-fighter` 用于仓库名、包名、服务名、`systemd` 单元与镜像名。面向玩家的文案用中文名。如需改名，搜这几处并同步灵犀控制台的智能体名称与提示词：`README.md`、`docs/linx-integration.md`、`src/mcp/server.ts`、`src/mcp/tools.ts`、`src/game/narrator.ts`、`src/http/app.ts`、`src/index.ts`、`test/mcp.e2e.test.ts`。
 - **截止**：黑客松评审 2026-10-26 09:00 现场演示，时间以小时计。优先级 **闭环能玩 > 数值平衡 > 打磨**；每个需求先问「演示必须吗」。
-- **现状**：v0.2 玩法（七招、真气循环、伤害加成、先手补偿）、AI 对手、双人联机（房间号 + 视角镜像）与 JEV 意图模型均已落地；规则对拍 256,000 局零漂移，部署在 `100.100.61.41`。
+- **现状**：v0.2 玩法（七招、真气循环、伤害加成、先手补偿）、JEV 决策对手、双人联机（房间号 + 视角镜像）与 JEV 意图模型均已落地；规则对拍 256,000 局零漂移，部署在 `100.100.61.41`。
 - **路线**：演示前以稳定性为主，数值平衡与观战/回放留到评审后；双人联机已可用，断线重连与超时判负未做。
 - **明确不做**（除非用户要求）：多实例/Redis/数据库、账号体系、前端页面、可观测性平台、容器编排。
 
@@ -48,7 +48,7 @@ pnpm coverage:lcov # 生成 coverage/lcov.info（CI 上传 Codecov）
 | --- | --- |
 | 招式、口语别名、ASR 误识别、唤出指令 | `src/game/types.ts` 的 `ActionId` + `src/game/actions.ts` 的 `ACTIONS` |
 | 回合结算、数值、胜负 | `src/game/engine.ts` 的 `resolveTurn`；数值在 `src/game/rules.ts` |
-| 对手 AI | `src/game/enemy.ts` |
+| 对手 AI | `src/game/enemy.ts`（本地兜底）、`src/game/enemy-jev.ts`（JEV 决策） |
 | 双人房间与视角 | `src/game/pvp.ts`、`src/store/rooms.ts` |
 | 意图模型 | `src/game/intent.ts`（规则在 `actions.ts`） |
 | 播报文案 | `src/game/narrator.ts` |
@@ -64,11 +64,12 @@ ASR 在平台侧，错误是常态（「攻击」被识别成「公鸡」）。�
 - `matchAction` 必须容忍同音/近音（公鸡、工击 → 攻击）和句中夹杂（「我要公鸡你」）。常见误识别按招式维护在 `ACTIONS.asrErrors` 里，与口语别名区分开，新增招式时一并补误识别样例。
 - 每招两条中二「唤出指令」（`ACTIONS.chants`，如「共鸣斩破军」）：整句靠包含匹配命中，命中后播报先回念一句；一个唤出词只映射一招，不能影响单字别名「打」「躲」的精确匹配。
 - 已接入 JEV 意图模型（`src/game/intent.ts`，OpenRouter decisions 接口上的 `typesafe/jev-1.13`）：规则匹配优先，规则认不出时把「原话 → 阶段内招式」表达成一个选择题，置信度 ≥ 0.6 才生效，只归一化意图、不产出数值、不改对局状态；超时 1.5 秒、失败/异常一律按没认出来处理。未配 `OPENROUTER_API_KEY` 时只用规则匹配，测试全部用假 fetch，不依赖网络。
+- 对手的每次出招与应对也走 JEV（`src/game/enemy-jev.ts`）：本地先按行动点/大招次数过滤出合法选项再做选择题，置信度 ≥ 0.6 才采纳；超时 1.2 秒、HTTP 异常、选项越界都回退 `ENEMY_AI` 本地决策。接上后同一 seed 不再保证复现，单测与 256,000 局对拍仍用注入的本地 AI；`ENEMY_AI=local` 可整体关掉这层。
 
 ## 规则
 
 1. **服务端是唯一事实来源**：气血、真气、回合、胜负只在 `engine` 算。不要依赖平台侧模型记住或推演数值。
-2. **`resolveTurn` 保持纯函数**：不改入参、返回新状态；随机数用 `battle.seed` 派生（需要时新建 `src/game/rng.ts`），不要在结算里散用 `Math.random`。
+2. **`resolveTurn` 保持纯函数**：不改入参、返回新状态（接 JEV 对手后是 async，等待决策，但依旧纯）；随机数用 `battle.seed` 派生（需要时新建 `src/game/rng.ts`），不要在结算里散用 `Math.random`。
 3. **播报是为「听」写的**：只在 `narrator.ts` 拼中文口语；一次最多两句、60 字内；不用 Markdown、列表、emoji、括号补充。`content[].text` 会被原样念出来。
 4. **认不出就重说**：语音识别错误是常态。招式认不出时**不推进回合、不改数值**，只提示可选说法。
 5. **工具不抛异常**：错误统一转成 `isError: true` + 一句玩家能听懂的话，并记 `logger.error`；协议层保持正常响应。

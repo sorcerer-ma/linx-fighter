@@ -111,6 +111,23 @@ export function createApp(deps: AppDependencies): express.Express {
     const ctx = createDeviceContext(randomUUID());
     applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
 
+    // 每条 JSON-RPC 都记下方法名与身份头：排查「谁在调、为什么状态对不上」时先看这行
+    const body = req.body as
+      | { method?: string; params?: { name?: string; clientInfo?: { name?: string; version?: string } } }
+      | Array<{ method?: string; params?: { name?: string; clientInfo?: { name?: string; version?: string } } }>
+      | undefined;
+    const message = Array.isArray(body) ? body[0] : body;
+    logger.info('MCP 请求', {
+      method: message?.method ?? '',
+      tool: message?.params?.name,
+      client: message?.params?.clientInfo
+        ? `${message.params.clientInfo.name ?? ''}/${message.params.clientInfo.version ?? ''}`
+        : undefined,
+      deviceId: ctx.deviceId,
+      agentId: ctx.agentId,
+      sessionId: ctx.sessionId,
+    });
+
     const server = createMcpServer();
     registerGameTools(server, { service, logger, ctx });
 
@@ -170,12 +187,12 @@ export function createApp(deps: AppDependencies): express.Express {
       res.json({ ok: true, key, battle: store.get(key) ?? null });
     });
 
-    app.post('/debug/start', (req, res) => {
+    app.post('/debug/start', async (req, res) => {
       const body = asRecord(req.body);
       const modeRaw = asText(body.mode);
       const mode = modeRaw === 'pvp' || modeRaw === 'solo' ? modeRaw : undefined;
       const room = asText(body.room) || undefined;
-      const result = service.start(debugBattleKey(req), { opponent: asText(body.opponent), mode, room });
+      const result = await service.start(debugBattleKey(req), { opponent: asText(body.opponent), mode, room });
       res.json({ ok: true, text: result.text, battle: result.battle });
     });
 

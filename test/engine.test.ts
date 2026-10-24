@@ -21,8 +21,8 @@ function enemyFirst(seed = 43): Battle {
 }
 
 /** 执行一次操作，返回结算后的新对局（resolveTurn 不改入参） */
-function turn(battle: Battle, action: ActionId, deps: TurnDeps = LOCKED): Battle {
-  const result = resolveTurn(battle, action, 1, deps);
+async function turn(battle: Battle, action: ActionId, deps: TurnDeps = LOCKED): Promise<Battle> {
+  const result = await resolveTurn(battle, action, 1, deps);
   assert.equal(result.rejection, undefined, `不应被拒绝：${result.rejection?.reason}`);
   return result.battle;
 }
@@ -38,7 +38,7 @@ function firstAttack(events: BattleEvent[]): Extract<BattleEvent, { type: 'attac
 }
 
 describe('对局初始化', () => {
-  it('先手 14 血、后手 18 血，双方 3 点真气、1 次大招', () => {
+  it('先手 14 血、后手 18 血，双方 3 点真气、1 次大招', async () => {
     const battle = playerFirst();
     assert.equal(battle.round, 1);
     assert.equal(battle.phase, 'battle');
@@ -57,7 +57,7 @@ describe('对局初始化', () => {
     assert.deepEqual(battle.history, []);
   });
 
-  it('后手时气血对调，先手方先动', () => {
+  it('后手时气血对调，先手方先动', async () => {
     const battle = enemyFirst();
     assert.equal(battle.firstMover, 'enemy');
     assert.equal(battle.active, 'enemy');
@@ -65,7 +65,7 @@ describe('对局初始化', () => {
     assert.equal(battle.enemy.hp, 14);
   });
 
-  it('同一种子与先手必然生成同一初始局面（id 与时间除外）', () => {
+  it('同一种子与先手必然生成同一初始局面（id 与时间除外）', async () => {
     const strip = (battle: Battle) => ({
       seed: battle.seed,
       round: battle.round,
@@ -78,8 +78,8 @@ describe('对局初始化', () => {
     assert.notDeepEqual(playerFirst(20261026), playerFirst(20261027));
   });
 
-  it('先手为对手时，advanceBattle 会先把对手的主动阶段跑完', () => {
-    const result = advanceBattle(enemyFirst(), 1, LOCKED);
+  it('先手为对手时，advanceBattle 会先把对手的主动阶段跑完', async () => {
+    const result = await advanceBattle(enemyFirst(), 1, LOCKED);
     assert.equal(result.battle.pending?.actor, 'enemy');
     assert.equal(result.battle.pending?.move, 'heavy');
     assert.deepEqual(
@@ -90,9 +90,9 @@ describe('对局初始化', () => {
 });
 
 describe('主动阶段与应对结算', () => {
-  it('普攻锁定伤害 3，对手 AI 格挡后掉 1 点，随后对手普攻待应对', () => {
+  it('普攻锁定伤害 3，对手 AI 格挡后掉 1 点，随后对手普攻待应对', async () => {
     const battle = playerFirst();
-    const result = resolveTurn(battle, 'light', 1, LOCKED);
+    const result = await resolveTurn(battle, 'light', 1, LOCKED);
     const next = result.battle;
 
     assert.equal(next.enemy.hp, 17);
@@ -119,9 +119,9 @@ describe('主动阶段与应对结算', () => {
     );
   });
 
-  it('应对对手普攻：格挡后掉 1 点，进入第 2 轮并按规则回复真气', () => {
-    const afterAttack = turn(playerFirst(), 'light');
-    const result = resolveTurn(afterAttack, 'guard', 2, LOCKED);
+  it('应对对手普攻：格挡后掉 1 点，进入第 2 轮并按规则回复真气', async () => {
+    const afterAttack = await turn(playerFirst(), 'light');
+    const result = await resolveTurn(afterAttack, 'guard', 2, LOCKED);
     const next = result.battle;
 
     assert.equal(result.rejection, undefined);
@@ -139,16 +139,16 @@ describe('主动阶段与应对结算', () => {
     assert.equal(next.history[1]!.response, 'guard');
   });
 
-  it('暴击额外造成 2 点伤害', () => {
-    const battle = turn(playerFirst(), 'light', { random: ALL_LUCK });
+  it('暴击额外造成 2 点伤害', async () => {
+    const battle = await turn(playerFirst(), 'light', { random: ALL_LUCK });
     const attack = battle.history[0]!;
     assert.equal(attack.crit, true);
     assert.equal(attack.damage, 3);
     assert.equal(battle.enemy.hp, 15);
   });
 
-  it('闪避判定成功时不掉血，但照样消耗 1 点真气', () => {
-    const result = resolveTurn(playerFirst(), 'light', 1, { random: () => 0.1, ai: alwaysDodge });
+  it('闪避判定成功时不掉血，但照样消耗 1 点真气', async () => {
+    const result = await resolveTurn(playerFirst(), 'light', 1, { random: () => 0.1, ai: alwaysDodge });
     const next = result.battle;
     const attack = firstAttack(result.events);
     assert.equal(attack.dodged, true);
@@ -158,10 +158,10 @@ describe('主动阶段与应对结算', () => {
     assert.equal(next.enemy.ap, 1);
   });
 
-  it('暴击判定在闪避失败之后，闪避失败仍可能暴击', () => {
+  it('暴击判定在闪避失败之后，闪避失败仍可能暴击', async () => {
     // 第一抽 0.9 闪避失败，第二抽 0 判成暴击
     const values = [0.9, 0];
-    const result = resolveTurn(playerFirst(), 'light', 1, {
+    const result = await resolveTurn(playerFirst(), 'light', 1, {
       random: () => values.shift() ?? 0.99,
       ai: alwaysDodge,
     });
@@ -172,10 +172,10 @@ describe('主动阶段与应对结算', () => {
     assert.equal(result.battle.enemy.hp, 13);
   });
 
-  it('防守方没有真气时强制硬扛，不等待应对', () => {
+  it('防守方没有真气时强制硬扛，不等待应对', async () => {
     const battle = playerFirst();
     battle.enemy.ap = 0;
-    const result = resolveTurn(battle, 'light', 1, LOCKED);
+    const result = await resolveTurn(battle, 'light', 1, LOCKED);
 
     const attack = firstAttack(result.events);
     assert.equal(attack.response, 'take');
@@ -188,18 +188,18 @@ describe('主动阶段与应对结算', () => {
     assert.ok(result.events.some((event) => event.type === 'charge'));
   });
 
-  it('格挡把这一击的伤害固定减 2，最低掉 0 点', () => {
+  it('格挡把这一击的伤害固定减 2，最低掉 0 点', async () => {
     const battle = playerFirst();
-    const result = resolveTurn(battle, 'light', 1, { ai: alwaysGuard, random: NO_LUCK });
+    const result = await resolveTurn(battle, 'light', 1, { ai: alwaysGuard, random: NO_LUCK });
     assert.equal(firstAttack(result.events).damage, 1);
   });
 });
 
 describe('行动点与招式限制', () => {
-  it('动作点不足时不出招、不推进回合', () => {
+  it('动作点不足时不出招、不推进回合', async () => {
     const battle = playerFirst();
     battle.player.ap = 1;
-    const result = resolveTurn(battle, 'heavy', 1, LOCKED);
+    const result = await resolveTurn(battle, 'heavy', 1, LOCKED);
     assert.equal(result.rejection?.reason, 'insufficient-ap');
     assert.equal(result.battle, battle);
     assert.equal(result.battle.round, 1);
@@ -207,31 +207,31 @@ describe('行动点与招式限制', () => {
     assert.equal(result.battle.rngDraws, 0);
   });
 
-  it('真气满时不能再蓄力', () => {
+  it('真气满时不能再蓄力', async () => {
     const battle = playerFirst();
     battle.player.ap = RULES.maxAp;
-    const result = resolveTurn(battle, 'charge', 1);
+    const result = await resolveTurn(battle, 'charge', 1);
     assert.equal(result.rejection?.reason, 'full-ap');
     assert.equal(result.battle.player.ap, RULES.maxAp);
   });
 
-  it('蓄力加 1 点真气并交出主动阶段', () => {
-    const result = resolveTurn(playerFirst(), 'charge', 1);
+  it('蓄力加 1 点真气并交出主动阶段', async () => {
+    const result = await resolveTurn(playerFirst(), 'charge', 1);
     assert.equal(result.battle.player.ap, 4);
     assert.equal(result.events[0]!.type, 'charge');
     // 单人模式下对手接着行动
     assert.equal(result.battle.active, 'enemy');
   });
 
-  it('一局只能开一次大招；次数用光后拒绝', () => {
+  it('一局只能开一次大招；次数用光后拒绝', async () => {
     const battle = playerFirst();
     battle.player.ap = 5;
-    const spent = resolveTurn(battle, 'ult', 1, LOCKED);
+    const spent = await resolveTurn(battle, 'ult', 1, LOCKED);
     assert.equal(spent.rejection, undefined);
     assert.equal(spent.battle.player.ultLeft, 0);
     assert.equal(spent.battle.player.ap, 1);
 
-    const again = resolveTurn(
+    const again = await resolveTurn(
       { ...spent.battle, player: { ...spent.battle.player, ap: 5 }, pending: null, active: 'player' },
       'ult',
       2,
@@ -240,7 +240,7 @@ describe('行动点与招式限制', () => {
     assert.equal(again.rejection?.reason, 'no-ult');
   });
 
-  it('第 3 轮起攻击伤害每轮加 2', () => {
+  it('第 3 轮起攻击伤害每轮加 2', async () => {
     assert.equal(roundDamageBonus(1), 0);
     assert.equal(roundDamageBonus(2), 0);
     assert.equal(roundDamageBonus(3), 2);
@@ -249,85 +249,85 @@ describe('行动点与招式限制', () => {
     // 双人模式不自动结算应对，能直接看到锁定伤害
     const battle = createBattle({ now: 0, seed: 1, firstMover: 'player', mode: 'pvp' });
     battle.round = 3;
-    const result = resolveTurn(battle, 'light', 1);
+    const result = await resolveTurn(battle, 'light', 1);
     assert.equal(result.battle.pending?.damage, 5);
   });
 });
 
 describe('回合与胜负', () => {
-  it('操作不合法时原样返回对局，不推进回合、不消耗随机数', () => {
+  it('操作不合法时原样返回对局，不推进回合、不消耗随机数', async () => {
     const battle = enemyFirst();
-    const result = resolveTurn(battle, 'light', 1, LOCKED);
+    const result = await resolveTurn(battle, 'light', 1, LOCKED);
     assert.equal(result.rejection?.reason, 'wrong-stage');
     assert.equal(result.battle, battle);
     assert.equal(result.events.length, 0);
     assert.equal(battle.rngDraws, 0);
   });
 
-  it('对局结束后拒绝继续出招', () => {
+  it('对局结束后拒绝继续出招', async () => {
     const battle = playerFirst();
     battle.phase = 'victory';
-    const result = resolveTurn(battle, 'light', 1);
+    const result = await resolveTurn(battle, 'light', 1);
     assert.equal(result.rejection?.reason, 'ended');
     assert.equal(result.battle, battle);
   });
 
-  it('把对手打到 0 血判胜，并写入终局事件', () => {
+  it('把对手打到 0 血判胜，并写入终局事件', async () => {
     const battle = playerFirst();
     battle.enemy.hp = 1;
-    const result = resolveTurn(battle, 'light', 1, LOCKED);
+    const result = await resolveTurn(battle, 'light', 1, LOCKED);
     assert.equal(result.battle.phase, 'victory');
     assert.equal(result.battle.enemy.hp, 0);
     assert.ok(result.events.some((event) => event.type === 'end'));
     assert.equal(result.events.at(-1)?.type, 'end');
   });
 
-  it('玩家被击倒判负', () => {
+  it('玩家被击倒判负', async () => {
     const battle = enemyFirst();
     battle.player.hp = 1;
     battle.pending = { actor: 'enemy', move: 'heavy', damage: 5 };
-    const result = resolveTurn(battle, 'take', 1, LOCKED);
+    const result = await resolveTurn(battle, 'take', 1, LOCKED);
     assert.equal(result.battle.phase, 'defeat');
     assert.equal(result.battle.player.hp, 0);
     assert.equal(result.events.at(-1)?.type, 'end');
   });
 
-  it('结算不改动入参，返回新的对局对象', () => {
+  it('结算不改动入参，返回新的对局对象', async () => {
     const battle = playerFirst();
     const snapshot = structuredClone(battle);
-    const result = resolveTurn(battle, 'light', 1, LOCKED);
+    const result = await resolveTurn(battle, 'light', 1, LOCKED);
     assert.deepEqual(battle, snapshot);
     assert.notEqual(result.battle, battle);
   });
 
-  it('同一种子与同一输入序列必然复现同一局面', () => {
-    const play = (battle: Battle): Battle => {
-      const a = resolveTurn(battle, 'light', 1, { random: () => 0.5 }).battle;
-      const b = resolveTurn(a, 'guard', 2, { random: () => 0.5 }).battle;
-      return resolveTurn(b, 'heavy', 3, { random: () => 0.5 }).battle;
+  it('同一种子与同一输入序列必然复现同一局面', async () => {
+    const play = async (battle: Battle): Promise<Battle> => {
+      const a = (await resolveTurn(battle, 'light', 1, { random: () => 0.5 })).battle;
+      const b = (await resolveTurn(a, 'guard', 2, { random: () => 0.5 })).battle;
+      return (await resolveTurn(b, 'heavy', 3, { random: () => 0.5 })).battle;
     };
-    const a = play(playerFirst(777));
-    const b = play(playerFirst(777));
+    const a = await play(playerFirst(777));
+    const b = await play(playerFirst(777));
     assert.deepEqual(
       { round: a.round, hp: [a.player.hp, a.enemy.hp], ap: [a.player.ap, a.enemy.ap], rng: a.rngDraws },
       { round: b.round, hp: [b.player.hp, b.enemy.hp], ap: [b.player.ap, b.enemy.ap], rng: b.rngDraws },
     );
   });
 
-  it('战报只保留最近 30 条', () => {
+  it('战报只保留最近 30 条', async () => {
     const battle = playerFirst();
     for (let index = 0; index < 40; index += 1) {
       battle.history.push({ round: 1, actor: 'player', action: 'light', createdAt: index });
     }
-    const result = resolveTurn(battle, 'light', 1, LOCKED);
+    const result = await resolveTurn(battle, 'light', 1, LOCKED);
     assert.ok(result.battle.history.length <= 30);
   });
 });
 
 describe('双人联机', () => {
-  it('双人模式不自动结算应对，等另一位玩家输入', () => {
+  it('双人模式不自动结算应对，等另一位玩家输入', async () => {
     const canonical = createBattle({ now: 0, seed: 1, firstMover: 'player', mode: 'pvp' });
-    const hostTurn = resolveTurn(canonical, 'light', 1);
+    const hostTurn = await resolveTurn(canonical, 'light', 1);
     assert.equal(hostTurn.rejection, undefined);
     assert.equal(hostTurn.battle.enemy.hp, 18);
     assert.equal(hostTurn.battle.pending?.actor, 'player');
@@ -342,7 +342,7 @@ describe('双人联机', () => {
     assert.equal(guestView.player.hp, 18);
     assert.equal(guestView.enemy.name, '对手');
     assert.equal(guestView.pending?.actor, 'enemy');
-    const guestTurn = resolveTurn(guestView, 'guard', 2);
+    const guestTurn = await resolveTurn(guestView, 'guard', 2);
     assert.equal(guestTurn.battle.player.hp, 17);
     assert.equal(guestTurn.battle.player.ap, 2);
     assert.equal(guestTurn.battle.round, 1);
@@ -356,21 +356,21 @@ describe('双人联机', () => {
     assert.equal(next.pending, null);
   });
 
-  it('自己刚出招时再输入应对会被拒绝，不能替对手结算', () => {
+  it('自己刚出招时再输入应对会被拒绝，不能替对手结算', async () => {
     const canonical = createBattle({ now: 0, seed: 1, firstMover: 'player', mode: 'pvp' });
-    const hostTurn = resolveTurn(canonical, 'light', 1);
+    const hostTurn = await resolveTurn(canonical, 'light', 1);
     assert.equal(hostTurn.battle.pending?.actor, 'player');
 
-    const again = resolveTurn(hostTurn.battle, 'guard', 2);
+    const again = await resolveTurn(hostTurn.battle, 'guard', 2);
     assert.equal(again.rejection?.reason, 'waiting-opponent');
     assert.equal(again.battle, hostTurn.battle);
     assert.equal(again.battle.pending?.actor, 'player');
     assert.equal(again.events.length, 0);
   });
 
-  it('双人模式下 advanceBattle 不会代跑对手阶段', () => {
+  it('双人模式下 advanceBattle 不会代跑对手阶段', async () => {
     const battle = createBattle({ now: 0, seed: 1, firstMover: 'enemy', mode: 'pvp' });
-    const result = advanceBattle(battle, 1);
+    const result = await advanceBattle(battle, 1);
     assert.equal(result.battle.active, 'enemy');
     assert.equal(result.battle.pending, null);
     assert.deepEqual(result.events, []);

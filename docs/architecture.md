@@ -88,9 +88,11 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 `McpServer` 内部保存每个连接的协议状态（初始化、能力协商），多连接共用一个实例会串会话。所以 `createMcpServer()` 在 `GET /mcp` 里按连接创建。
 
-### 12. 意图模型只做归一化，规则匹配永远优先
+### 12. JEV：意图归一化与对手决策
 
-JEV（`src/game/intent.ts`）接在 `matchAction` 之后：规则认不出、且轮到该玩家时，才把原话和当前阶段发给 OpenRouter 的 decisions 接口（`POST /api/alpha/decisions`），把「这句话对应哪一招」表达成一个 choice 选择题，选项按阶段限定。模型返回选择与概率，置信度 ≥ 0.6 才采纳；它不产出数值、不改对局状态；超时 1.5 秒、HTTP 异常、返回越界都回退为「没听出来」，因此断网也能玩。未配 `OPENROUTER_API_KEY` 时整层不启用。
+意图模型（`src/game/intent.ts`）接在 `matchAction` 之后：规则认不出、且轮到该玩家时，才把原话和当前阶段发给 OpenRouter 的 decisions 接口（`POST /api/alpha/decisions`），把「这句话对应哪一招」表达成一个 choice 选择题，选项按阶段限定。模型返回选择与概率，置信度 ≥ 0.6 才采纳；它不产出数值、不改对局状态；超时 1.5 秒、HTTP 异常、返回越界都回退为「没听出来」，因此断网也能玩。未配 `OPENROUTER_API_KEY` 时整层不启用。
+
+对手的每次出招与应对也走 JEV（`src/game/enemy-jev.ts`）：本地先按真气与大招次数过滤出合法选项，把「当前局面 → 选哪个」做成选择题；置信度 ≥ 0.6 才采纳，超时 1.2 秒、HTTP 异常、选项越界都回退 `ENEMY_AI`。模型只选动作，数值与胜负仍只在 engine 算。因为要等模型返回，`resolveTurn` / `advanceBattle` 是 async，但仍不改入参、返回新状态；同一 seed 不再保证复现，单测与 256,000 局对拍都注入本地 AI，不受影响。`ENEMY_AI=local` 可关闭这层。
 
 ### 11. 错误不外抛
 

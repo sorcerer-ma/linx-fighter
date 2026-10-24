@@ -26,7 +26,7 @@ describe('v0.2 仿真对拍（快速子集）', () => {
     assert.deepEqual(actual, PYTHON_FIRST_FIVE);
   });
 
-  it('save=False 的 light 镜像 2000 局与夹具一致', () => {
+  it('save=False 的 light 镜像 2000 局与夹具一致', async () => {
     // 基准取自 test/fixtures/v02-validation.json 的 False.mirror.light
     const mt = new Mt19937(20261023);
     let wins = 0;
@@ -34,7 +34,7 @@ describe('v0.2 仿真对拍（快速子集）', () => {
     let targetCount = 0;
 
     for (let i = 0; i < 2000; i++) {
-      const outcome = runGame('light', 'light', { mt, save: false });
+      const outcome = await runGame('light', 'light', { mt, save: false });
       if (outcome.firstWins) wins += 1;
       totalRounds += outcome.rounds;
       if (outcome.rounds >= 3 && outcome.rounds <= 5) targetCount += 1;

@@ -13,6 +13,8 @@ describe('配置解析', () => {
       openrouterApiKey: undefined,
       openrouterModel: 'typesafe/jev-1.13',
       intentTimeoutMs: 1500,
+      enemyAi: 'jev',
+      enemyTimeoutMs: 1200,
     });
   });
 
@@ -52,6 +54,16 @@ describe('配置解析', () => {
     assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '50' }).intentTimeoutMs, 200);
     assert.equal(loadConfig({ INTENT_TIMEOUT_MS: '9000' }).intentTimeoutMs, 5000);
     assert.equal(loadConfig({ INTENT_TIMEOUT_MS: 'oops' }).intentTimeoutMs, 1500);
+  });
+
+  it('对手决策配置：开关归一化、超时钳制', () => {
+    assert.equal(loadConfig({ ENEMY_AI: 'local' }).enemyAi, 'local');
+    assert.equal(loadConfig({ ENEMY_AI: ' LOCAL ' }).enemyAi, 'local');
+    assert.equal(loadConfig({ ENEMY_AI: 'jev' }).enemyAi, 'jev');
+    assert.equal(loadConfig({ ENEMY_AI: 'gpt' }).enemyAi, 'jev');
+    assert.equal(loadConfig({ ENEMY_TIMEOUT_MS: '50' }).enemyTimeoutMs, 200);
+    assert.equal(loadConfig({ ENEMY_TIMEOUT_MS: '99999' }).enemyTimeoutMs, 5000);
+    assert.equal(loadConfig({ ENEMY_TIMEOUT_MS: 'oops' }).enemyTimeoutMs, 1200);
   });
 
   it('监听地址可覆盖且去空白', () => {

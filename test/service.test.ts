@@ -34,7 +34,7 @@ function setup(overrides: Partial<GameServiceDeps> = {}) {
 describe('游戏服务', () => {
   it('开局生成对局与初始属性', async () => {
     const { service } = setup();
-    const result = service.start(KEY);
+    const result = await service.start(KEY);
 
     assert.ok(result.battle);
     assert.equal(result.battle.round, 1);
@@ -54,14 +54,14 @@ describe('游戏服务', () => {
 
   it('开局可以指定对手名字', async () => {
     const { service } = setup();
-    const result = service.start(KEY, { opponent: '阿青' });
+    const result = await service.start(KEY, { opponent: '阿青' });
     assert.equal(result.battle?.enemy.name, '阿青');
     assert.match(result.text, /阿青/);
   });
 
   it('出招推进回合并记录战报，应对阶段再结算', async () => {
     const { service } = setup();
-    service.start(KEY);
+    await service.start(KEY);
 
     const first = await service.act(KEY, '普攻');
     assert.equal(first.battle?.round, 1);
@@ -86,7 +86,7 @@ describe('游戏服务', () => {
 
   it('招式认不出来时不改对局、只提示可选说法', async () => {
     const { service } = setup();
-    service.start(KEY);
+    await service.start(KEY);
 
     const result = await service.act(KEY, '跳舞');
     assert.equal(result.battle?.round, 1);
@@ -107,7 +107,7 @@ describe('游戏服务', () => {
 
   it('不同设备的对局互不影响', async () => {
     const { service } = setup();
-    service.start(KEY);
+    await service.start(KEY);
     await service.act(KEY, '普攻');
 
     const other = service.status('device-b#agent-1');
@@ -120,7 +120,7 @@ describe('游戏服务', () => {
 
   it('已结束的对局不再接受出招', async () => {
     const { service, store } = setup();
-    const started = service.start(KEY);
+    const started = await service.start(KEY);
     store.set(KEY, { ...started.battle!, phase: 'victory' });
 
     const result = await service.act(KEY, '攻击');
@@ -131,7 +131,7 @@ describe('游戏服务', () => {
 
   it('念唤出指令时先回念一句再播报回合', async () => {
     const { service } = setup();
-    service.start(KEY);
+    await service.start(KEY);
 
     const result = await service.act(KEY, '共鸣斩破军');
     assert.equal(result.battle?.history.length, 1);
@@ -141,7 +141,7 @@ describe('游戏服务', () => {
 
   it('战败与未知状态都有对应播报', async () => {
     const { service, store } = setup();
-    const battle = service.start(KEY).battle!;
+    const battle = (await service.start(KEY)).battle!;
 
     store.set(KEY, { ...battle, phase: 'defeat' });
     assert.match((await service.act(KEY, '攻击')).text, /你输了/);
@@ -152,7 +152,7 @@ describe('游戏服务', () => {
 
   it('待应对阶段出主动招式会被挡回', async () => {
     const { service } = setup();
-    service.start(KEY);
+    await service.start(KEY);
     await service.act(KEY, '普攻');
 
     const result = await service.act(KEY, '攻击');
@@ -179,7 +179,7 @@ describe('游戏服务', () => {
 
   it('对手先手时开局先亮出它的招式', async () => {
     const { service } = setup({ random: () => 0.5 });
-    const started = service.start(KEY);
+    const started = await service.start(KEY);
 
     assert.equal(started.battle?.firstMover, 'enemy');
     assert.deepEqual(started.battle?.pending, { actor: 'enemy', move: 'heavy', damage: 5 });
@@ -213,7 +213,7 @@ describe('意图模型兜底', () => {
       },
     };
     const { service } = setup({ intent });
-    service.start(KEY);
+    await service.start(KEY);
 
     const first = await service.act(KEY, '给我狠狠地来一下');
     assert.equal(first.battle?.history[0]?.action, 'heavy');
@@ -235,7 +235,7 @@ describe('意图模型兜底', () => {
       },
     };
     const { service } = setup({ intent: broken });
-    service.start(KEY);
+    await service.start(KEY);
 
     const result = await service.act(KEY, '随便说一句');
     assert.match(result.text, /没听清/);

@@ -204,7 +204,7 @@ export interface GameOptions {
  * 重跑参考实现的一局：first 为先手（player），second 为后手（enemy）。
  * 返回先手是否获胜与结束轮数；不合法操作、超时都直接抛错。
  */
-export function runGame(first: Policy, second: Policy, options: GameOptions): GameOutcome {
+export async function runGame(first: Policy, second: Policy, options: GameOptions): Promise<GameOutcome> {
   const { mt, save, tally } = options;
   let battle = createBattle({ now: 0, seed: 0, firstMover: 'player' });
 
@@ -250,7 +250,7 @@ export function runGame(first: Policy, second: Policy, options: GameOptions): Ga
           bonus: roundDamageBonus(battle.round),
         });
 
-    const result = resolveTurn(battle, action, 0, deps);
+    const result = await resolveTurn(battle, action, 0, deps);
     if (result.rejection) {
       throw new Error(
         `仿真出现非法操作：${action}（${result.rejection.reason}），${first} vs ${second}`,
@@ -350,7 +350,7 @@ export interface ValidationOptions {
  * for save in [False, True]: for x in POL: for y in POL: N 局。
  * 随机流只播种一次，跨组连续消耗，所以统计顺序也固定。
  */
-export function runValidationSuite(options: ValidationOptions = {}): ValidationStats {
+export async function runValidationSuite(options: ValidationOptions = {}): Promise<ValidationStats> {
   const gamesPerMatchup = options.gamesPerMatchup ?? DEFAULT_GAMES_PER_MATCHUP;
   const mt = new Mt19937(options.seed ?? DEFAULT_SEED);
   const tally: ResponseTally = new Map();
@@ -370,7 +370,7 @@ export function runValidationSuite(options: ValidationOptions = {}): ValidationS
         const mirrorRounds: number[] = [];
 
         for (let i = 0; i < gamesPerMatchup; i++) {
-          const outcome = runGame(x, y, { mt, save, tally });
+          const outcome = await runGame(x, y, { mt, save, tally });
           if (outcome.firstWins) comboWins += 1;
           groupRounds.push(outcome.rounds);
           if (outcome.rounds >= 3 && outcome.rounds <= 5) targetCount += 1;

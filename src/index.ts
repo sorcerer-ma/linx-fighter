@@ -1,5 +1,6 @@
 import { loadConfig } from './config.js';
 import { GameService } from './game/service.js';
+import { createJevEnemyAI } from './game/enemy-jev.js';
 import { createIntentResolver } from './game/intent.js';
 import { createApp } from './http/app.js';
 import { createLogger } from './log.js';
@@ -21,7 +22,17 @@ const intent = config.openrouterApiKey
       logger,
     })
   : undefined;
-const service = new GameService({ store, rooms, logger, intent });
+// 配了 Key 才让对手也走 JEV 决策；失败/超时由 AI 自己回退本地模型
+const ai =
+  config.openrouterApiKey && config.enemyAi === 'jev'
+    ? createJevEnemyAI({
+        apiKey: config.openrouterApiKey,
+        model: config.openrouterModel,
+        timeoutMs: config.enemyTimeoutMs,
+        logger,
+      })
+    : undefined;
+const service = new GameService({ store, rooms, logger, intent, ai });
 const app = createApp({ config, logger, store, rooms, service });
 
 const server = app.listen(config.port, config.host, () => {
@@ -32,6 +43,7 @@ const server = app.listen(config.port, config.host, () => {
     sse: '/mcp',
     debugEndpoints: config.enableDebugEndpoints,
     intentModel: intent ? config.openrouterModel : 'disabled',
+    enemyAi: ai ? `jev(${config.openrouterModel})` : 'local',
   });
 });
 

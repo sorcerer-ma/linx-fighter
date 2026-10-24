@@ -18,7 +18,7 @@ import type {
   ActiveActionId,
   AttackMove,
   Battle,
-  BattleAI,
+  LocalBattleAI,
   FighterView,
   ResponseMove,
   ResponseView,
@@ -212,7 +212,7 @@ function risk(hp: number, outcomes: ReadonlyArray<readonly [number, number]>): R
   return { death, expected };
 }
 
-const LEGACY_AI: BattleAI = {
+const LEGACY_AI: LocalBattleAI = {
   chooseAction(view) {
     const { self, enemy, bonus } = view;
     const ultDamage = ATTACKS.ult.damage + bonus;
@@ -283,7 +283,7 @@ function playerResponseView(battle: Battle): ResponseView {
  * 包一层合法性断言：engine 遇到非法 AI 动作会静默退回「蓄力或普攻」，
  * 光看对局跑通发现不了非法决策，必须在出口处盯住。
  */
-const CHECKED_AI: BattleAI = {
+const CHECKED_AI: LocalBattleAI = {
   chooseAction(view) {
     const action = ENEMY_AI.chooseAction(view);
     assert.ok(isLegalAction(view, action), `AI 给出非法招式 ${action}：${JSON.stringify(view)}`);
@@ -296,7 +296,7 @@ const CHECKED_AI: BattleAI = {
   },
 };
 
-test('自对弈：新 AI 与旧启发式对打 240 局，全程合法且都打得完', () => {
+test('自对弈：新 AI 与旧启发式对打 240 局，全程合法且都打得完', async () => {
   const gamesPerFirstMover = 120;
   const actionTally: Record<string, number> = {};
   const responseTally: Record<string, number> = {};
@@ -310,7 +310,7 @@ test('自对弈：新 AI 与旧启发式对打 240 局，全程合法且都打�
       const seed = 20261024 + index * 7919;
       const deps = { random: lcg(seed), ai: CHECKED_AI };
       let battle = createBattle({ now: 0, seed, firstMover });
-      battle = advanceBattle(battle, 0, deps).battle;
+      battle = (await advanceBattle(battle, 0, deps)).battle;
 
       let turns = 0;
       while (battle.phase === 'battle' && turns < TURN_LIMIT) {
@@ -323,7 +323,7 @@ test('自对弈：新 AI 与旧启发式对打 240 局，全程合法且都打�
           action = LEGACY_AI.chooseAction(playerActionView(battle));
           actionTally[action] = (actionTally[action] ?? 0) + 1;
         }
-        const result = resolveTurn(battle, action, 0, deps);
+        const result = await resolveTurn(battle, action, 0, deps);
         assert.equal(result.rejection, undefined, `第 ${seed} 局的操作 ${action} 被拒`);
         battle = result.battle;
         turns += 1;

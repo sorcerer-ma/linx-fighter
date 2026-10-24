@@ -161,7 +161,7 @@ function printGroup(group: SaveGroupStats): void {
   );
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const fixture = JSON.parse(
     readFileSync(new URL('../test/fixtures/v02-validation.json', import.meta.url), 'utf8'),
   ) as Fixture;
@@ -170,7 +170,7 @@ function main(): void {
   console.log('协议：8 策略 × 8 策略 × 2 防守风格 × 2000 局，种子 20261023');
 
   const startedAt = performance.now();
-  const stats = runValidationSuite();
+  const stats = await runValidationSuite();
   const elapsedMs = performance.now() - startedAt;
 
   // 每组（save=False / True）逐项比对
@@ -222,4 +222,4 @@ function main(): void {
   process.exit(0);
 }
 
-main();
+await main();

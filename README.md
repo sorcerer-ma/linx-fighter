@@ -23,7 +23,7 @@
 - **完整回合制玩法**：普攻 / 强攻 / 大招 / 蓄力 / 格挡 / 闪避 / 承受；真气上限 5、主动阶段回气、第 3 轮起伤害加成、先手 14 血 / 后手 18 血、大招一局一次。
 - **语音即操作，不止认关键词**：口语别名（强攻 / 猛攻 / 抡、格挡 / 防御、承受 / 硬抗）、句中夹杂（「我要公鸡你」）、ASR 同音误识别（「公鸡」「工击」→ 普攻，「墙攻」「抢攻」→ 强攻，「大召」→ 大招）；每招另有中二唤出指令（「共鸣斩破军」「天倾共此声」），念出来会被回念一句。
 - **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；配了 OpenRouter Key 时再叠一层 JEV 意图模型（decisions 接口，把「这句话对应哪一招」做成阶段内选择题），把「给我狠狠来一下」这类自由说法归一化成招式，规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。
-- **AI 对手**：按「能斩杀优先、保大招、血线安全时攒气、否则先避免致死再最小期望伤害」做效用打分，不掷随机数；单人随时能开局。策略见 [docs/ai-enemy.md](docs/ai-enemy.md)。
+- **JEV 决策对手**：每次出招与应对都把「当前局面 → 合法选项」做成选择题交给 OpenRouter 的 JEV 决策模型（`typesafe/jev-1.13`）；本地先按真气与大招次数过滤选项，置信度 ≥ 0.6 才采纳，超时 1.2 秒或返回异常时回退本地效用决策，回合不会卡住。本地兜底策略见 [docs/ai-enemy.md](docs/ai-enemy.md)；`ENEMY_AI=local` 可整体关掉模型层。
 - **双人联机**：说「联机」「开房间」得到 4 位房间号，对手说「加入房间1234」即可开打；平台模型没把这些词转成参数时，服务端也会从玩家原话里兜底识别。对局键仍是 `deviceId#agentId`，每个玩家看到自己的视角，服务端做镜像。
 - **没有对局也能直接开口**：首句「普攻」自动开局，降低演示与试玩门槛。
 - **对局按「设备 + 智能体」归属**：断线重连、多轮对话不丢对局；不同设备天然隔离。
@@ -151,18 +151,21 @@ flowchart LR
 | `OPENROUTER_API_KEY` | 空 | 配置后启用 JEV 意图模型（OpenRouter decisions 接口）；为空只用规则匹配 |
 | `OPENROUTER_MODEL` | `typesafe/jev-1.13` | JEV 决策模型名 |
 | `INTENT_TIMEOUT_MS` | `1500` | 意图模型超时，超时按没认出来处理 |
+| `ENEMY_AI` | `jev` | 对手 AI：`jev` 走 JEV 决策，`local` 只用本地决策模型 |
+| `ENEMY_TIMEOUT_MS` | `1200` | 对手单次决策超时，超时回退本地 |
 
 ## 测试与质量
 
 [![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
 
-`node:test` + 内置覆盖率，不引入额外测试框架。当前 **165 个用例**，行覆盖 **99.0%**、分支覆盖 **94.7%**、函数覆盖 **99.0%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
+`node:test` + 内置覆盖率，不引入额外测试框架。当前 **176 个用例**，行覆盖 **98.9%**、分支覆盖 **93.9%**、函数覆盖 **99.1%**；CI 与本地 `pnpm coverage` 都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
 | `test/actions.test.ts` | 七招表、精确与包含匹配、ASR 误识别、唤出指令唯一性、空输入 |
 | `test/engine.test.ts` | 初始化与先手、伤害/暴击/格挡/闪避、强制承受、真气与大招限制、轮次加成、胜负、纯函数与 seed 复现、双人 pending |
-| `test/enemy.test.ts` | AI 主动/应对决策、斩杀优先、保大招、血线攒气、致死规避 |
+| `test/enemy.test.ts` | 本地 AI 主动/应对决策、斩杀优先、保大招、血线攒气、致死规避 |
+| `test/enemy-jev.test.ts` | JEV 对手决策：合法选项过滤、题干、解析、低置信度/超时/异常回退 |
 | `test/intent.test.ts` | JEV decisions 返回解析、置信度阈值、阶段校验、请求体与失败回退 |
 | `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
 | `test/pvp.test.ts` | 建房/加入、视角镜像、双人出招与应对、房间校验、超时 |
@@ -230,7 +233,8 @@ src/
     rules.ts          数值表：气血、真气、伤害、暴击、闪避
     rng.ts            由 seed 派生的可复现随机数
     engine.ts         创建对局、双阶段结算与胜负（纯函数）
-    enemy.ts          AI 对手的决策模型
+    enemy.ts          本地对手决策模型（JEV 失败时兜底）
+    enemy-jev.ts      JEV 决策对手：把合法招式做成选择题
     intent.ts         JEV 意图模型：自然语言归一化招式（规则优先）
     pvp.ts            双人视角镜像与房间号工具
     narrator.ts       播报文案
@@ -258,6 +262,6 @@ docs/                 架构、玩法、AI、接入文档与平台官方文档
 ## 下一步
 
 1. 数值平衡与播报打磨，调参理由写进 `docs/game-design.md`，并重跑 `pnpm validate`。
-2. 意图模型提示词与阈值调优（真实 OpenRouter Key 下的误识别率、延迟）。
+2. 意图模型与对手决策的提示词、阈值调优（真实 Key 下的选择质量与延迟）。
 3. 双人断线重连提示、房间内再来一局、观战与回放。
 4. 按需扩展：Redis 存储、对局结算音效（`structuredContent.funcs` 触发 `linx_play`）。

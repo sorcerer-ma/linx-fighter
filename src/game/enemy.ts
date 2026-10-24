@@ -14,7 +14,7 @@ import type {
   ActionView,
   ActiveActionId,
   AttackMove,
-  BattleAI,
+  LocalBattleAI,
   ResponseMove,
   ResponseView,
 } from './types.js';
@@ -306,4 +306,4 @@ function hpRatio(hp: number): number {
   return Math.max(0, Math.min(1, hp / FULL_HP));
 }
 
-export const ENEMY_AI: BattleAI = { chooseAction, chooseResponse };
+export const ENEMY_AI: LocalBattleAI = { chooseAction, chooseResponse };

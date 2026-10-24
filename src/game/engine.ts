@@ -96,10 +96,10 @@ export function createBattle(options: CreateBattleOptions): Battle {
  * 开局推进：如果先手是对手，就把对手的第一个主动阶段跑完，
  * 直到轮到玩家出招或应对为止。先手是玩家时原样返回。
  */
-export function advanceBattle(battle: Battle, now: number, deps: TurnDeps = {}): TurnResult {
+export async function advanceBattle(battle: Battle, now: number, deps: TurnDeps = {}): Promise<TurnResult> {
   if (battle.phase !== 'battle') return { battle, events: [] };
   const draft = createDraft(battle, now, deps);
-  advance(draft);
+  await advance(draft);
   return finishDraft(draft);
 }
 
@@ -109,7 +109,12 @@ export function advanceBattle(battle: Battle, now: number, deps: TurnDeps = {}):
  * 主动阶段只能出招或蓄力，应对阶段只能格挡、闪避或承受；
  * 操作不合法时原样返回对局并给出原因，不推进回合、不改数值、不消耗随机数。
  */
-export function resolveTurn(battle: Battle, action: ActionId, now: number, deps: TurnDeps = {}): TurnResult {
+export async function resolveTurn(
+  battle: Battle,
+  action: ActionId,
+  now: number,
+  deps: TurnDeps = {},
+): Promise<TurnResult> {
   if (battle.phase !== 'battle') {
     return { battle, events: [], rejection: { reason: 'ended', action } };
   }
@@ -126,11 +131,11 @@ export function resolveTurn(battle: Battle, action: ActionId, now: number, deps:
   } else if (draft.battle.active !== 'player') {
     rejection = { reason: 'wrong-stage', action };
   } else {
-    rejection = performActive(draft, 'player', action);
+    rejection = await performActive(draft, 'player', action);
   }
 
   if (rejection) return { battle, events: [], rejection };
-  advance(draft);
+  await advance(draft);
   return finishDraft(draft);
 }
 
@@ -168,7 +173,7 @@ function finishDraft(draft: Draft): TurnResult {
 }
 
 /** 跑对手的主动阶段，直到轮到玩家操作或对局结束；双人联机不走 AI，直接返回 */
-function advance(draft: Draft): void {
+async function advance(draft: Draft): Promise<void> {
   for (;;) {
     const battle = draft.battle;
     if (battle.phase !== 'battle') return;
@@ -177,10 +182,10 @@ function advance(draft: Draft): void {
     if (battle.active !== 'enemy') return;
 
     const enemy = battle.enemy;
-    let rejection = performActive(draft, 'enemy', draft.ai.chooseAction(actionView(draft)));
+    let rejection = await performActive(draft, 'enemy', await draft.ai.chooseAction(actionView(draft)));
     if (rejection) {
       // 对手 AI 给出当前行动点做不了的选择时，退到一定合法的操作，避免卡死
-      rejection = performActive(draft, 'enemy', enemy.ap < enemy.maxAp ? 'charge' : 'light');
+      rejection = await performActive(draft, 'enemy', enemy.ap < enemy.maxAp ? 'charge' : 'light');
       if (rejection) return;
     }
   }
@@ -222,7 +227,7 @@ function fighterOf(battle: Battle, side: Side): Fighter {
 }
 
 /** 主动阶段：蓄力或攻击。返回 undefined 表示已生效 */
-function performActive(draft: Draft, side: Side, action: ActionId): TurnRejection | undefined {
+async function performActive(draft: Draft, side: Side, action: ActionId): Promise<TurnRejection | undefined> {
   const battle = draft.battle;
   if (!isActiveAction(action)) return { reason: 'wrong-stage', action };
 
@@ -252,7 +257,7 @@ function performActive(draft: Draft, side: Side, action: ActionId): TurnRejectio
     // 没有行动点就只能硬扛，不占用玩家的输入
     resolvePending(draft, 'take', true);
   } else if (side === 'player' && battle.mode === 'solo') {
-    const response = normalizeResponse(draft.ai.chooseResponse(responseView(draft, defenderSide)), defender);
+    const response = normalizeResponse(await draft.ai.chooseResponse(responseView(draft, defenderSide)), defender);
     resolvePending(draft, response, false);
   } else {
     // 对手已经出手，等另一方说格挡、闪避或承受
