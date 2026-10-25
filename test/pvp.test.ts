@@ -748,7 +748,7 @@ describe('明确退出挑战的安全范围',()=>{
    assert.equal(left.reply?.phase,'idle');assert.equal(left.reply?.need,'none');assert.equal(service.snapshot(HOST),null);
    assert.equal(rooms.byPlayer(HOST),undefined);assert.equal(store.get(pvpBattleKey(opened.reply!.room!)),undefined);
    assert.deepEqual(service.snapshot(OTHER),other);assert.equal(rooms.size,1);assert.equal((await waiting).reply?.silent,true);
-   const repeated=await service.say(HOST,phrase);assert.match(repeated.text,/不在挑战房间/);assert.equal(repeated.reply?.phase,'idle');assert.equal(rooms.size,1);
+   const repeated=await service.say(HOST,phrase);assert.equal(repeated.reply?.silent,true);assert.equal(rooms.size,1);
   }
  });
  it('不在房间时保留单人局，未登记或错席位声音不能撤房',async()=>{
@@ -756,16 +756,35 @@ describe('明确退出挑战的安全范围',()=>{
   const protectedFixture=setup({speakers:['甲','乙']});await protectedFixture.service.say(HOST,'开房',{speaker:'甲'});const room=protectedFixture.service.snapshot(HOST);
   for(const speaker of ['陌生人','乙']){const r=await protectedFixture.service.say(HOST,'退出挑战',{speaker});assert.equal(r.reply?.silent,true);assert.deepEqual(protectedFixture.service.snapshot(HOST),room);}
  });
- it('已开战退出明确拒绝，不判胜负、不清房、不消费另一方事实',async()=>{
-  const {service,rooms}=setup();const opened=await service.say(HOST,'开房');await service.say(GUEST,'加入挑战'+opened.reply!.room);
-  const beforeHost=service.snapshot(HOST),beforeGuest=service.snapshot(GUEST);
-  const r=await service.say(GUEST,'退出挑战');assert.equal(r.reply?.reason,'wrong_stage');assert.match(r.text,/保持不变/);
-  assert.deepEqual(service.snapshot(HOST),beforeHost);assert.deepEqual(service.snapshot(GUEST),beforeGuest);assert.equal(rooms.size,1);
-  assert.ok(service.status(HOST).reply?.events?.some(e=>e.t==='start'));
+ it('两人房退出方判负，对方获胜；资源不伪造伤害，旧等待只收到一次终局',async()=>{
+  for(const quitter of [HOST,GUEST]){
+   const {service,rooms}=setup();const opened=await service.say(HOST,'开房');await service.say(GUEST,'加入挑战'+opened.reply!.room);service.status(HOST);
+   if(quitter===GUEST)await service.say(HOST,'普攻');else {await service.say(HOST,'普攻');await service.say(GUEST,'承受');await service.say(GUEST,'普攻');}
+   const other=quitter===HOST?GUEST:HOST;const before=service.snapshot(quitter)!.state;
+   const wait=service.waitEvent(other,{timeoutMs:1000});const r=await service.say(quitter,'退出挑战');
+   assert.equal(r.reply?.phase,'defeat');assert.ok(r.reply?.events?.some(e=>e.t==='end'&&e.win==='foe'&&e.cause==='forfeit'));
+   assert.equal(r.reply?.you?.hp,before.you.hp);assert.equal(r.reply?.you?.ap,before.you.ap);
+   assert.equal(service.snapshot(other)?.state.phase,'victory');assert.equal(rooms.size,1);
+   const win=await wait;assert.ok(win.reply?.events?.some(e=>e.t==='end'&&e.win==='you'&&e.cause==='forfeit'));
+   assert.equal(service.status(other).reply?.events?.filter(e=>e.t==='end').length,0);
+   const snapshot=service.snapshot(other);for(const key of [quitter,other])assert.equal((await service.say(key,'退出房间')).reply?.silent,true);assert.deepEqual(service.snapshot(other),snapshot);
+   assert.equal(service.notification(other,'opponent-move',{battleId:r.battle!.id,pushId:'old'}).reply?.silent,true);
+  }
  });
- it('退出排队时对手刚加入，重查房间后拒绝而非撤掉新开战的双方',async()=>{
+ it('退出排队时对手刚加入，按实际两人房判负而非撤掉对手结果',async()=>{
   const {service,rooms}=setup();const opened=await service.say(HOST,'开房');const exit=service.say(HOST,'退出房间');
-  await service.say(GUEST,'加入挑战'+opened.reply!.room);assert.equal((await exit).reply?.reason,'wrong_stage');assert.equal(rooms.size,1);assert.equal(service.snapshot(GUEST)?.state.waiting,false);
+  await service.say(GUEST,'加入挑战'+opened.reply!.room);assert.equal((await exit).reply?.phase,'defeat');assert.equal(rooms.size,1);assert.equal(service.snapshot(GUEST)?.state.phase,'victory');
+ });
+ it('双方同时退出只认首次有效结算，不产生双赢或重复终局',async()=>{
+  const {service}=setup();const opened=await service.say(HOST,'开房');await service.say(GUEST,'加入挑战'+opened.reply!.room);
+  const a=service.say(HOST,'退出挑战'),b=service.say(GUEST,'退出房间');const [ra,rb]=await Promise.all([a,b]);
+  assert.equal(ra.reply?.phase,'defeat');assert.equal(rb.reply?.silent,true);assert.equal(service.snapshot(GUEST)?.state.phase,'victory');
+  assert.equal(service.status(GUEST).reply?.events?.filter(e=>e.t==='end').length,1);assert.equal(service.status(GUEST).reply?.events?.filter(e=>e.t==='end').length,0);
+ });
+ it('退出后重入新挑战不继承旧判负或重复终局',async()=>{
+  const {service}=setup();const opened=await service.say(HOST,'开房');await service.say(GUEST,'加入挑战'+opened.reply!.room);await service.say(GUEST,'退出挑战');
+  const fresh=await service.say(OTHER,'开房');const joined=await service.say(GUEST,'加入挑战'+fresh.reply!.room);assert.equal(joined.reply?.phase,'battle');assert.equal(joined.reply?.events?.some(e=>e.t==='end'),false);
+  const left=await service.say(GUEST,'退出房间');assert.equal(left.reply?.phase,'defeat');assert.ok(left.reply?.events?.some(e=>e.t==='end'&&e.cause==='forfeit'));
  });
  it('排队退出不能撤掉同编号重新创建的新挑战',async()=>{
   const {service,rooms}=setup();const opened=await service.say(HOST,'开房');const before=opened.battle!.id;
@@ -776,6 +795,6 @@ describe('明确退出挑战的安全范围',()=>{
   const {service,rooms,store}=setup();const opened=await service.say(HOST,'开房');const code=opened.reply!.room!;await service.say(GUEST,'加入挑战'+code);await service.say(OTHER,'开始');
   const other=service.snapshot(OTHER);const original=store.get(pvpBattleKey(code))!;store.set(pvpBattleKey(code),{...original,phase:'victory',enemy:{...original.enemy,hp:0}});
   const r=await service.say(GUEST,'退出房间');assert.equal(r.reply?.phase,'idle');assert.equal(rooms.size,0);assert.equal(service.snapshot(HOST),null);assert.equal(service.snapshot(GUEST),null);assert.deepEqual(service.snapshot(OTHER),other);
-  assert.deepEqual(service.status(HOST).reply?.events,[]);assert.equal((await service.say(HOST,'退出挑战')).reply?.phase,'idle');
+  assert.deepEqual(service.status(HOST).reply?.events,[]);assert.equal((await service.say(HOST,'退出挑战')).reply?.silent,true);
  });
 });

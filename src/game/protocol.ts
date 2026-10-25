@@ -20,7 +20,7 @@ export type ProtocolEvent =
       r: 'guard' | 'dodge' | 'take'; dmg: number;
       miss?: true; crit?: true; forced?: true;
     }
-  | { t: 'end'; win: ProtocolSide }
+  | { t: 'end'; win: ProtocolSide; cause?: 'forfeit' }
   | { t: 'timeout'; what: 'guest' | 'foe' }
   | { t: 'chant'; text: string };
 

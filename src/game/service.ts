@@ -159,6 +159,7 @@ export class GameService {
   private readonly speakers: string[];
   private readonly seatSpeakers = new Map<string, SeatBindings>();
   private readonly delivered = new Map<string, string>();
+  private readonly exitAcknowledged = new Map<string, string | null>();
   private readonly notificationIds = new Map<string, {battleId:string;stage:string;ids:Set<string>}>();
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
@@ -677,31 +678,44 @@ export class GameService {
     return { text: narrateOpening(battle), battle, protocol: { events: [this.startEvent(battle)] }, presentation:presentation('opening',battle) };
   }
 
-  /** Exit shares the room transaction; a newly joined/changed battle is never cleared blindly. */
+  /** Serialize exits with actions; the first effective two-player exit decides the result. */
   private leaveRoom(sessionKey: string, options: SayOptions): Promise<ServiceResult> {
     const queued = tableFor(this.tables, sessionKey);
     const originalId = queued.battle()?.id ?? null;
-    return this.battles.runExclusive(queued.key, () => {
+    return this.battles.run(queued.key, tx => {
       if (!this.readerAllowed(sessionKey, options.speaker)) return this.silentResult(sessionKey);
       const room = this.rooms.byPlayer(sessionKey);
       const current = tableFor(this.tables, sessionKey);
       const battle = current.view(sessionKey);
-      if (!room) return {text:'我现在不在挑战房间里，当前对局没有改变。',battle,protocol:{text:true,consume:false}};
-      if (room.code !== queued.room || (battle?.id ?? null) !== originalId) {
+      const id = battle?.id ?? null;
+      if (this.exitAcknowledged.has(sessionKey) && this.exitAcknowledged.get(sessionKey) === id) return this.silentResult(sessionKey);
+      if (!room) {
+        this.exitAcknowledged.set(sessionKey,id);
+        return {text:'我现在不在挑战房间里，当前对局没有改变。',battle,protocol:{text:true,consume:false}};
+      }
+      if (room.code !== queued.room || id !== originalId) {
         return {text:narrateStaleAction(),battle,protocol:{reason:'failed',text:true,consume:false}};
       }
-      // An active two-player exit needs a product decision: no invented surrender,
-      // penalty, winner or automatic cancellation of the other player's game.
-      if (room.guestKey && battle?.phase === 'battle') {
-        return {text:'对决已经开始，现在还不能退出挑战；当前对局保持不变。',battle,protocol:{reason:'wrong_stage',text:true,consume:false}};
+      const canonical = tx.load();
+      if (room.guestKey && canonical?.phase === 'battle') {
+        const side = current.seat(sessionKey)!;
+        const ended: Battle = {...canonical,phase:side==='player'?'defeat':'victory',pending:null,updatedAt:this.now()};
+        tx.commit(ended);
+        const other = side==='player' ? room.guestKey : room.hostKey;
+        // Retain the finished table for both perspectives until re-entry/TTL;
+        // deleting it here would hide the winner from an already waiting peer.
+        this.exitAcknowledged.set(room.hostKey,ended.id);
+        this.exitAcknowledged.set(room.guestKey,ended.id);
+        this.enqueueFacts(other,ended.id,[{t:'end',win:'you',cause:'forfeit'}]);
+        this.wakeTable(current);
+        return {text:'我退出了挑战，这一局我输了，对手获胜。',battle:viewAs(ended,side),protocol:{events:[{t:'end',win:'foe',cause:'forfeit'}]}};
       }
       const ended = room.guestKey !== null;
       dropRoom(this.tables, room, '明确退出挑战');
-      this.delivered.delete(room.hostKey);
-      this.notificationIds.delete(room.hostKey);
-      if (room.guestKey) {
-        this.delivered.delete(room.guestKey);
-        this.notificationIds.delete(room.guestKey);
+      for (const member of [room.hostKey, ...(room.guestKey ? [room.guestKey] : [])]) {
+        this.delivered.delete(member);
+        this.notificationIds.delete(member);
+        this.exitAcknowledged.set(member,null);
       }
       this.clearRoomFacts(room);
       return {text:ended ? '这场挑战已经结束，我已退出房间。' : '我已退出挑战，等待房间已撤销。',battle:null,protocol:{text:true,consume:false}};
@@ -991,7 +1005,9 @@ export class GameService {
             : event.r === 'guard' ? '格挡' : event.forced ? '没有能量，只能承受' : '承受';
           return `${attacker}${actionLabel(event.mv)}，${defender}${response}${event.crit ? '，暴击' : ''}，受到${event.dmg}点伤害。`;
         }
-        case 'end': return event.win === 'you' ? '我赢了。' : '我输了。';
+        case 'end': return event.cause === 'forfeit'
+          ? event.win === 'you' ? '对手退出了挑战，我赢了。' : '我退出了挑战，我输了。'
+          : event.win === 'you' ? '我赢了。' : '我输了。';
         case 'timeout': return event.what === 'guest' ? '对手还没加入。' : '对手还没出手。';
         case 'chant': return `${event.text}。`;
       }
