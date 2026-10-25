@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -187,7 +187,7 @@ export function createApp(deps: AppDependencies): express.Express {
     }
     notices.delete(pushId);
     const result=service.notification(owner,notice.kind,{battleId:notice.battleId,pushId,speaker:ctx.speakerName || undefined});
-    res.json({reply:result.reply,battleId:result.battle?.id ?? null});
+    res.json({reply:result.reply,battleId:result.battle?.id ?? null,stage:createHash('sha256').update(notice.fingerprint).digest('hex')});
   });
 
   app.get('/events', (req, res) => {

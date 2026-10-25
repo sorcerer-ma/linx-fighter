@@ -920,7 +920,7 @@ export class GameService {
 
   private finish(sessionKey: string, result: ServiceResult): ServiceResult {
     if (result.reply) {
-      if(!result.reply.silent && result.battle) this.delivered.set(sessionKey,this.deliverySignature(sessionKey,result.battle));
+      if(!result.reply.silent && (!result.reply.text || Boolean(result.reply.events?.length)) && result.battle) this.delivered.set(sessionKey,this.deliverySignature(sessionKey,result.battle));
       return result;
     }
     const table = tableFor(this.tables, sessionKey);
@@ -938,7 +938,7 @@ export class GameService {
       reason: extra.reason, action: extra.action, silent: extra.silent,
       events: [...missed, ...(extra.events ?? protocolEvents(result.presentation?.facts.events ?? []))],
     });
-    if(!result.reply.silent && result.battle) this.delivered.set(sessionKey,this.deliverySignature(sessionKey,result.battle));
+    if(!result.reply.silent && (!result.reply.text || Boolean(result.reply.events?.length)) && result.battle) this.delivered.set(sessionKey,this.deliverySignature(sessionKey,result.battle));
     return result;
   }
 

@@ -112,4 +112,13 @@ describe('v2 notification facts, authority and shared consumption',()=>{
     assert.match(result.reply?.say??'',/等轮到主动行动/);
   });
 
+  it('help does not mark unspoken pending state delivered or suppress later wait/notification',async()=>{
+    for(const channel of ['notify','wait']){
+      const {service,battleId}=await paired();await service.say('host','蓄力');await service.say('guest','强攻');
+      const help=await service.say('host','怎么玩');assert.ok(help.reply?.text);assert.deepEqual(help.reply?.events,[]);
+      const next=channel==='notify'?service.notification('host','opponent-move',{battleId,pushId:'after-help'}):await service.waitEvent('host');
+      assert.equal(next.reply?.need,'respond');assert.notEqual(next.reply?.silent,true);
+    }
+  });
+
 });
