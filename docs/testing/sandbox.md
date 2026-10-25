@@ -144,7 +144,7 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
   "ok": true,
   "reply": "我强攻，对手格挡，掉2点生命值，剩15。",
   "protocol": { "v": 2, "ok": true, "phase": "battle", "need": "move", "...": "完整 GameReply" },
-  "sourceReply": "{\"v\":2,\"ok\":true,...}",
+  "sourceReply": "我强攻，对手格挡，掉2点生命值，剩15。",
   "silent": false,
   "isError": false,
   "tool": "game_say",
@@ -168,8 +168,8 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
 }
 ```
 
-- `reply` 是 Agent 转发与可选人设表达后的最终话术；`sourceReply` 是工具返回的 v2 事实 JSON 原文；`protocol` 是解析后的 `GameReply`。工具文本块是 JSON，须解析并完成表达后才形成 `reply`，不能直接交页面或 TTS。
-- `state` 是调用完成后从 `GET /state` 取到的局面快照；取不到时为 `null`（不影响播报）。
+- `reply` 是 Agent 转发与可选人设表达后的最终话术；`sourceReply` 是从工具事实得到的确定性可朗读退路；`protocol` 是解析后的 `GameReply`，原始工具 JSON 可在 trace 中区分。工具文本块是 JSON，须解析并完成表达后才形成 `reply`，不能直接交页面或 TTS。
+- `state` 是调用完成后从 `GET /state` 取到的局面快照；取不到时为 `null`；播放仍受取消、局号与通知指纹校验，通知局面无法核实时保持静默。
 - 上游完全连不上：`{ "ok": false, "reply": "沙箱连不上游戏服务 http://…，先确认 pnpm dev 在跑。", "error": "upstream_unreachable" }`，HTTP 状态仍为 200，页面照常播报这句。
 
 ### POST /api/wait
@@ -229,9 +229,9 @@ data: {"type":"push","device":"web-p1","agent":"linx-sandbox","kind":"opponent-m
 
 - 同一个局面只催到规定次数；终局不推，避免和玩家那次行动的回复重复。
 - 大招就绪只认服务端 `rules.isUltimateReady` 判定与 v2 事实里的 `you.ult`：能量不足、本局次数用完或当前不能出招时，不会说“可以用大招”；就绪推送每次就绪只发一次。
-- `text` 是伙伴第一人称的短句，最多两句、约 60 字；页面可直接显示，也可以交给 TTS。
+- `text` 保留为旧端兼容文案；v2 页面不直接播放它，而是使用一次性信号取回当前事实，再经 Agent 表达。
 - 空闲基准取「局面最后变化、连接建立、本次变化」三者较晚者；玩家行动结算后局面变化，计时重新开始。
-- 页面收到 `push` 会写进对话记录并朗读；正在朗读时只留最新一条排队，玩家正在说话、打字或页面隐藏时丢弃，不抢麦。麦克风只是开着待机不算「在说话」，朗读会短暂暂停收音再恢复。排队与丢弃逻辑在 `sandbox/public/push.js`。
+- 页面收到 `push` 后经 `/api/notify` 取当前事实，最终 Agent 话术才写入伙伴记录并进入统一分段播放队列；不直接朗读 SSE 原文。正在播放时只保留最新信号，玩家真实说话、打字或隐藏时让路；全部段结束才恢复收音。队列、取消、局号与代次隔离由 `sandbox/public/app.js` 管理。
 - `/api/events` 代理原样透传 `push`，不需要额外配置。
 
 `battle` 快照（已按当前玩家视角镜像，`player` 永远是你自己；`waiting` 只在双人房里对手还没加入时为 `true`）：
@@ -379,3 +379,9 @@ Agent 表达模型依据同一批权威事实及伙伴提示词输出内部 `seg
 ### 直接云语音配置
 
 默认 `SANDBOX_ASR_MODE=browser` 与 `SANDBOX_TTS_MODE=browser`。显式设为 `doubao` 后，沙箱通过自己的同源语音接口使用流式识别与合成；本地安全配置需提供 `SANDBOX_SPEECH_API_KEY`，缺失时明确报错，不退回假模型。PCM 部分识别仅展示，最终识别去重后才提交一次。`SANDBOX_TTS_RESOURCE=seed-tts-2.0` 与三套白名单 profile 配套，个体名可由 `SANDBOX_COMPANION_NAME` 单独配置，不用于说话人身份。固定本机桥接与直接 TTS 选择一个；桥接启用时凭据由 18391 独立加载。配置改动在服务安全重载后生效，现有进程不会自动加载仓库改动。
+
+### 加入意图与退出边界
+
+“加入挑战／接受挑战”必须带四位编号；缺少或错误编号返回既有 `room_bad`，不调用模型创建房间，已有单人局或房间保持不变。“加入挑战1234”和既有接受挑战、加入房间口令继续兼容。编号内“一／幺”都表示1，例如原话“加入挑战，编号七幺二六。”和“七一二六”都解析为7126；只提取编号语义位置的连续数字，不拼接其他上下文的资源数字，Agent不修改ASR原文。
+
+“退出挑战／退出房间”同义：等待房间撤销，已结束房间清理，唤醒旧等待为静默；其他房间不变。重复退出或不在房间仅说明状态，不自动开局，也不清空单人局。两人有效对局未结束时，明确退出方判负、对方获胜；已结束结果不反转，重复退出静默，并发退出只结算首次有效操作。不伪造伤害或额外扣资源。终局保留供双方读取；对方挂起的wait被唤醒，终局事实只消费一次，SSE仍只更新视觉，不直接播原文。只新增 end 事件的兼容可选字段 cause=forfeit，未增加工具或reason；退出后的重开／重入清理旧房，旧判负不带入新局。

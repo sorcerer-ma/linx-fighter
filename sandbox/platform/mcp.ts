@@ -300,7 +300,7 @@ function validEvent(event: unknown): boolean {
     case 'charge': return side(event.by) && nonnegative(event.ap);
     case 'hit': return side(event.by) && move(event.mv) && ['guard','dodge','take'].includes(String(event.r)) && nonnegative(event.dmg)
       && ['miss','crit','forced'].every(key => event[key] === undefined || event[key] === true);
-    case 'end': return side(event.win);
+    case 'end': return side(event.win) && (event.cause === undefined || event.cause === 'forfeit');
     case 'timeout': return event.what === 'guest' || event.what === 'foe';
     case 'chant': return typeof event.text === 'string';
     default: return false;

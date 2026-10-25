@@ -467,10 +467,10 @@ describe('读命令时的归属判定', () => {
     }
   });
 
-  it('新口令照常执行，裸「接受挑战」不会被当成进房', () => {
+  it('新口令照常执行，裸「接受挑战」只进入缺编号提示', () => {
     assert.equal(readCommand('共鸣对决，发起挑战').kind, 'open-room');
     assert.equal(readCommand('接受挑战，编号1234').kind, 'join-room');
-    assert.notEqual(readCommand('接受挑战').kind, 'join-room');
+    assert.deepEqual(readCommand('接受挑战'),{kind:'join-room',code:''});
     assert.notEqual(readCommand('编号1234').kind, 'join-room');
   });
 

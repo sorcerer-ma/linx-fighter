@@ -75,3 +75,17 @@ it('规则中文数字可换表达，但不能绕过资源归属或已结算战�
  assert.equal(replyRejectionReason('大招每局一次。我强攻打中对手，掉了3点。',facts),'ownership');
  assert.equal(replyRejectionReason('大招每局一次。我普攻打中对手，真痛快！',facts),'event_hit');
 });
+
+it('逃跑表达必须有退出判负事实且输赢归属不能反转',()=>{
+ const lost:GameReply={...battle,phase:'defeat',need:'none',events:[{t:'end',win:'foe',cause:'forfeit'}]};
+ const won:GameReply={...battle,phase:'victory',need:'none',events:[{t:'end',win:'you',cause:'forfeit'}]};
+ assert.equal(checkReply('我逃跑了，这局我输了，对手获胜。',lost),true);
+ assert.equal(checkReply('对手逃跑了，我赢了，真痛快！',won),true);
+ assert.equal(replyRejectionReason('我逃跑了，但我赢了！',won),'ownership');
+ assert.equal(replyRejectionReason('我狼狈地逃跑了，但我赢了！',won),'ownership');
+ assert.equal(checkReply('我看见对手逃跑了，这局我赢了！',won),true);
+ assert.equal(replyRejectionReason('我击倒了对手，我赢了。',won),'event_end');
+ assert.equal(replyRejectionReason('对手逃跑了，我赢了！',{...won,events:[{t:'end',win:'you'}]}),'event_end');
+ assert.equal(replyRejectionReason('我逃跑了。',{v:2,ok:true,phase:'idle',need:'none',events:[]}),'event_end');
+ assert.equal(checkReply('我没有逃跑，我赢了！',{...won,events:[{t:'end',win:'you'}]}),true);
+});

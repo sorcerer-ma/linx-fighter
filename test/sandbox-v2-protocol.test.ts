@@ -41,3 +41,9 @@ it('client preserves unknown feedback in an existing battle, and suppresses canc
   mode='cancel';const cancelled=await client.say('test','开始',{signal:controller.signal});assert.equal(cancelled.reply,'');assert.equal(cancelled.silent,true);assert.equal(cancelled.rewriteStatus,'cancelled');assert.deepEqual(cancelled.speech.segments,[]);
  }finally{globalThis.fetch=original;}
 });
+
+it('退出判负终局原因向后兼容，未知原因拒绝',()=>{
+ const base={v:2,ok:true,phase:'victory',need:'none',mode:'pvp',round:1,you:{hp:14,maxHp:14,ap:3,maxAp:5,ult:1},foe:{name:'对手',hp:18,maxHp:18,ap:3,ult:1},say:'我赢了。'};
+ for(const event of [{t:'end',win:'you'},{t:'end',win:'you',cause:'forfeit'}])assert.deepEqual(decodeReply(JSON.stringify({...base,events:[event]})).events,[event]);
+ assert.throws(()=>decodeReply(JSON.stringify({...base,events:[{t:'end',win:'you',cause:'invented'}]})));
+});
