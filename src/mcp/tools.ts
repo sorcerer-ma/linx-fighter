@@ -1,4 +1,5 @@
 import { presentation } from '../game/presentation.js';
+import { ATTACKS } from '../game/rules.js';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Logger } from '../log.js';
@@ -54,7 +55,7 @@ const actionInput = {
     .trim()
     .min(1)
     .describe(
-      '招式：主动阶段 light=普攻、heavy=强攻、ult=大招、charge=蓄力；对手出招后 guard=格挡、dodge=闪避、take=承受。也可以直接填玩家原话，例如「闪避」或「共鸣斩破军」',
+      `招式：主动阶段 light=普攻、heavy=强攻、ult=大招（需${ATTACKS.ult.apCost}点能量、每局一次）、charge=蓄力；对手出招后 guard=格挡、dodge=闪避、take=承受。也可以直接填玩家原话，例如「闪避」或「共鸣斩破军」`,
     ),
 };
 
@@ -165,7 +166,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '出招',
       description:
-        '执行玩家这一手的招式或应对。轮到玩家主动时可以用普攻、强攻、大招、蓄力；对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。玩家说「共鸣对决，发起挑战」「接受挑战，编号1234」「联机」也原样传进 action，服务端会按挑战流程处理。操作不合法时不会推进回合，返回里会说明原因并给可选说法。',
+        `执行玩家这一手的招式或应对。轮到玩家主动时可出普攻、强攻、蓄力；大招要${ATTACKS.ult.apCost}点能量且每局一次，能量不够或次数用完时不要提示玩家可以用大招。对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。玩家说「共鸣对决，发起挑战」「接受挑战，编号1234」「联机」也原样传进 action，服务端会按挑战流程处理。操作不合法时不会推进回合，返回里会说明原因并给可选说法。`,
       inputSchema: actionInput,
     },
     async ({ action, speaker }) =>
