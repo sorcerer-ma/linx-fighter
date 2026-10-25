@@ -51,6 +51,8 @@ export interface HistoryEntryState {
 
 /** 一场对局的界面视图 */
 export interface BattleState {
+  /** Authoritative identity for ignoring delayed previous-battle replies. */
+  battleId: string;
   /** 四位房间号；单人局为 null */
   room: string | null;
   mode: BattleMode;
@@ -112,6 +114,7 @@ export function battleState(
 ): BattleState {
   const view = viewAs(battle, options.side);
   return {
+    battleId: battle.id,
     room: options.room,
     mode: view.mode,
     side: options.side,

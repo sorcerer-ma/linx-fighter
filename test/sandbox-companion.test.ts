@@ -3,7 +3,7 @@ import { it } from 'node:test';
 import type { BattleState, HistoryEntryState } from '../src/game/state.js';
 const { companionView, newSettlement, opponentDetails } = await import(new URL('../sandbox/public/companion.js', import.meta.url).href);
 function battle(overrides: Partial<BattleState> = {}): BattleState {
-  return {room:'1234',mode:'pvp',side:'player',phase:'battle',round:1,active:'player',firstMover:'player',pending:null,waiting:false,you:{name:'伙伴',hp:14,maxHp:14,ap:4,maxAp:5,ultLeft:1},opponent:{name:'对手',hp:18,maxHp:18,ap:3,maxAp:5,ultLeft:1},winner:null,history:[],updatedAt:1,...overrides};
+  return {battleId:'test-battle',room:'1234',mode:'pvp',side:'player',phase:'battle',round:1,active:'player',firstMover:'player',pending:null,waiting:false,you:{name:'伙伴',hp:14,maxHp:14,ap:4,maxAp:5,ultLeft:1},opponent:{name:'对手',hp:18,maxHp:18,ap:3,maxAp:5,ultLeft:1},winner:null,history:[],updatedAt:1,...overrides};
 }
 it('大招必须同时满足真实阶段、资源、次数和连接条件', () => {
   assert.equal(companionView(battle(),true).ultimate,'ready');

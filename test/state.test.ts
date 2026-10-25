@@ -20,6 +20,7 @@ describe('局面快照', () => {
     const battle = await pendingBattle();
     const state = battleState(battle, { room: '1234', side: 'player' });
 
+    assert.equal(state.battleId, battle.id);
     assert.equal(state.room, '1234');
     assert.equal(state.mode, 'solo');
     assert.equal(state.side, 'player');
