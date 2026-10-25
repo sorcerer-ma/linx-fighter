@@ -69,6 +69,8 @@ export interface PushEngine {
 function signature(battle: BattleState): string {
   const pending = battle.pending ? `${battle.pending.actor}:${battle.pending.move}` : '-';
   return [
+    battle.room ?? '-',
+    battle.mode,
     battle.updatedAt,
     battle.waiting ? 1 : 0,
     battle.phase,
@@ -98,6 +100,12 @@ export function createPushEngine(options: PushEngineOptions = {}): PushEngine {
   let changedAt = connectedAt;
   let idleKey = '';
   let idleCount = 0;
+  /**
+   * 已经提醒过的对手攻击。轮询可能跨过中间的空 pending：
+   * 先是自己出招待应对，下一次采样时对手已经格挡并反击，
+   * 所以不能只看「上一帧 pending 为空」，要认这一手本身。
+   */
+  let notifiedAttack = '';
 
   // 同一种局面只催到规定次数，局面一变就重新计数
   function resetIdle(key: string): void {
@@ -115,6 +123,7 @@ export function createPushEngine(options: PushEngineOptions = {}): PushEngine {
         changedAt = at;
         idleKey = '';
         idleCount = 0;
+        notifiedAttack = '';
         return [];
       }
 
@@ -126,8 +135,19 @@ export function createPushEngine(options: PushEngineOptions = {}): PushEngine {
 
       const messages: PushMessage[] = [];
 
-      // 对手刚进房：房主这边从「等人」切到「可以开打」
-      if (changed && previous?.waiting === true && !battle.waiting && battle.phase === 'battle') {
+      // 对手刚进房：必须是同一个双人房、同一局从「等人」切到「可以开打」。
+      // waiting 变 false 也可能是玩家退房后开了单人局，不能误报「对手来了」。
+      if (
+        changed &&
+        previous?.waiting === true &&
+        previous.mode === 'pvp' &&
+        battle.mode === 'pvp' &&
+        previous.room !== null &&
+        previous.room === battle.room &&
+        previous.updatedAt === battle.updatedAt &&
+        !battle.waiting &&
+        battle.phase === 'battle'
+      ) {
         messages.push({
           kind: 'opponent-joined',
           text: narratePushOpponentJoined(battle),
@@ -136,11 +156,18 @@ export function createPushEngine(options: PushEngineOptions = {}): PushEngine {
         });
       }
 
-      // 对手刚锁定招式：这是唯一需要玩家立刻知道的局面变化
-      if (changed && previous?.pending == null && battle.pending?.actor === 'enemy' && battle.phase === 'battle') {
+      // 对手刚锁定招式：这是唯一需要玩家立刻知道的局面变化。
+      // 用攻击身份而不是「上一帧 pending 为空」判断，采样跨过中间状态也不会漏。
+      const attack = battle.pending?.actor === 'enemy' ? battle.pending : null;
+      const pendingKey = attack
+        ? `${battle.mode}:${battle.room ?? '-'}:${battle.updatedAt}:${battle.round}:${attack.move}:${attack.damage}`
+        : '';
+      if (firstSeen && pendingKey) notifiedAttack = pendingKey;
+      if (changed && attack && pendingKey !== notifiedAttack && battle.phase === 'battle') {
+        notifiedAttack = pendingKey;
         messages.push({
           kind: 'opponent-move',
-          text: narratePushOpponentMove(battle.pending.move, battle.you.ap),
+          text: narratePushOpponentMove(attack.move, battle.you.ap),
           tone: 'alert',
           at,
         });

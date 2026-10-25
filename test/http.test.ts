@@ -280,7 +280,7 @@ describe('HTTP 外壳', () => {
       body: JSON.stringify({ mode: 'pvp' }),
     });
     const openedBody = (await opened.json()) as { text: string };
-    const code = openedBody.text.match(/房间(\d{4})/)![1]!;
+    const code = openedBody.text.match(/编号(\d{4})/)![1]!;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);

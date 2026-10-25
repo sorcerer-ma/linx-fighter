@@ -536,7 +536,7 @@ describe('主动推送', () => {
     assertSpeakable(waitFoe);
 
     const waitGuest = narratePushWaitGuest('1234');
-    assert.match(waitGuest, /房间1234还等着另一位玩家加入/);
+    assert.match(waitGuest, /编号1234还等着对方接受/);
     assertSpeakable(waitGuest);
   });
 

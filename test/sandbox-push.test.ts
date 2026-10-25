@@ -11,6 +11,7 @@ function setup() {
     hearing: false,
     composerOpen: false,
     hidden: false,
+    version: 0,
   };
   const speaker = createPushSpeaker({
     speak(text: string) {
@@ -22,6 +23,7 @@ function setup() {
     hearing: () => flags.hearing,
     composerOpen: () => flags.composerOpen,
     hidden: () => flags.hidden,
+    version: () => flags.version,
   });
   return { speaker, spoken, flags };
 }
@@ -54,6 +56,17 @@ describe('页面主动推送的播放入口', () => {
       assert.equal(speaker.flush(), false, flag);
       assert.deepEqual(spoken, [], flag);
     }
+  });
+
+  it('排队期间局面版本变了，旧的提醒不再补播', () => {
+    const { speaker, spoken, flags } = setup();
+    flags.speaking = true;
+    assert.equal(speaker.receive('对手强攻还没结算。'), 'queued');
+
+    flags.version += 1;
+    flags.speaking = false;
+    assert.equal(speaker.flush(), false);
+    assert.deepEqual(spoken, []);
   });
 
   it('排队的一条遇到新阻塞就丢弃，不隔很久再冒出来', () => {

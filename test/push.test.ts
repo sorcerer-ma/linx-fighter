@@ -45,7 +45,8 @@ describe('主动推送引擎', () => {
 
     engine.observe(view({ waiting: true, updatedAt: 0 }));
     now = 1_000;
-    const joined = engine.observe(view({ waiting: false, updatedAt: 1_000 }));
+    // 真实加入只改 waiting，对局本身的时间戳不变
+    const joined = engine.observe(view({ waiting: false, updatedAt: 0 }));
     assert.equal(joined.length, 1);
     assert.equal(joined[0]?.kind, 'opponent-joined');
     assert.equal(joined[0]?.tone, 'info');
@@ -53,7 +54,37 @@ describe('主动推送引擎', () => {
     assert.match(joined[0]?.text ?? '', /对决开始/);
 
     now = 2_000;
-    assert.deepEqual(engine.observe(view({ waiting: false, updatedAt: 1_000 })), []);
+    assert.deepEqual(engine.observe(view({ waiting: false, updatedAt: 0 })), []);
+  });
+
+  it('从等人切到单人局、别的房间或新一局，不算对手进房', () => {
+    const waiting = view({ waiting: true, room: '1234', updatedAt: 0 });
+
+    let now = 0;
+    const solo = createPushEngine({ now: () => now });
+    solo.observe(waiting);
+    now = 1_000;
+    assert.deepEqual(solo.observe(view({ waiting: false, mode: 'solo', room: null, updatedAt: 0 })), []);
+
+    const otherRoom = createPushEngine({ now: () => now });
+    otherRoom.observe(waiting);
+    assert.deepEqual(otherRoom.observe(view({ waiting: false, room: '5678', updatedAt: 0 })), []);
+
+    const newBattle = createPushEngine({ now: () => now });
+    newBattle.observe(waiting);
+    assert.deepEqual(newBattle.observe(view({ waiting: false, room: '1234', updatedAt: 1_000 })), []);
+  });
+
+  it('上一帧还在等对手应对，下一帧对手已经反击，也要立刻提醒', () => {
+    let now = 0;
+    const engine = createPushEngine({ now: () => now });
+    engine.observe(view({ pending: PENDING_PLAYER, updatedAt: 0 }));
+
+    now = 1_000;
+    const counter = engine.observe(view({ pending: PENDING_ENEMY, updatedAt: 1_000 }));
+    assert.equal(counter.length, 1);
+    assert.equal(counter[0]?.kind, 'opponent-move');
+    assert.match(counter[0]?.text ?? '', /对手强攻还没结算/);
   });
 
   it('对手出招时立刻提醒，之后只补一次应对催促', () => {
@@ -154,7 +185,7 @@ describe('主动推送引擎', () => {
     const messages = engine.observe(view({ waiting: true }));
     assert.equal(messages.length, 1);
     assert.equal(messages[0]?.kind, 'wait-guest');
-    assert.match(messages[0]?.text ?? '', /房间1234还等着/);
+    assert.match(messages[0]?.text ?? '', /编号1234还等着对方接受/);
 
     now += PUSH_GUEST_WAIT_MS;
     assert.deepEqual(engine.observe(view({ waiting: true })), []);

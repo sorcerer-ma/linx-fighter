@@ -88,7 +88,9 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     speaking: function () { return activeUtterance !== null; },
     hearing: function () { return hearing; },
     composerOpen: function () { return !el.composer.hidden; },
-    hidden: function () { return document.hidden; }
+    hidden: function () { return document.hidden; },
+    // 每条 State 事件 revision 都会变；排队提醒靠它判断是否已过期
+    version: function () { return state.revision; }
   });
 
   /* ---------------- 身份 ---------------- */
@@ -260,6 +262,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     var value = String(text == null ? '' : text).trim();
     if (!value || busy) return;
     busy = true;
+    // 玩家已经提交新行动，之前排队等朗读的提醒不再属于当前局面
+    pushSpeaker.clear();
     conversation.append('player', value);
     el.transcript.textContent = '玩家 · 已发送：' + value;
     el.micStatus.textContent = '等待伙伴回复';
@@ -325,6 +329,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   /* ---------------- 渲染 ---------------- */
 
   function applyBattle(battle) {
+    // 局面变了，排队中的提醒说的是上一手，不能再补播
+    pushSpeaker.clear();
     const event = newSettlement(previousBattle, battle);
     previousBattle = battle;
     state.battle = battle;
