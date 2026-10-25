@@ -1081,4 +1081,39 @@ describe('挂起等对手', () => {
     // 平台已经断开：这一手没有结果，回一句收尾文案，别静默
     assert.equal(result.text, narrateWaitTimeout('opponent'));
   });
+
+  it('对局已经结束、队列里还攒着结算时，先把补账念掉再播结束语', async () => {
+    const echo = new EchoStore();
+    const { service, store } = setup({ echo });
+    const started = await service.start(HOST);
+    assert.ok(started.battle);
+    // 队列里还留着上一手的结算：这一句不能只播结束语，把结算一起带出来
+    echo.push(HOST, '对手强攻，我格挡，掉3点生命值，剩15。');
+    store.set(HOST, { ...started.battle, phase: 'defeat' });
+    const ended = store.get(HOST);
+    assert.ok(ended);
+
+    const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
+    assert.match(result.text, /刚才那一手/);
+    assert.match(result.text, /我格挡/);
+    assert.ok(result.text.endsWith(narrateEnded(ended)), result.text);
+    assert.equal(echo.size, 0);
+  });
+
+  it('对手先行动时立刻返回，也要先念已排队的补账', async () => {
+    const { service } = setup();
+    const code = await openRoom(service);
+    await service.say(GUEST, `加入房间${code}`);
+    // 房主强攻、访客格挡：这一手结算完，补账记在房主这边
+    await service.say(HOST, '强攻');
+    await service.say(GUEST, '格挡');
+    // 访客再出招，轮到房主应招：不会挂起，但也不能把上一手的播报跳过去
+    await service.say(GUEST, '普攻');
+
+    const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
+    assert.match(result.text, /刚才那一手/);
+    assert.match(result.text, /我强攻，对手格挡/);
+    assert.match(result.text, /格挡、闪避还是承受/);
+    assert.equal(result.battle?.pending?.actor, 'enemy');
+  });
 });

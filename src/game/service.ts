@@ -304,15 +304,21 @@ export class GameService {
     const table = tableFor(this.tables, sessionKey);
     const battle = table.view(sessionKey);
     if (!battle) return { text: narrateNoBattle(), battle: null };
-    if (battle.phase !== 'battle') return { text: narrateEnded(battle), battle };
+    if (battle.phase !== 'battle') {
+      // 对局已经结束也先把补账取走：和下面立即返回的分支同一口径，别把旧结算留在队列里。
+      // 这里一律朗读（true）：wait_event 只服务无屏语音链路，有屏端走 game_say，补账由 SayOptions.catchUp 控制。
+      return { text: `${this.drainCatchUp(sessionKey, true)}${narrateEnded(battle)}`, battle };
+    }
 
     // 房间里还没等到第二位玩家：挂着等对手进房间
     const waitingForGuest = table.waiting();
     // 自己刚出招还没应招，或者轮到对手先动：这两种才值得挂
     const waitingForOpponent = battle.pending ? battle.pending.actor === 'player' : battle.active === 'enemy';
     if (!waitingForGuest && !waitingForOpponent) {
-      // 对手已经出招等这边应招，或者正轮到这边出招：立刻回，不必挂
-      return { text: battle.pending ? narrateWaitRespond() : narrateWaitTurn(), battle };
+      // 对手已经出招等这边应招，或者正轮到这边出招：立刻回，不必挂。
+      // 但立刻回也要先补账：对手上一手可能已经结算完，不取走就要等玩家再开口才听得到。
+      const catchUp = this.drainCatchUp(sessionKey, true);
+      return { text: `${catchUp}${battle.pending ? narrateWaitRespond() : narrateWaitTurn()}`, battle };
     }
 
     const reason = waitingForGuest ? 'guest' : 'opponent';
