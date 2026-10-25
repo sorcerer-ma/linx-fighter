@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 /**
  * 手写的 MCP SSE 客户端，只用于端到端测试。
  *
- * 不用 SDK 自带的客户端，是为了按灵犀平台的真实调用方式验证契约：
+ * 不用 SDK 自带的客户端，是为了按灵矽平台的真实调用方式验证契约：
  * 1. GET /mcp 建立 SSE 长连接；
  * 2. 服务端先推一条 endpoint 事件，告诉客户端 POST 地址；
  * 3. POST /mcp/message 下发 JSON-RPC 请求，响应从 SSE 通道回来。

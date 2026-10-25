@@ -3,7 +3,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 /**
  * 设备上下文。
  *
- * 灵犀平台在每次 MCP 调用时用 HTTP 头带上设备与会话信息，不放进工具入参：
+ * 灵矽平台在每次 MCP 调用时用 HTTP 头带上设备与会话信息，不放进工具入参：
  * - X-Linx-Device-Id：设备 ID
  * - X-Linx-Agent-Id：智能体 ID
  * - X-Linx-Session-Id：会话 ID（每轮对话刷新）

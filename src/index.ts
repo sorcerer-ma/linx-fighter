@@ -66,7 +66,7 @@ const service = new GameService({
 const app = createApp({ config, logger, store, rooms, service });
 
 const server = app.listen(config.port, config.host, () => {
-  logger.info('灵犀对决 MCP 服务已启动', {
+  logger.info('灵矽对决 MCP 服务已启动', {
     name: SERVER_NAME,
     version: SERVER_VERSION,
     address: `http://${config.host}:${config.port}`,

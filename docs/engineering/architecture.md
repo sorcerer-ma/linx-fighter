@@ -10,8 +10,8 @@ v2事实协议已实现：公开工具只有game_say与wait_event，旧game_star
 
 ```text
 玩家语音
-  → 灵犀设备
-  → 灵犀平台（唤醒 + ASR）
+  → 灵矽设备
+  → 灵矽平台（唤醒 + ASR）
   → MCP 客户端：POST /mcp 直接发 JSON-RPC（Streamable HTTP），调 game_say(text=原话, speaker=声纹称呼)
   → 本服务 mcp/tools.ts → GameService.say
       → command.ts 读成命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 不该出手 / 认不出）
@@ -21,7 +21,7 @@ v2事实协议已实现：公开工具只有game_say与wait_event，旧game_star
       → engine.ts（结算）+ enemy.ts（AI）+ pvp.ts（双人视角）+ protocol.ts（生成 v2 事实）+ narrator.ts（兼容文本）
   → 工具返回 content[].text 的一行 v2 JSON
   → Agent 依据事实与人设表达，播完即时话术
-  → need=wait_guest/wait_foe 时调用一次 wait_event，服务端挂起这次请求
+  → need=wait_guest/wait_foe 时调用 wait_event，服务端挂起这次请求；返回后仍需等待就串行续挂，同身份最多一个在途
   → 对手进房或出招时唤醒，返回新的事实 JSON，Agent 接着说
 
 旁路（只读，不参与判断）：
@@ -72,7 +72,7 @@ sandbox/
   server.ts           本地假平台、页面接口与状态流代理
   platform/agent.ts   Agent 转发与表达模式
   public/             沙箱页面（无前端框架）
-test/                 35+ 个测试文件与 fixtures/，详见测试文档
+test/                 35+ 个测试文件、fixtures/ 与 simulation/（v0.2 历史 Python 仿真），详见测试文档
 scripts/              demo、smoke、validate（CPython 同款 MT19937 对拍）
 docs/                 产品、玩法、工程、测试与参考文档
 deploy/               演示环境 systemd 与 nginx 配置

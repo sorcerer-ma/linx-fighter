@@ -8,7 +8,7 @@ import { SandboxClient, type BattleSnapshot } from './platform/client.js';
  *
  * 输出是给人看的，所以这里用 console（服务端日志仍然走 createLogger）。
  */
-const USAGE = `灵犀沙箱命令行
+const USAGE = `灵矽沙箱命令行
 
 用法：
   tsx sandbox/cli.ts say   [--device web-cli] "玩家原话"   把一句话交给服务端，打印播报与局面

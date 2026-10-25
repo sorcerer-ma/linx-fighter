@@ -11,7 +11,7 @@ import { RoomStore } from '../src/store/rooms.js';
 import { McpTestClient } from './helpers/mcp-client.js';
 
 /**
- * MCP 协议端到端测试：完全按灵犀平台的真实调用方式验证链路。
+ * MCP 协议端到端测试：完全按灵矽平台的真实调用方式验证链路。
  * 平台调用顺序：GET /mcp 建 SSE → 收 endpoint → POST /mcp/message 发 JSON-RPC → 响应从 SSE 回来，
  * 并且每次调用都带 X-Linx-Device-Id / X-Linx-Agent-Id / X-Linx-Session-Id 头。
  */
@@ -75,7 +75,7 @@ async function connect(deviceId: string, sessionId: string): Promise<McpTestClie
   });
   assert.equal(init.error, undefined, `initialize 不应报错：${JSON.stringify(init.error)}`);
   assert.equal(init.result?.serverInfo?.name, 'linx-fighter');
-  assert.match(init.result?.instructions ?? '', /灵犀对决/);
+  assert.match(init.result?.instructions ?? '', /灵矽对决/);
 
   await client.notify('notifications/initialized');
   return client;

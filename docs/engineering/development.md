@@ -28,7 +28,7 @@
 
 ## 配置与数据
 
-- 服务端环境变量见[接入灵犀平台 · 环境变量](linx-integration.md#7-环境变量)，沙箱自己的 `SANDBOX_*` 见[沙箱配置](../testing/sandbox.md#配置项)。
+- 服务端环境变量见[接入灵矽平台 · 环境变量](linx-integration.md#7-环境变量)，沙箱自己的 `SANDBOX_*` 见[沙箱配置](../testing/sandbox.md#配置项)。
 - 对局、房间与补账都存内存，进程重启即清空；空闲过期由 `BATTLE_TTL_SECONDS` 控制。单实例演示不需要数据库或 Redis。
 - `LOG_LEVEL=debug` 会打印每条进出 MCP 的原始报文，排查平台调用时使用；生产环境不要开。
 

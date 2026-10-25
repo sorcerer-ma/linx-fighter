@@ -2,7 +2,7 @@
 
 > **给决策者的一句话**：首选「**一设备一智能体 + 各绑各的声纹**」——这是唯一能让平台门禁真正变成座位归属、且**游戏侧代码不用改**的配置；代码侧今晚配套「轮次仲裁话术 + 状态播报/固定自称 + 座位口令」，把剩下那部分降成可理解的摩擦。声源定位（DOA）与蓝牙式多设备仲裁在硬件和链路上都不成立，直接否掉。
 
-日期：2026-10-24。范围：只做「选哪条路」的对比与推荐。平台 API 的参数细节不在这里重复，见灵犀平台文档与并行的《平台语音能力》调研；本文引用的平台行为以那份调研已核实的一手事实为准。
+日期：2026-10-24。范围：只做「选哪条路」的对比与推荐。平台 API 的参数细节不在这里重复，见灵矽平台文档与并行的《平台语音能力》调研；本文引用的平台行为以那份调研已核实的一手事实为准。
 
 ## 1. 串音不是一种病：四类失败，证据强度不同
 
@@ -281,10 +281,10 @@
 
 | 资料 | 用到的结论 | 链接 |
 | --- | --- | --- |
-| 灵犀·声纹识别 V2 API | speaker 为中心；一人一条默认声纹；注册需音频 URL；agent 需绑定 speaker；不返回特征向量 | https://linx.qiniu.com/docs/xrobot/api/voiceprint-v2 |
-| 灵犀·智能体配置指引 | 「声纹功能：识别说话的人，只回应指定的人」 | https://linx.qiniu.com/docs/xrobot/guide/agent-config |
-| 灵犀·MCP 接入文档 | 只自动注入 Device/Agent/Session 三个请求头，不进工具入参 | https://linx.qiniu.com/docs/xrobot/mcp/software-mcp |
-| 灵犀·设备 API | 设备按激活码/MAC 绑定到指定 agentId；`PUT /v1/devices/{mac}/agent/{agent_id}` 可切换智能体 | https://linx.qiniu.com/docs/xrobot/api/device |
+| 灵矽·声纹识别 V2 API | speaker 为中心；一人一条默认声纹；注册需音频 URL；agent 需绑定 speaker；不返回特征向量 | https://linx.qiniu.com/docs/xrobot/api/voiceprint-v2 |
+| 灵矽·智能体配置指引 | 「声纹功能：识别说话的人，只回应指定的人」 | https://linx.qiniu.com/docs/xrobot/guide/agent-config |
+| 灵矽·MCP 接入文档 | 只自动注入 Device/Agent/Session 三个请求头，不进工具入参 | https://linx.qiniu.com/docs/xrobot/mcp/software-mcp |
+| 灵矽·设备 API | 设备按激活码/MAC 绑定到指定 agentId；`PUT /v1/devices/{mac}/agent/{agent_id}` 可切换智能体 | https://linx.qiniu.com/docs/xrobot/api/device |
 | Apple Support·How Siri works with multiple devices | 多设备靠蓝牙互报 + "谁听得最清/刚用过"选一台；蓝牙不通会出现多台同时响应 | https://support.apple.com/en-us/105077 |
 | Wikipedia·Amazon Echo | ESP（Echo Spatial Perception）让多台只一台应答，减少设备间冲突 | https://en.wikipedia.org/wiki/Amazon_Echo |
 | Snyder et al., *X-Vectors* (ICASSP 2018) | 说话人验证的主流范式：DNN 嵌入 + 打分 | https://doi.org/10.1109/ICASSP.2018.8461375 |
