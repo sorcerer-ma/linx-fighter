@@ -63,6 +63,10 @@ describe('音节与音节距离', () => {
     assert.equal(syllableDistance('kang', 'hang'), 0.5);
     assert.equal(syllableDistance('an', 'ang'), 0.5);
     assert.equal(syllableDistance('en', 'eng'), 0.5);
+    // 鼻音韵尾脱落：平台吞掉 an/ang 的尾巴时，仍按一处轻微混淆算
+    assert.equal(syllableDistance('sha', 'shan'), 0.5);
+    assert.equal(syllableDistance('qia', 'qiang'), 0.5);
+    assert.equal(syllableDistance('da', 'dang'), 0.5);
     assert.equal(syllableDistance('zong', 'zhong'), 0.5);
     assert.equal(syllableDistance('yin', 'ying'), 0.5);
     assert.equal(syllableDistance('gong', 'ji'), 1);
@@ -79,9 +83,13 @@ describe('线上真实语料：同音只差一处也认', () => {
     expectAction('硬航', 'take', 'exact');
     expectAction('长寿', 'take', 'exact');
     expectAction('我要可党。', 'guard', 'exact');
-    // 平台吞掉「闪避」的 an 韵尾后会转写成脏话，不能因此放弃判断
-    expectAction('傻逼', 'dodge', 'exact');
-    expectAction('傻避', 'dodge', 'exact');
+    // 平台吞掉「闪避」的 an 韵尾后会转写成脏话，靠通用的韵尾脱落规则接住
+    expectAction('傻逼', 'dodge', 'syllable');
+    expectAction('傻避', 'dodge', 'syllable');
+    expectAction('闪币', 'dodge', 'syllable');
+    expectAction('散避', 'dodge', 'syllable');
+    expectAction('朵开', 'dodge', 'syllable');
+    expectAction('躲壁', 'dodge', 'syllable');
     expectAction('我要开大。', 'ult', 'exact');
     expectAction('我开大招。', 'ult', 'exact');
     expectAction('强化攻击', 'light', 'exact');

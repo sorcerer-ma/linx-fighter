@@ -43,8 +43,8 @@ describe('招式识别', () => {
     assert.equal(parseAction('墙攻'), 'heavy');
     assert.equal(parseAction('大召'), 'ult');
     assert.equal(parseAction('回七'), 'charge');
-    assert.equal(parseAction('多开'), 'dodge');
-    assert.equal(parseAction('防疫'), 'dodge');
+    // 「多开」「傻逼」这类同音、吞韵尾的误写不再进词表，由 asr.ts 的近似匹配兜住，
+    // 对应断言在 test/asr.test.ts
     assert.equal(parseAction('哥挡'), 'guard');
     assert.equal(parseAction('成受'), 'take');
   });
