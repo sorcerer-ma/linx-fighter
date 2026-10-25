@@ -2,7 +2,7 @@
 
 > 这份文档不是玩法规格，而是「同样的设计问题，别人怎么解」的对照笔记。
 > 改招式、改补偿、改节奏之前先看这里，避免把已经踩过的坑再踩一遍。
-> 事实与出处见文末链接；对局内的数字口径一律来自 `test/fixtures/v02-validation.json`。
+> 事实与出处见文末链接；对局内的数字口径一律来自 `test/fixtures/v02-validation.json`。同类产品、变现方式与竞争格局见[竞品调研](../business/competitive-analysis.md)。
 
 ## 一句话结论
 

@@ -2,7 +2,7 @@
   "name": "linx-fighter",
   "version": "0.1.0",
   "private": true,
-  "description": "共鸣：闻声对决 · 灵犀语音硬件上的回合制语音对战服务",
+  "description": "共鸣：闻声对决 · 灵矽语音硬件上的回合制语音对战服务",
   "type": "module",
   "packageManager": "pnpm@12.14.0",
   "engines": {

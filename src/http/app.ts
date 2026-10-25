@@ -138,7 +138,7 @@ export function createApp(deps: AppDependencies): express.Express {
   app.get('/', (_req, res) => {
     res.json({
       service: 'linx-fighter',
-      message: '灵犀对决 MCP 服务',
+      message: '灵矽对决 MCP 服务',
       endpoints: {
         sse: '/mcp',
         message: '/mcp/message',
