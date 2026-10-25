@@ -12,7 +12,9 @@
 
 另带一个本地沙箱（[`sandbox/`](docs/testing/sandbox.md)）：在浏览器里模拟灵犀设备的输入与播报，可开多个窗口互相对战，也可以用命令行或脚本让 Agent 自己把整局打完——不依赖控制台与实体硬件，Agent 能在真实链路上自主模拟、自主回归。
 
-双人局的补账播报：A 出招后，B 的应对在 B 自己的回合结算，A 当场听不到这一手的结果。平台没有服务端主动播报能力，服务端就等 A 下一次开口时补上——播报最前面会多一句「刚才那一手。我强攻，对手格挡，掉3点生命值，剩15。」，再播当前这一回合。补过一次不重复，换局即清。这是给没有屏幕的终端准备的：客户端带 `X-Linx-Display: screen`（沙箱页面就是这样）就不念补账，自己去画局面。
+双人局的补账播报：A 出招后，B 的应对在 B 自己的回合结算，A 当场听不到这一手的结果。当前没有 `wait_event`，也没有无请求主动播报通道，服务端等 A 下一次行动或查询战况时补上——播报最前面会多一句「刚才那一手。我强攻，对手格挡，掉3点生命值，剩15。」，再播当前这一回合。补过一次不重复，换局即清。这是给没有屏幕的终端准备的：客户端带 `X-Linx-Display: screen`（沙箱页面就是这样）就不念补账，自己去画局面。
+
+已合并 [MCP v2 事实协议](docs/engineering/mcp-protocol.md)，**尚未实现**：目标是服务端返回事实、Agent 演绎，再播放最终话术。下述工具与链路描述当前 main；两工具、JSON 事实与 `wait_event` 均不能当作已运行能力。当前文本兼容沙箱与目标协议的切换依赖及验收见 [迁移实施说明](docs/engineering/mcp-v2-migration.md)。
 
 ## 产品定位与体验目标
 
@@ -44,12 +46,12 @@
 - **认不出不吞回合**：无法识别时不推进回合、不改数值，只提示当前阶段可用的说法；问句（如「我的大招还剩几次」）、否定（如「不要大招」）和一句话里点到两种招式（如「大招还是强攻」）同样不执行，只播当前局面或提示重说，对局状态一点不动；配了模型 Key 时再叠一层命令路由（`/systemone` 决策接口，把「这句话是哪类命令」做成按阶段收窄的选择题）：招式、战况、玩法、开局、开房、规则外问答放在同一份菜单里，把「给我狠狠地来一下」这类自由说法也认成招式；规则匹配始终优先，模型失败/超时/低置信度都按没认出来处理。关键词表不再参与分流，这套混合路由的实测与取舍见 [命令路由评测](docs/engineering/command-routing.md)。
 - **JEV 决策对手**：每次出招与应对都把「当前局面 + 最近六条战报 + 玩家出招/应对习惯 → 合法选项」做成选择题交给模型网关的 JEV 决策模型（`typesafe/jev-1.14`），让模型能顺着局势预判玩家下一步；本地先按能量与大招次数过滤出合法选项，模型只能从里面选；选择越界、超时 2 秒或返回异常时回退本地效用决策，回合不会卡住，置信度与概率只写进日志。本地兜底策略见 [docs/game/ai-enemy.md](docs/game/ai-enemy.md)；`ENEMY_AI=local` 可整体关掉模型层。
 - **后台监控页**：`GET /admin` 是一张只读看板，列出所有进行中的房间与对局：双方生命值、能量、大招剩余、当前阶段、待响应、轮次和胜负，3 秒轮询自动刷新；`GET /admin/api/rooms` 给出同一份 JSON。设备名做了脱敏，页面带 `noindex`。不配 `ADMIN_TOKEN` 时任何人拿到地址都能看（演示方便，也意味着房间号是公开的），配上后按口令校验并对单个来源限速 120 次/分。
-- **两台设备靠很近也不会答错人**：无屏设备没有屏幕可以「确认给我」，所以服务端先判断这句话是不是自己刚才播报的原话（回灌）——是就只回一个字「嗯。」，2 秒内不再开口，绝不把它当成新一轮指令；双人房里还可用「红方，普攻」这类座位口令指定替谁说，`ATTRIBUTION_MODE=strict` 时才算严格归属。平台侧配合「一台设备一个智能体、各自绑声纹」效果最好，见 [多设备归属](docs/product/multi-device-attribution.md)。
+- **同室指令归属与回灌防线**：无屏设备没有屏幕可以「确认给我」，所以服务端先判断这句话是不是自己刚才播报的原话（回灌）——是就只回一个字「嗯。」，2 秒内不再开口，绝不把它当成新一轮指令；双人房里还可用「红方，普攻」这类座位口令指定替谁说，`ATTRIBUTION_MODE=strict` 时才算严格归属。平台侧配合「一台设备一个智能体、各自绑声纹」效果最好，见 [多设备归属](docs/product/multi-device-attribution.md)。
 - **双人联机**：说「联机」「开房间」得到 4 位房间号，对手说「加入房间1234」即可开打；平台模型没把这些词转成参数时，服务端也会从玩家原话里兜底识别。对局键仍是 `deviceId#agentId`，每个玩家看到自己的视角，服务端做镜像。换房间会先加入新房，再撤掉旧房间与那一局（双方补账一起清），原对手下次开口会另开一局单人局；加入失败（满员或房间号不存在）时原房间完全不动，一个玩家同一时间只在一个有效房间里。
 - **没有对局也能直接开口**：首句「普攻」自动开局，降低演示与试玩门槛。
 - **对局按「设备 + 智能体」归属**：断线重连、多轮对话不丢对局；不同设备天然隔离。
 - **两套传输并存**：Streamable HTTP（`POST /mcp`，平台实测走这条）与 SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）；`DELETE /mcp` 直接 200，避免客户端收尾时报错。
-- **为「听」而写的播报**：文案口语化、单次两句内，不用 Markdown、列表或 emoji——`content[].text` 会被原样念出来。单人局每回合都报一次自己的生命值与能量（「我14点生命值、1点能量，对手强攻还没结算」），双人局不报——保持简短，双方数值从战况查询里看。
+- **为「听」而写的播报**：文案口语化、单次两句内，不用 Markdown、列表或 emoji——当前 `content[].text` 是可朗读文本；v2 时该字段承载 JSON，必须经过 Agent 表达，禁止直接送入 TTS。单人局每回合都报一次自己的生命值与能量（「我14点生命值、1点能量，对手强攻还没结算」），双人局不报——保持简短，双方数值从战况查询里看。
 - **可替换的存储**：内存 + TTL，接口保持 `get/set/delete/sweep`，需要多实例时换 Redis 实现即可。
 
 ## 快速开始
@@ -105,7 +107,7 @@ open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开
 | `game_status` | 「战况如何」「我的生命值还剩多少」 | 播报双方生命值、能量、大招剩余次数与当前阶段 |
 | `game_help` | 「怎么玩」 | 播报玩法说明 |
 
-工具总数刻意控制在 5 个以内：平台侧模型工具越多越容易选错。推荐把 `game_say` 当成唯一入口，其余四个作为它的兜底。
+此表是当前五工具清单。平台固定使用 `game_say` 传原话，其余工具保留为已有接入的兼容能力，不能在一次结果未知后自动换工具重试。v2 目标清单为 `game_say` 与 `wait_event`，尚未注册，不能按目标数量验收当前服务。
 
 ### 端点
 
@@ -408,6 +410,8 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | [docs/engineering/architecture.md](docs/engineering/architecture.md) | 逐条设计决策的来龙去脉、替代方案与扩展指引（总览见上文「架构设计」） |
 | [docs/product/multi-device-attribution.md](docs/product/multi-device-attribution.md) | 多设备归属：房间座位、回灌判定与平台侧声纹的配合 |
 | [docs/engineering/command-routing.md](docs/engineering/command-routing.md) | 命令路由：规则快路径 + 端侧同音 + 模型兜底的评测方法、方案对比与取舍 |
+| [docs/engineering/mcp-protocol.md](docs/engineering/mcp-protocol.md) | MCP v2 目标协议：两工具、JSON 事实、Agent 演绎（尚未实现） |
+| [docs/engineering/mcp-v2-migration.md](docs/engineering/mcp-v2-migration.md) | 当前实现、迁移依赖、协议待澄清项与验收顺序 |
 | [docs/engineering/platform-voice-capabilities.md](docs/engineering/platform-voice-capabilities.md) | 平台语音能力调研：热词、透传、声纹的实际边界与待确认清单 |
 | [docs/references/voice-attribution-research.md](docs/references/voice-attribution-research.md) | 声源与说话人识别方案对比，以及本项目的取舍 |
 | [docs/game/game-design.md](docs/game/game-design.md) | 产品设计中的游戏玩法：v0.2 规则、数值、AI、双人联机与验证 |

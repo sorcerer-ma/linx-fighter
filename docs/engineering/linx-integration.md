@@ -127,7 +127,7 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 
 - 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
 - 地址填到 `/mcp` 即可。服务端同时支持两种传输：平台若走 Streamable HTTP 会直接 `POST /mcp`（实测就是这样），若走老式 SSE 会先 `GET /mcp` 再由 `endpoint` 事件下发 POST 地址，控制台不用区分。
-- 配好后控制台通常有「测试/校验」按钮，能看到 5 个工具（`game_say`、`game_start`、`game_action`、`game_status`、`game_help`）即说明连通。既有 `game_say` 接入仍兼容；模拟Agent的工具使用约束见下节单源提示词。
+- 配好后控制台通常有「测试/校验」按钮，当前应看到 5 个工具（`game_say`、`game_start`、`game_action`、`game_status`、`game_help`），这只能证明当前工具清单连通。固定使用 `game_say` 传原话；v2 两工具清单尚未实现，不能据此判断当前服务故障。
 
 ## 4. 控制台：配置智能体
 
@@ -169,13 +169,15 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 已知未验证：两个智能体能否同时指向同一个自建 MCP（平台文档没写），演示前用控制台的「测试」按钮各点一次确认。平台侧语音能力（热词、透传、声纹接口边界）的调研结论见 [平台语音能力](platform-voice-capabilities.md)。
 
-## 6. 智能体提示词模板
+## 6. 智能体提示词与协议切换
 
-提示词唯一来源为 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md)，属于项目配置并纳入版本管理。平台配置时复制该文件全文，沙箱服务端启动时直接读取同一文件；本文不再维护提示词副本，不宣称能够自动同步平台。修改后需按平台现有流程保存并重启体验，沙箱也需重启以重新加载。
+本分支保留五工具、可朗读 text 和兼容的 structuredContent.presentation；平台／沙箱 Agent 每条原话固定调用一次 game_say，理解和执行由服务端负责。沙箱已有整句表达与有限事实检查，失败采用工具原文，不再次执行游戏；这不是 v2 JSON 事实协议。
 
-平台／沙箱Agent每条原话固定调用一次game_say，由游戏服务理解、执行并返回结果，不在Agent端分类或把查询／开房当作选其他工具的例外。允许根据人设改写整句，但必须保留战果、数字、归属、成功失败、胜负与下一步。请求结果未知时先核实，不能断言未生效或换工具重试。双人房无人加入时继续等待，不自动补AI。
+沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
 
-已确认表达模型为deepseek-v4.1-flash-free，baseURL为https://opencode.ai/inference/openai/v1。官方[模型表](https://opencode.ai/v2/docs/console/models/)将其列为OpenAI兼容Chat Completions端点；适配器仅做本地假fetch测试，未验证真实账号与模型可用性。MCP现新增兼容text的structuredContent.presentation，供沙箱以真实事实和受控完整句式进行人设表达；旧平台可继续只读text。平台是否消费结构化返回及最终现场人设体验仍需单独验证，不因本地实现而宣称平台已同步。
+表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；旧平台是否消费 presentation 仍需验证，不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
+
+v2 目标见 [协议](mcp-protocol.md#7-智能体提示词)，实施与验收见 [迁移说明](mcp-v2-migration.md)。两工具、wait_event 与 content 文本块内 JSON 尚未实现。MCP_PROTOCOL=text|json 目前只是迁移建议，不能仅设置环境变量或换提示词就当作切换完成；JSON 服务与文本模板也不能错配。
 
 ## 常见问题
 
