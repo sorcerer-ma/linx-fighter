@@ -12,6 +12,11 @@ import {
   narrateNoBattle,
   narrateOpening,
   narrateOutsideUnavailable,
+  narratePushIdle,
+  narratePushOpponentJoined,
+  narratePushOpponentMove,
+  narratePushWaitGuest,
+  narratePushWaitOpponent,
   narrateRejection,
   narrateRoomCreated,
   narrateRoomFull,
@@ -25,6 +30,7 @@ import {
   narrateUnknownAction,
 } from '../src/game/narrator.js';
 import type { Battle, BattleEvent } from '../src/game/types.js';
+import { battleState } from '../src/game/state.js';
 
 function battle(firstMover: 'player' | 'enemy' = 'player', mode: 'solo' | 'pvp' = 'solo'): Battle {
   return createBattle({ now: 0, seed: 1, firstMover, mode });
@@ -457,5 +463,70 @@ describe('不该出手的表达', () => {
     const text = narrateStaleAction();
     assert.match(text, /重新说/);
     assertSpeakable(text);
+  });
+});
+
+describe('主动推送', () => {
+  function state(pending: 'player' | 'enemy' | null = null, ap = 2) {
+    const base = battle('player', 'pvp');
+    base.pending = pending ? { actor: pending, move: 'heavy', damage: 5 } : null;
+    base.player.ap = ap;
+    return battleState(base, { room: '1234', side: 'player' });
+  }
+
+  it('对手进房时先报一句，再给出开局事实', () => {
+    const text = narratePushOpponentJoined(state());
+    assert.match(text, /对手来了/);
+    assert.match(text, /对决开始/);
+    assert.match(text, /我先手/);
+    assertSpeakable(text);
+  });
+
+  it('对手出招时提醒应对；没能量时说只能硬扛', () => {
+    const normal = narratePushOpponentMove('heavy', 2);
+    assert.match(normal, /对手强攻还没结算/);
+    assert.match(normal, /格挡、闪避，还是承受/);
+    assertSpeakable(normal);
+
+    const empty = narratePushOpponentMove('heavy', 0);
+    assert.match(empty, /我没能量，只能硬扛/);
+    assertSpeakable(empty);
+  });
+
+  it('玩家回合先轻催一次，再重催一次', () => {
+    const first = narratePushIdle(state(), false);
+    assert.match(first, /轮到你出招了/);
+    assert.match(first, /可以说普攻、强攻、大招或蓄力/);
+    assertSpeakable(first);
+
+    const urgent = narratePushIdle(state(), true);
+    assert.match(urgent, /还没听到你的指令/);
+    assert.match(urgent, /直接说招式就行/);
+    assertSpeakable(urgent);
+  });
+
+  it('应对阶段催一次，没能量时直接说硬扛', () => {
+    const first = narratePushIdle(state('enemy'), false);
+    assert.match(first, /对手的强攻还等着你定/);
+    assert.match(first, /格挡、闪避，还是承受/);
+    assertSpeakable(first);
+
+    const urgent = narratePushIdle(state('enemy'), true);
+    assert.match(urgent, /你定，我照做/);
+    assertSpeakable(urgent);
+
+    const empty = narratePushIdle(state('enemy', 0), false);
+    assert.match(empty, /我没能量，只能硬扛/);
+    assertSpeakable(empty);
+  });
+
+  it('等对手和等客人都有短句，不催第二次', () => {
+    const waitFoe = narratePushWaitOpponent();
+    assert.match(waitFoe, /我陪你等着/);
+    assertSpeakable(waitFoe);
+
+    const waitGuest = narratePushWaitGuest('1234');
+    assert.match(waitGuest, /房间1234还等着另一位玩家加入/);
+    assertSpeakable(waitGuest);
   });
 });

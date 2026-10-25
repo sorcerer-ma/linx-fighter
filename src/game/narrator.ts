@@ -1,5 +1,6 @@
 import { actionLabel, activeActionLabels, responseActionLabels } from './actions.js';
 import { ATTACKS, RESPONSES } from './rules.js';
+import type { BattleState } from './state.js';
 import {
   isAttackMove,
   otherSide,
@@ -399,4 +400,52 @@ export function narrateHelp(): string {
 export function narrateCatchUp(lines: string[]): string {
   // 结构上一个人最多错过两次结算；真攒多了也只补最近两段，播报太长反而听不清
   return `刚才那一手。${lines.slice(-2).map(sentence).join('。')}。`;
+}
+
+/* ---------------- 服务端主动推送 ---------------- */
+
+/**
+ * 主动推送只发生在有屏客户端，入参直接用页面看到的快照：
+ * 推送里说的事实必须和界面一致，不能一边显示「等你应对」一边催出招。
+ */
+
+/** 对手刚进房间：一句招呼，再接开局事实 */
+export function narratePushOpponentJoined(state: BattleState): string {
+  const first = state.firstMover === 'player' ? '我先手' : '对手先手';
+  // 说成一整句：拆出「对手来了」单独一句时，回灌规则认不出，会被当成玩家指令
+  return `对手来了，对决开始，${first}，我${state.you.hp}点生命值，对手${state.opponent.hp}点生命值。`;
+}
+
+/** 对手已经锁定招式：提醒应对；没能量时就别再说格挡、闪避 */
+export function narratePushOpponentMove(move: AttackMove, ap: number): string {
+  if (ap <= 0) return `对手${ATTACK_NAME[move]}还没结算，我没能量，只能硬扛。`;
+  return pendingSentence(move, 'enemy');
+}
+
+/** 该玩家动却一直没出声：第一次轻催，第二次把话说死 */
+export function narratePushIdle(state: BattleState, urgent: boolean): string {
+  if (state.pending?.actor === 'enemy') {
+    const move = ATTACK_NAME[state.pending.move];
+    if (state.you.ap <= 0) {
+      return urgent
+        ? joinLines(['还没听到你的指令，对手这一手还悬着', '我没能量，只能硬扛'])
+        : `对手的${move}还等着你定，我没能量，只能硬扛。`;
+    }
+    return urgent
+      ? joinLines(['还没听到你的指令，对手这一手还悬着', '你定，我照做'])
+      : `对手的${move}还等着你定，格挡、闪避，还是承受？`;
+  }
+  return urgent
+    ? joinLines(['还没听到你的指令，我随时能出手', '直接说招式就行'])
+    : joinLines(['轮到你出招了，我等着你', '可以说普攻、强攻、大招或蓄力']);
+}
+
+/** 玩家已经出手、等对手应对：不催玩家，只陪着等 */
+export function narratePushWaitOpponent(): string {
+  return '对手还在琢磨，我陪你等着。';
+}
+
+/** 房间还没等到人：把房间号再报一遍 */
+export function narratePushWaitGuest(code: string): string {
+  return joinLines([narrateWaitingRoom(code)]);
 }

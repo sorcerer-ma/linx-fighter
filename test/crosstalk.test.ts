@@ -15,6 +15,11 @@ import {
   narrateOpening,
   narrateOtherDeviceTurn,
   narrateOtherDeviceWaiting,
+  narratePushIdle,
+  narratePushOpponentJoined,
+  narratePushOpponentMove,
+  narratePushWaitGuest,
+  narratePushWaitOpponent,
   narrateRejection,
   narrateRoomCreated,
   narrateRoomFull,
@@ -29,6 +34,7 @@ import {
   narrateWaitingRoom,
 } from '../src/game/narrator.js';
 import { GameService, type GameServiceDeps } from '../src/game/service.js';
+import { battleState } from '../src/game/state.js';
 import type { Battle, BattleEvent } from '../src/game/types.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
@@ -89,6 +95,14 @@ function realBroadcasts(): string[] {
   lost.phase = 'defeat';
   const poor = battle();
   poor.player.ap = 1;
+  const pushIdle = battleState(battle('player', 'pvp'), { room: '1234', side: 'player' });
+  const pushPending = battle('player', 'pvp');
+  pushPending.pending = { actor: 'enemy', move: 'heavy', damage: 5 };
+  const pushPendingView = battleState(pushPending, { room: '1234', side: 'player' });
+  const pushPoor = battle('player', 'pvp');
+  pushPoor.pending = { actor: 'enemy', move: 'heavy', damage: 5 };
+  pushPoor.player.ap = 0;
+  const pushPoorView = battleState(pushPoor, { room: '1234', side: 'player' });
 
   return [
     narrateBattleStart(idle),
@@ -142,6 +156,17 @@ function realBroadcasts(): string[] {
     narrateStatus(pendingMine),
     narrateStatus(pendingEnemy),
     narrateRejection(pendingMine, { reason: 'insufficient-ap', action: 'ult' }),
+    narratePushOpponentJoined(pushIdle),
+    narratePushOpponentMove('heavy', 2),
+    narratePushOpponentMove('heavy', 0),
+    narratePushIdle(pushIdle, false),
+    narratePushIdle(pushIdle, true),
+    narratePushIdle(pushPendingView, false),
+    narratePushIdle(pushPendingView, true),
+    narratePushIdle(pushPoorView, false),
+    narratePushIdle(pushPoorView, true),
+    narratePushWaitOpponent(),
+    narratePushWaitGuest('1234'),
   ];
 }
 
