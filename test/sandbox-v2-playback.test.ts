@@ -424,3 +424,12 @@ it('continuous wait empty timeouts create no bubbles or TTS, real events still p
   h.stop();assert.equal(h.calls[4].init.signal.aborted,true);
   h.calls[4].respond(outcome('不应播放的迟到话'));await flush();assert.equal(h.utterances.length,2);
 });
+
+it('recoverable business rejection may keep waiting, but unknown/failed/error/silent never renew',async()=>{
+  for(const reason of ['waiting','unknown','failed']){
+    const h=harness();await h.ready();h.input('攻击');
+    h.calls[0].respond({...outcome('这次没有出手。','wait_foe'),protocol:{v:2,ok:false,reason,phase:'battle',need:'wait_foe',events:[]}});await flush();h.utterances[0].onend();await flush();
+    assert.equal(h.calls.length,reason==='waiting'?2:1,reason);
+    if(reason==='waiting')h.stop();
+  }
+});

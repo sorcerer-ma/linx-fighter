@@ -31,7 +31,7 @@ it('unauthorized, invalid input, broadcast echo and pre-cancelled wait cannot re
   const current=s.waitEvent('h',{speaker:'A',timeoutMs:1000});
   assert.deepEqual((await s.waitEvent('h',{speaker:'X',timeoutMs:1})).reply,silent);
   await s.say('h','玩法',{speaker:'X'});
-  await s.say('h','');await s.say('h','字'.repeat(201),{speaker:'A'});
+  await s.say('h','',{speaker:'A'});await s.say('h','字'.repeat(201),{speaker:'A'});
   await s.say('h','挑战已发起',{speaker:'A'});
   const aborted=new AbortController();aborted.abort();
   assert.deepEqual((await s.waitEvent('h',{speaker:'A',signal:aborted.signal})).reply,silent);
