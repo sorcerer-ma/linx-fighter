@@ -18,6 +18,7 @@ export interface SandboxAgentConfig {
   baseUrl?: string;
   apiKey?: string;
   promptPath: string;
+  companionName?: string;
 }
 
 export interface SandboxConfig {
@@ -67,6 +68,7 @@ export function loadSandboxConfig(env: NodeJS.ProcessEnv = process.env): Sandbox
   return {
     ttsBridge: env.SANDBOX_TTS_BRIDGE === 'local',
     agent: {
+      companionName: env.SANDBOX_COMPANION_NAME?.trim() || undefined,
       model: env.SANDBOX_AGENT_MODEL?.trim() || undefined,
       baseUrl: env.SANDBOX_AGENT_BASE_URL?.trim() || undefined,
       apiKey: env.SANDBOX_AGENT_API_KEY?.trim() || undefined,

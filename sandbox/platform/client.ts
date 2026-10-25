@@ -2,7 +2,7 @@ import { SandboxAgent, type ExpressionValidationReason } from './agent.js';
 import { resolveProfileId, type SpeechProfileId } from './profiles.js';
 import { fallbackSpeech, type SpeechPlan } from './speech.js';
 import type { GameReply } from '../../src/game/protocol.js';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import type { BattleState } from '../../src/game/state.js';
 import type { Logger } from '../../src/log.js';
 import { LinxMcpClient, UpstreamError, type McpDisplay, type McpTrace, type ToolInfo } from './mcp.js';
@@ -56,6 +56,9 @@ export interface SayResult {
   error?: string;
 }
 
+export const NOTIFICATION_KINDS = ['opponent-move','opponent-joined','ult-ready','idle-turn','idle-respond','wait-opponent','wait-guest'] as const;
+export interface NotificationSignal {kind:typeof NOTIFICATION_KINDS[number];battleId:string;pushId:string}
+
 export class SandboxClient {
   constructor(private readonly options: SandboxClientOptions) {}
 
@@ -68,7 +71,10 @@ export class SandboxClient {
   async wait(deviceId: string, options: { signal?: AbortSignal; profileId?: string } = {}): Promise<SayResult> {
     return this.invoke(deviceId, 'wait_event', '', options);
   }
-  private async invoke(deviceId: string, tool: 'game_say' | 'wait_event', text: string, options: { signal?: AbortSignal; profileId?: string }): Promise<SayResult> {
+  async notify(deviceId:string, notice:NotificationSignal, options:{signal?:AbortSignal;profileId?:string}={}):Promise<SayResult> {
+    return this.invoke(deviceId,'notification','',{...options,notice});
+  }
+  private async invoke(deviceId: string, tool: 'game_say' | 'wait_event' | 'notification', text: string, options: { signal?: AbortSignal; profileId?: string; notice?:NotificationSignal }): Promise<SayResult> {
     const profileId = resolveProfileId(options.profileId);
     const request = {signal:options.signal,profileId};
     const sessionId = `s-${randomUUID().slice(0, 8)}`;
@@ -77,14 +83,26 @@ export class SandboxClient {
       sessionId, timeoutMs: this.options.timeoutMs, logger: this.options.logger, display: this.options.display,
     });
     const base = { tool, profileId, deviceId, agentId: this.options.agentId, sessionId };
+    let notificationStage:string | undefined;
     try {
       request.signal?.throwIfAborted();
-      await mcp.initialize({signal:request.signal});
+      if (tool !== 'notification') await mcp.initialize({signal:request.signal});
       const agent = this.options.agent ?? new SandboxAgent('');
-      const outcome = tool === 'wait_event' ? await agent.wait(mcp, request) : await agent.run(text, mcp, request);
+      let outcome;
+      if(tool === 'notification') {
+        const response=await fetch(new URL('/notification',this.options.upstream),{
+          method:'POST',headers:{'Content-Type':'application/json','X-Linx-Device-Id':deviceId,'X-Linx-Agent-Id':this.options.agentId},
+          body:JSON.stringify(options.notice),signal:options.signal ? AbortSignal.any([options.signal,AbortSignal.timeout(this.options.timeoutMs)]) : AbortSignal.timeout(this.options.timeoutMs),
+        });
+        if(!response.ok)throw new Error('NotificationUnavailable');
+        const value=await response.json() as {reply:GameReply;battleId?:string|null;stage?:string};
+        if(value.reply?.v!==2 || (!value.reply.silent && typeof value.stage!=='string'))throw new Error('NotificationProtocol');
+        notificationStage=value.stage;
+        outcome=await agent.notify({...value,isError:false},{...request,notificationKind:options.notice!.kind});
+      } else outcome = tool === 'wait_event' ? await agent.wait(mcp, request) : await agent.run(text, mcp, request);
       const state = await this.state(deviceId).catch(() => null);
       const cancelled = request.signal?.aborted === true;
-      const stale = state !== null && outcome.battleId !== undefined && outcome.battleId !== (state.battle?.battleId ?? null);
+      const stale = state !== null && ((outcome.battleId !== undefined && outcome.battleId !== (state.battle?.battleId ?? null)) || (tool==='notification' && notificationStage!==undefined && notificationStage!==createHash('sha256').update(JSON.stringify(state.battle)).digest('hex')));
       const trace = mcp.takeTrace();
       const validationReason = 'validationReason' in outcome ? outcome.validationReason : undefined;
       const rewriteStatus = cancelled ? 'cancelled' : stale ? 'stale' : outcome.rewriteStatus;

@@ -36,7 +36,7 @@ it('actual expression adapter receives three different style supplements and kee
  assert.equal(calls.length,3);for(const call of calls)assert.deepEqual(call,{name:'game_say',args:{text:'原话一字不改'}});
  assert.equal(new Set(systems).size,3);
  for(const system of systems){assert.ok(system.startsWith(main));assert.match(system,/只调用一次game_say/);assert.match(system,/【主规则优先】/);assert.match(system,/unknown/);assert.ok(!system.includes('你的名字是“小喵”'));}
- assert.match(systems[0]!,/【知性灿灿：温暖机灵的伙伴】/);assert.match(systems[1]!,/【擎苍：沉稳有斗志的伙伴】/);assert.match(systems[2]!,/【天才童声：活泼勇敢的伙伴】/);
+ assert.match(systems[0]!,/【知性灿灿声线：温暖机灵的共鸣精灵】/);assert.match(systems[1]!,/【擎苍声线：沉稳有斗志的共鸣精灵】/);assert.match(systems[2]!,/【天才童声声线：活泼勇敢的共鸣精灵】/);
 });
 it('invalid profile rejects run and wait before any MCP or expression, and missing profile defaults cancan',async()=>{
  let game=0,models=0;const agent=new SandboxAgent('主规则',{async express(){models++;return output;}});
@@ -56,7 +56,7 @@ it('profile is locked before an asynchronous game call, including wait_event',as
  const agent=new SandboxAgent('主规则',{async express(prompt){system=prompt;return output;}});
  const waiting=agent.wait({async callTool(name,args){calls.push(name);assert.deepEqual(args,{});enter();await released;return {reply:facts,isError:false};}},options);
  await entered;options.profileId='tiancai';release();const result=await waiting;
- assert.deepEqual(calls,['wait_event']);assert.equal(result.profileId,'qingcang');assert.match(system,/【擎苍：/);assert.ok(!system.includes('【天才童声：'));
+ assert.deepEqual(calls,['wait_event']);assert.equal(result.profileId,'qingcang');assert.match(system,/【擎苍声线：/);assert.ok(!system.includes('【天才童声声线：'));
 });
 it('client validates unknown profile before initialize and returns request-locked profile on all results',async()=>{
  const original=globalThis.fetch;let fetches=0;let toolCalls=0;const prompts:string[]=[];
@@ -72,8 +72,19 @@ it('client validates unknown profile before initialize and returns request-locke
  try{
   const client=new SandboxClient({upstream:'http://mock.invalid',agentId:'test',timeoutMs:1000,logger:createLogger('error'),agent:new SandboxAgent('主规则',{async express(prompt){prompts.push(prompt);return output;}})});
   await assert.rejects(client.say('test','开始',{profileId:'unknown'}),/未知伙伴气质/);await assert.rejects(client.wait('test',{profileId:'unknown'}),/未知伙伴气质/);assert.equal(fetches,0);
-  const result=await client.say('test','嗯',options);assert.equal(result.profileId,'cancan');assert.equal(toolCalls,1);assert.match(prompts[0]!,/【知性灿灿：/);
+  const result=await client.say('test','嗯',options);assert.equal(result.profileId,'cancan');assert.equal(toolCalls,1);assert.match(prompts[0]!,/【知性灿灿声线：/);
   const controller=new AbortController();controller.abort();const cancelled=await client.wait('test',{profileId:'qingcang',signal:controller.signal});
   assert.equal(cancelled.profileId,'qingcang');assert.equal(cancelled.silent,true);assert.deepEqual(cancelled.speech.segments,[]);assert.equal(toolCalls,1);
  }finally{globalThis.fetch=original;}
+});
+
+it('本机个体名独立于三种音色并实际进入表达prompt；未命名不自动叫小喵',async()=>{
+ const systems:string[]=[];const model={async express(system:string){systems.push(system);return JSON.stringify({segments:[{text:'我准备好了。',emotion:'expectant'}]});}};
+ const facts:GameReply={v:2,ok:true,phase:'idle',need:'none',events:[],say:'我准备好了。'};
+ const tools={async callTool(){return{reply:facts,isError:false};}};
+ const named=new SandboxAgent('共享主规则',model,'小喵');
+ for(const profileId of ['cancan','qingcang','tiancai'])await named.run('嗯',tools,{profileId});
+ assert.equal(systems.length,3);for(const system of systems)assert.ok(system.includes('companionName="小喵"'));
+ systems.length=0;await new SandboxAgent('共享主规则',model).run('嗯',tools,{profileId:'tiancai'});
+ assert.ok(!systems[0]!.includes('小喵'));assert.ok(systems[0]!.includes('尚未设置个体名字'));
 });
