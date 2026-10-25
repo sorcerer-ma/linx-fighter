@@ -29,21 +29,21 @@ const startInput = {
   mode: z
     .enum(['solo', 'pvp'])
     .optional()
-    .describe('solo=和 AI 对手单挑（默认）；pvp=开双人房，等另一位玩家凭房间号加入'),
+    .describe('solo=和 AI 对手单挑（默认）；pvp=发起双人挑战，等对方凭编号接受'),
   room: z
     .string()
     .trim()
     .min(1)
     .max(12)
     .optional()
-    .describe('四位房间号，填了就加入该房间，和另一位玩家对打；房主开房时会拿到房间号'),
+    .describe('四位挑战编号，填了就接受该编号的挑战，和另一位玩家对打；发起挑战时会拿到编号'),
   text: z
     .string()
     .trim()
     .min(1)
     .max(60)
     .optional()
-    .describe('玩家原话（可选）：不确定该填 mode 还是 room 时把原话放这里，服务端会识别「开房间」「加入房间1234」'),
+    .describe('玩家原话（可选）：不确定该填 mode 还是 room 时把原话放这里，服务端会识别「共鸣对决，发起挑战」「接受挑战，编号1234」'),
 };
 
 const actionInput = {
@@ -64,7 +64,7 @@ const sayInput = {
     .trim()
     .min(1)
     .max(120)
-    .describe('玩家原话，一字不改地传进来，例如「攻击」「我的生命值还剩多少」「开房间」「加入房间1234」「怎么玩」'),
+    .describe('玩家原话，一字不改地传进来，例如「攻击」「我的生命值还剩多少」「共鸣对决，发起挑战」「接受挑战，编号1234」「怎么玩」'),
 };
 
 /**
@@ -130,7 +130,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '玩家说了什么',
       description:
-        '玩家说完话就调用它，把原话一字不改地放进 text。不管听起来像不像游戏指令——闲聊、念诗、问天气、骂人都一样，先递过来由服务端判断，不要自己回答，也不要说「这跟游戏无关」。服务端会识别招式与同音误识别、战况、玩法、开局、开房间与加入房间，游戏规则之外的问题由语言模型回答；返回的 text 可以直接朗读。不确定该用哪个工具时，永远用这个。',
+        '玩家说完话就调用它，把原话一字不改地放进 text。不管听起来像不像游戏指令——闲聊、念诗、问天气、骂人都一样，先递过来由服务端判断，不要自己回答，也不要说「这跟游戏无关」。服务端会识别招式与同音误识别、战况、玩法、开局、发起挑战与接受挑战，游戏规则之外的问题由语言模型回答；返回的 text 可以直接朗读。不确定该用哪个工具时，永远用这个。',
       inputSchema: sayInput,
     },
     async ({ text, speaker }) =>
@@ -142,7 +142,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '开始游戏',
       description:
-        '开一局新的灵犀对决。默认和 AI 对手单挑；玩家说要「联机」「双人对战」「开房间」时必须传 mode=pvp，会开房并拿到四位房间号；另一位玩家说「加入房间1234」时传 room=1234。拿不准参数就把玩家原话放进 text。会覆盖当前未结束的对局。',
+        '开一局新的灵犀对决。默认和 AI 对手单挑；玩家说「共鸣对决，发起挑战」或「联机」「双人对战」时必须传 mode=pvp，会发起挑战并拿到四位编号；另一位玩家说「接受挑战，编号1234」时传 room=1234。拿不准参数就把玩家原话放进 text。会覆盖当前未结束的对局。',
       inputSchema: startInput,
     },
     async ({ opponent, mode, room, text, speaker }) =>
@@ -156,7 +156,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     {
       title: '出招',
       description:
-        `执行玩家这一手的招式或应对。轮到玩家主动时可出普攻、强攻、蓄力；大招要${ATTACKS.ult.apCost}点能量且每局一次，能量不够或次数用完时不要提示玩家可以用大招。对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。玩家说「开房间」「联机」「加入房间1234」也原样传进 action，服务端会按联机处理。操作不合法时不会推进回合，返回里会说明原因并给可选说法。`,
+        `执行玩家这一手的招式或应对。轮到玩家主动时可出普攻、强攻、蓄力；大招要${ATTACKS.ult.apCost}点能量且每局一次，能量不够或次数用完时不要提示玩家可以用大招。对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。玩家说「共鸣对决，发起挑战」「接受挑战，编号1234」「联机」也原样传进 action，服务端会按挑战流程处理。操作不合法时不会推进回合，返回里会说明原因并给可选说法。`,
       inputSchema: actionInput,
     },
     async ({ action, speaker }) =>

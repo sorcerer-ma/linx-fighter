@@ -104,12 +104,12 @@ describe('沙箱服务', () => {
   });
 
   it('/api/say 把原话透传给 game_say，并带回播报与局面', async () => {
-    const opened = await say('web-test-1', '开房间');
+    const opened = await say('web-test-1', '共鸣对决，发起挑战');
     assert.equal(opened.ok, true);
     assert.equal(opened.tool, 'game_say');
     assert.equal(opened.deviceId, 'web-test-1');
     assert.equal(opened.agentId, 'linx-test');
-    assert.match(String(opened.reply), /房间\d{4}/);
+    assert.match(String(opened.reply), /编号\d{4}/);
     assert.equal(opened.state.room, opened.state.battle.room);
     assert.equal(opened.state.battle.mode, 'pvp');
     assert.ok(Array.isArray(opened.trace.requests));

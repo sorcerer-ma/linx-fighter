@@ -9,11 +9,11 @@ import { isActiveAction, isResponseAction } from './types.js';
  * 平台把「强攻」转成「重机」、把「格挡」转成「可党」这类同音/近音错字时，
  * 规则词表直接 miss，玩家只能反复重说。这一层在服务端补两步：
  * 1. 洗文本（去标点、去「我要/给我/狠狠」这类口语填充）；
- * 2. 音节级比较：同音算 0、声母或韵母混淆算 0.5、其它算 1。
+ * 2. 音节级比较：同音算 0、声母/韵母混淆或鼻音韵尾脱落算 0.5、其它算 1。
  *
  * 原则是「宁可认不出，也不认错」：错配会消耗能量和回合，比回一句「没听清」更糟。
  * 因此只接受整句就是某个说法、整句以某个说法开头/结尾、或等长且只差一处轻微混淆；
- * 单字别名（打、躲、防）只参与精确匹配，不做任何近音扩展。
+ * 短词只参与精确匹配，不做任何近音扩展，避免误伤日常对话。
  *
  * 不处理的两类：
  * - 唤出咒语：原文要回念给玩家听，交给 actions.ts 的 matchAction；
@@ -21,7 +21,7 @@ import { isActiveAction, isResponseAction } from './types.js';
  *   command.ts 的疑问、否定拦截兜底。调用方应先跑 command.ts 的拦截，再问这一层。
  */
 
-/** 音节距离阈值：整句所有音节的距离之和不能超过它，等于只容一处声母/韵母混淆 */
+/** 音节距离阈值：整句所有音节的距离之和不能超过它，等于只容一处声母/韵母混淆或韵尾脱落 */
 const MAX_SYLLABLE_COST = 0.5;
 
 /** 一个说法最长保留的字符数，超长说明是整句而不是招式说法，不做近音比较 */
@@ -73,7 +73,7 @@ function stripHead(text: string): string {
   return rest;
 }
 
-/** 反复剥句尾填充；保留最后一个字，避免把「打」这种单字别名连尾巴一起剥掉 */
+/** 反复剥句尾填充；保留最后一个字，避免把单字指令连尾巴一起剥掉 */
 function stripTail(text: string): string {
   let rest = text;
   for (let changed = true; changed; ) {
@@ -152,6 +152,29 @@ const FINAL_CONFUSIONS: Readonly<Record<string, readonly string[]>> = {
   uang: ['uan'],
 };
 
+/**
+ * 鼻音韵尾脱落：平台偶尔吞掉 an/ang/en/eng/in/ing 的尾巴，
+ * 「闪避」会被转写成「傻逼」、「格挡」会被转写成「哥打」。
+ * 这是 ASR 的常见现象，按一处轻微混淆处理，不往招式表里逐个加错词。
+ */
+const DROPPED_CODA: Readonly<Record<string, string>> = {
+  an: 'a',
+  ang: 'a',
+  en: 'e',
+  eng: 'e',
+  in: 'i',
+  ing: 'i',
+  ian: 'ia',
+  iang: 'ia',
+  uan: 'ua',
+  uang: 'ua',
+};
+
+/** 两个韵母是否只差一个鼻音韵尾 */
+function codaDropped(a: string, b: string): boolean {
+  return DROPPED_CODA[a] === b || DROPPED_CODA[b] === a;
+}
+
 /** 把不带声调的音节拆成声母与韵母；没有声母的（an、er）声母为空串 */
 function splitSyllable(syllable: string): [string, string] {
   for (const initial of INITIALS) {
@@ -179,7 +202,8 @@ export function syllableDistance(a: string | undefined, b: string | undefined): 
   const [initialA, finalA] = splitSyllable(a);
   const [initialB, finalB] = splitSyllable(b);
   const initialClose = initialA === initialB || (initialA !== '' && initialB !== '' && confused(INITIAL_CONFUSIONS, initialA, initialB));
-  const finalClose = finalA === finalB || confused(FINAL_CONFUSIONS, finalA, finalB);
+  const finalClose =
+    finalA === finalB || confused(FINAL_CONFUSIONS, finalA, finalB) || codaDropped(finalA, finalB);
 
   return initialClose && finalClose ? 0.5 : 1;
 }
@@ -350,7 +374,7 @@ export function matchSpokenAction(raw: string, stage?: SpokenStage): SpokenMatch
 
   const terms = termsFor(stage);
 
-  // 1. 精确：整句就是一个说法，单字别名只在这一步生效
+  // 1. 精确：整句就是一个说法，短词只在这一步生效
   const exact = terms.find((entry) => entry.term === text);
   if (exact) return { id: exact.id, score: 1, via: 'exact' };
 

@@ -306,16 +306,16 @@ describe('统一入口与局面快照', () => {
     assert.match(result.text, /普攻/);
   });
 
-  it('开局句真的开局，开房句真的开房', async () => {
+  it('开局句真的开局，发起挑战句真的发起挑战', async () => {
     const { service, rooms } = setup();
 
     const solo = await service.say(KEY, '来一局');
     assert.equal(solo.battle?.mode, 'solo');
     assert.match(solo.text, /对决开始/);
 
-    const pvp = await service.say(KEY, '开房间');
-    const code = /房间(\d{4})/.exec(pvp.text)?.[1];
-    assert.ok(code, `应播报四位房间号：${pvp.text}`);
+    const pvp = await service.say(KEY, '共鸣对决，发起挑战');
+    const code = /编号(\d{4})/.exec(pvp.text)?.[1];
+    assert.ok(code, `应播报四位编号：${pvp.text}`);
     assert.equal(rooms.byPlayer(KEY)?.code, code);
   });
 
@@ -328,19 +328,24 @@ describe('统一入口与局面快照', () => {
     assert.equal(hit.battle?.history.length, 1);
     assert.match(hit.text, /普攻/);
 
+    // 「傻逼」是平台吞掉「闪避」鼻音后的误转写：识别层要接住，不能被当脏话拒绝
+    const dodge = await service.say(KEY, '傻逼');
+    assert.equal(dodge.battle?.history[1]?.response, 'dodge');
+    assert.match(dodge.text, /躲开|闪避/);
+
     const miss = await service.say(KEY, '今天天气不错');
-    assert.equal(miss.battle?.history.length, 1);
+    assert.equal(miss.battle?.history.length, 2);
     assert.match(miss.text, /没听清/);
   });
 
   it('双人房里两位玩家的快照互为镜像', async () => {
     const { service } = setup();
-    const opened = await service.say(KEY, '开房间');
-    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
+    const opened = await service.say(KEY, '共鸣对决，发起挑战');
+    const code = /编号(\d{4})/.exec(opened.text)?.[1]!;
     // 对手还没进来：房主快照要告诉界面「等对手」，而不是「轮到你出招」
     assert.equal(service.snapshot(KEY)?.state.waiting, true);
 
-    await service.say(KEY_B, `加入房间${code}`);
+    await service.say(KEY_B, `接受挑战，编号${code}`);
 
     const host = service.snapshot(KEY);
     assert.equal(host?.state.waiting, false, '对手进来后不再等待');
@@ -367,9 +372,9 @@ describe('双人补账播报', () => {
 
   it('对手应完的那一手，等出手方下次开口补上，且只补一次', async () => {
     const { service } = setup();
-    const opened = await service.say(KEY, '开房间');
-    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
-    await service.say(KEY_B, `加入房间${code}`);
+    const opened = await service.say(KEY, '共鸣对决，发起挑战');
+    const code = /编号(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `接受挑战，编号${code}`);
 
     const attack = await service.say(KEY, '强攻');
     assert.match(attack.text, /接招/);
@@ -391,9 +396,9 @@ describe('双人补账播报', () => {
 
   it('对手蓄力也补在他自己的下一句话里', async () => {
     const { service } = setup();
-    const opened = await service.say(KEY, '开房间');
-    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
-    await service.say(KEY_B, `加入房间${code}`);
+    const opened = await service.say(KEY, '共鸣对决，发起挑战');
+    const code = /编号(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `接受挑战，编号${code}`);
 
     await service.say(KEY, '蓄力');
     const guestTurn = await service.say(KEY_B, '普攻');
@@ -403,9 +408,9 @@ describe('双人补账播报', () => {
 
   it('换局后不把上一局的结果补到新对局里', async () => {
     const { service } = setup();
-    const opened = await service.say(KEY, '开房间');
-    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
-    await service.say(KEY_B, `加入房间${code}`);
+    const opened = await service.say(KEY, '共鸣对决，发起挑战');
+    const code = /编号(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `接受挑战，编号${code}`);
     await service.say(KEY, '强攻');
     await service.say(KEY_B, '格挡');
 
@@ -418,9 +423,9 @@ describe('双人补账播报', () => {
 
   it('终局也把最后那一手交代清楚', async () => {
     const { service, store } = setup();
-    const opened = await service.say(KEY, '开房间');
-    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
-    await service.say(KEY_B, `加入房间${code}`);
+    const opened = await service.say(KEY, '共鸣对决，发起挑战');
+    const code = /编号(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `接受挑战，编号${code}`);
 
     // 把房主生命值摆到 1：访客这一手直接收尾
     const key = pvpBattleKey(code);
@@ -441,9 +446,9 @@ describe('双人补账播报', () => {
 
   it('有屏客户端取走补账但不念出来，下次也不会再补', async () => {
     const { service } = setup();
-    const opened = await service.say(KEY, '开房间');
-    const code = /房间(\d{4})/.exec(opened.text)?.[1]!;
-    await service.say(KEY_B, `加入房间${code}`);
+    const opened = await service.say(KEY, '共鸣对决，发起挑战');
+    const code = /编号(\d{4})/.exec(opened.text)?.[1]!;
+    await service.say(KEY_B, `接受挑战，编号${code}`);
     await service.say(KEY, '强攻');
     await service.say(KEY_B, '格挡');
 
@@ -490,7 +495,7 @@ function gatedIntent(): { resolver: CommandRouter; release(id: 'light' | null): 
   };
 }
 
-/** 可手动放行的命令路由：放行时给出模型判出的命令，用来挂住开局、开房这类非招式命令 */
+/** 可手动放行的命令路由：放行时给出模型判出的命令，用来挂住开局、发起挑战这类非招式命令 */
 function gatedCommand(): { resolver: CommandRouter; release(command: Command | null): void } {
   let release: ((command: Command | null) => void) | null = null;
   const resolver: CommandRouter = {
@@ -513,8 +518,8 @@ describe('异步与状态的边界', () => {
   const HOST = 'device-b#agent-1';
   const GUEST = 'device-c#agent-2';
   const roomCodeOf = (text: string): string => {
-    const code = /房间(\d{4})/.exec(text)?.[1];
-    assert.ok(code, `播报里应带房间号：${text}`);
+    const code = /编号(\d{4})/.exec(text)?.[1];
+    assert.ok(code, `播报里应带编号：${text}`);
     return code;
   };
 
@@ -546,6 +551,28 @@ describe('异步与状态的边界', () => {
     assert.equal(store.get(KEY), armed);
     assert.equal(armed.player.ap, 5);
     assert.equal(armed.player.ultLeft, 1);
+  });
+
+  it('收窄词表后的口语不替玩家出招', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+    assert.equal(before.player.ap, 3);
+
+    // 这些口语本地不再直接执行，但句子里点到两招时仍要拦住：能量与战报都不动
+    for (const text of ['猛攻还是普攻', '公鸡还是强攻', '回能量还是强攻']) {
+      const result = await service.say(KEY, text);
+      assert.match(result.text, /两种招式/, `「${text}」应让玩家重说`);
+      assert.equal(store.get(KEY), before, `「${text}」不该动对局`);
+    }
+
+    // 「憋大招」是攒能量：能量加一点，一局一次的大招留着
+    const charged = await service.say(KEY, '憋大招');
+    assert.equal(charged.battle?.history.length, 1);
+    assert.equal(charged.battle?.history[0]?.action, 'charge');
+    assert.equal(charged.battle?.player.ap, 4);
+    assert.equal(charged.battle?.player.ultLeft, 1);
   });
 
   it('没有对局时，否定句不会顺手开一局', async () => {
@@ -594,7 +621,7 @@ describe('异步与状态的边界', () => {
     const pending = service.say(KEY, '上去揍他');
     await tick();
     // 模型还没回，玩家先凭语音进了房间
-    await service.say(KEY, `加入房间${code}`);
+    await service.say(KEY, `接受挑战，编号${code}`);
     intent.release('light');
 
     const stale = await pending;
@@ -619,7 +646,7 @@ describe('异步与状态的边界', () => {
     const pending = service.say(HOST, '上去揍他');
     await tick();
     // 房主改口再开一间：旧房连那局一起撤掉
-    await service.say(HOST, '开房');
+    await service.say(HOST, '发起挑战');
     intent.release('light');
 
     const stale = await pending;
@@ -745,7 +772,7 @@ describe('异步与状态的边界', () => {
     const pending = service.say(GUEST, '我还想接着玩');
     await tick();
     // 模型还没回，玩家先凭语音进了朋友的房间
-    await service.say(GUEST, `加入房间${code}`);
+    await service.say(GUEST, `接受挑战，编号${code}`);
     assert.equal(rooms.byPlayer(GUEST)?.code, code);
 
     // 旧路由返回的开局会走 dropRoom：核对不过就不能执行，两个人都还能接着打
@@ -757,7 +784,7 @@ describe('异步与状态的边界', () => {
     assert.equal(store.get(key)?.id, battleId);
   });
 
-  it('等模型期间进了别人的房间，旧路由返回的开房也不会把那间房撤掉', async () => {
+  it('等模型期间进了别人的房间，旧路由返回的发起挑战也不会把那间房撤掉', async () => {
     const intent = gatedCommand();
     const { service, store, rooms } = setup({ router: intent.resolver });
 
@@ -769,7 +796,7 @@ describe('异步与状态的边界', () => {
 
     const pending = service.say(GUEST, '咱们一起玩吧');
     await tick();
-    await service.say(GUEST, `加入房间${code}`);
+    await service.say(GUEST, `接受挑战，编号${code}`);
     assert.equal(rooms.byPlayer(GUEST)?.code, code);
 
     intent.release({ kind: 'open-room' });

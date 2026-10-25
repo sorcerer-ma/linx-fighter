@@ -422,13 +422,14 @@ describe('提示与房间播报', () => {
     assert.equal(narrateChant('共鸣斩破军'), '你朗声喝道：「共鸣斩破军」。');
   });
 
-  it('房间相关播报都包含四位房间号', () => {
-    assert.match(narrateRoomCreated('1234'), /房间1234/);
-    assert.match(narrateRoomCreated('1234'), /加入房间1234/);
-    assert.match(narrateRoomJoined('1234'), /进了房间1234/);
-    assert.match(narrateWaitingRoom('1234'), /还等着另一位玩家加入/);
-    assert.match(narrateRoomMissing('1234'), /没找到房间1234/);
-    assert.match(narrateRoomFull('1234'), /已经满员/);
+  it('挑战播报都包含四位编号与下一步口令', () => {
+    assert.match(narrateRoomCreated('1234'), /挑战已发起，编号1234/);
+    assert.match(narrateRoomCreated('1234'), /接受挑战，编号1234/);
+    assert.match(narrateRoomJoined('1234'), /接下了编号1234的挑战/);
+    assert.match(narrateWaitingRoom('1234'), /编号1234还等着对方接受/);
+    assert.match(narrateWaitingRoom('1234'), /接受挑战，编号1234/);
+    assert.match(narrateRoomMissing('1234'), /没找到编号1234的挑战/);
+    assert.match(narrateRoomFull('1234'), /已经被接受了/);
     assert.match(narrateRoomInvalid(), /四位数字/);
   });
 });

@@ -51,7 +51,7 @@ export interface HistoryEntryState {
 
 /** 一场对局的界面视图 */
 export interface BattleState {
-  /** 四位房间号；单人局为 null */
+  /** 四位挑战编号；单人局为 null */
   room: string | null;
   mode: BattleMode;
   /** 玩家坐在基准对局的哪一边；快照已镜像，界面不用管 */

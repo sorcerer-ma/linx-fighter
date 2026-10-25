@@ -18,6 +18,8 @@ describe('一句话读成命令', () => {
     for (const text of [
       '回能量', '回点能量', '回满能量', '补能量', '补点能量', '补满能量',
       '攒能量', '攒点能量', '攒满能量', '存能量', '蓄能量', '聚能量', '我回点能量',
+      // 带「大招」二字的长词留在本地：删了会被「大招」的包含匹配抢走
+      '憋大招', '攒大招', '留大招', '存大招', '我在憋大招', '先憋大招',
     ]) {
       const command = readCommand(text);
       assert.equal(command.kind, 'turn', `「${text}」应读成 turn`);
@@ -47,25 +49,37 @@ describe('一句话读成命令', () => {
     }
   });
 
-  it('开房与联机读成 open-room，和单人开局分开', () => {
-    for (const text of ['开房间', '联机', '双人对战', '开个房', '一起打吧']) {
+  it('发起挑战与联机读成 open-room，和单人开局分开', () => {
+    for (const text of ['共鸣对决，发起挑战', '发起挑战', '联机', '双人对战', '开个房', '一起打吧']) {
       expectKind(text, 'open-room');
     }
   });
 
-  it('带房间号的加入读成 join-room', () => {
+  it('带编号的接受挑战读成 join-room，旧说法仍兼容', () => {
+    assert.deepEqual(readCommand('接受挑战，编号1234'), { kind: 'join-room', code: '1234' });
+    assert.deepEqual(readCommand('接受挑战编号一二三四'), { kind: 'join-room', code: '1234' });
+    // 旧口令留作输入兼容，不再作为引导文案
     assert.deepEqual(readCommand('加入房间1234'), { kind: 'join-room', code: '1234' });
     assert.deepEqual(readCommand('进房一二三四'), { kind: 'join-room', code: '1234' });
-    // 只有数字没有房间语义：不当成加入房间
+    // 没有编号、只有编号或只有数字，都不算接受挑战
+    assert.notEqual(readCommand('接受挑战').kind, 'join-room');
+    assert.notEqual(readCommand('编号1234').kind, 'join-room');
     assert.notEqual(readCommand('今天1234').kind, 'join-room');
   });
 
-  it('招式读成 turn，同音误识别与唤出指令都算', () => {
-    for (const text of ['攻击', '普攻', '公鸡', '强攻', '格挡', '闪避']) {
+  it('招式读成 turn，拼音规则接不住的误识别与唤出指令都算', () => {
+    for (const text of ['攻击', '普攻', '大着', '强攻', '格挡', '闪避']) {
       expectKind(text, 'turn');
     }
     assert.deepEqual(readCommand('共鸣斩破军'), { kind: 'turn', action: 'light', chant: '共鸣斩破军' });
     assert.deepEqual(readCommand('天倾共此声'), { kind: 'turn', action: 'ult', chant: '天倾共此声' });
+  });
+
+  it('本地只认高频说法，语义口语交给模型', () => {
+    // 这些说法原本靠长别名表覆盖，现在收敛掉，改由命令路由按阶段判断
+    for (const text of ['猛攻', '抡他', '生吃这一下', '防一下', '躲一下']) {
+      expectKind(text, 'route');
+    }
   });
 
   it('认不出来的句子交给模型路由', () => {
@@ -118,6 +132,22 @@ describe('不该出手的表达', () => {
   it('一句话说两招算歧义', () => {
     for (const text of ['大招还是强攻', '攻击或者闪避', '先闪避再攻击']) {
       assert.deepEqual(readCommand(text), { kind: 'refused', why: 'ambiguous' }, `「${text}」没说清要出哪一招`);
+    }
+  });
+
+  it('收窄掉的语义口语与 ASR 误写照样参与歧义判定', () => {
+    // 这些说法本地不再直接执行，但一句话点到两招仍要让玩家重说，
+    // 否则规则会替他挑剩下那一招打出去
+    for (const text of ['猛攻还是普攻', '公鸡还是强攻', '重机还是大招', '成受还是格挡']) {
+      assert.deepEqual(readCommand(text), { kind: 'refused', why: 'ambiguous' }, `「${text}」没说清要出哪一招`);
+    }
+    // 「回能量」不在招式表里，也是蓄力：和另一招并提同样要重说
+    for (const text of ['回能量还是强攻', '攒能量还是强攻', '回满能量还是放大招']) {
+      assert.deepEqual(readCommand(text), { kind: 'refused', why: 'ambiguous' }, `「${text}」没说清要出哪一招`);
+    }
+    // 只点到一种就照常交给模型，不因为「提及」词表变宽就拦下来
+    for (const text of ['猛攻', '公鸡', '蓄势待发']) {
+      assert.equal(readCommand(text).kind, 'route', `「${text}」应交给模型路由`);
     }
   });
 
@@ -175,6 +205,28 @@ describe('不该出手的表达', () => {
     }
   });
 
+  it('对手在蓄力不等于本机蓄力', () => {
+    // 「对手回能量」是在描述对手，剥掉对手子句后本机没有出招，也就不能白涨能量
+    for (const text of ['对手回能量，我先等等', '对手攒点能量，我先看看', '对手补能量，我先不动']) {
+      assert.equal(readCommand(text).kind, 'status', `「${text}」只是描述对手，不能当成我蓄力`);
+    }
+    // 自己那半句照常执行：剥掉对手子句不影响本机的这一手
+    for (const [text, action] of [
+      ['对手回能量，我强攻', 'heavy'],
+      ['对手回能量，我也回能量', 'charge'],
+      ['对手攒能量，我先格挡', 'guard'],
+      ['对手攒点能量，我回能量', 'charge'],
+    ] as const) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应照常出招`);
+      if (command.kind === 'turn') assert.equal(command.action, action, `「${text}」读成了 ${command.action}`);
+    }
+    // 对手子句里带招式、自己那半句也带招式：歧义判定只看留下的部分
+    assert.deepEqual(readCommand('对手先蓄力，我回能量还是强攻'), { kind: 'refused', why: 'ambiguous' });
+    // 没有标点的对手子句不剥：这句话到底谁出招没说清，宁可让玩家重说也别替他打出去
+    assert.deepEqual(readCommand('对手回能量还是强攻'), { kind: 'refused', why: 'ambiguous' });
+  });
+
   it('问号在去掉标点之前就要认出来', () => {
     for (const text of ['大招？', '大招?']) {
       const command = readCommand(text);
@@ -205,7 +257,7 @@ describe('问句与规则外的句子交给模型', () => {
     }
   });
 
-  it('问玩法在出招与开房之前', () => {
+  it('问玩法在出招与发起挑战之前', () => {
     for (const text of ['怎么玩', '怎么放大招', '怎么出招']) {
       expectKind(text, 'help');
     }
@@ -229,17 +281,48 @@ describe('命令之间的优先级', () => {
     }
   });
 
-  it('房间语义优先于问句：「能不能联机」是开双人局', () => {
-    // 这句既是问句又带联机语义，按开房处理，不能只播一句局面
-    for (const text of ['能不能联机', '要不要开房间', '可不可以开房间']) {
+  it('挑战语义优先于问句：「能不能联机」是发起双人挑战', () => {
+    // 这句既是问句又带联机语义，按发起挑战处理，不能只播一句局面
+    for (const text of ['能不能联机', '要不要发起挑战', '可不可以发起挑战']) {
       expectKind(text, 'open-room');
     }
   });
 
-  it('问玩法优先于开房：「双人怎么玩」问的是规则', () => {
+  it('问玩法优先于发起挑战：「双人怎么玩」问的是规则', () => {
     for (const text of ['双人怎么玩', '联机怎么操作']) {
       expectKind(text, 'help');
     }
+  });
+
+  it('明确否定先于挑战口令：说「不要接受挑战」不能真去换房或重开', () => {
+    // 这两句以前落到 join-room / open-room，会真把玩家自己那一局连同对手撤掉
+    for (const text of ['不要接受挑战，编号1234', '不要发起挑战']) {
+      expectKind(text, 'refused');
+    }
+    // 否定换成别的说法同样收住，只要 blockReason 认得出是明确否定
+    for (const text of ['不用联机', '不想开房', '算了不联机了']) {
+      expectKind(text, 'refused');
+    }
+    // 否定词表认不出的组合也要单独收住：这些说法在基线不会直接执行挑战
+    for (const text of ['不接受挑战，编号1234', '别发起挑战', '不挑战你', '别联机了']) {
+      expectKind(text, 'refused');
+    }
+    // 但否定词只是句首客套时仍是发起挑战：别把裸「别/不」当成全局否定
+    for (const text of ['别担心，发起挑战吧', '不用怕，联机吧', '别急，发起挑战']) {
+      expectKind(text, 'open-room');
+    }
+    // 肯定口令与反问式入口照旧：问「要不要」不是否定
+    assert.deepEqual(readCommand('接受挑战，编号1234'), { kind: 'join-room', code: '1234' });
+    expectKind('发起挑战', 'open-room');
+    expectKind('要不要发起挑战', 'open-room');
+  });
+
+  it('问玩法先于多招式歧义：点到两招是在问区别，不是要同时出两招', () => {
+    for (const text of ['普攻和强攻怎么用', '格挡和闪避怎么用', '双人怎么玩']) {
+      expectKind(text, 'help');
+    }
+    // 没有问法的两招仍然判歧义，让玩家重说
+    expectKind('普攻和强攻', 'refused');
   });
 });
 

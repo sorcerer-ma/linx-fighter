@@ -19,14 +19,20 @@ export function normalizeRoomCode(raw: string): string | null {
   return digits.length === ROOM_CODE_LENGTH ? digits : null;
 }
 
-/** 玩家原话里是否在说「开房间 / 联机」。语音链路常把整句话塞进参数，服务端兜底识别。 */
+/**
+ * 玩家原话里是否在发起双人挑战。
+ * 主路径是新口令「共鸣对决，发起挑战」；旧的联机 / 开房说法保留兼容。
+ */
 export function wantsOpenRoom(text: string): boolean {
-  return /(联机|双人|开个?房|开房|建个?房|创建房|一起打|组队)/.test(text);
+  return /(发起挑战|挑战你|联机|双人|开个?房|开房|建个?房|创建房|一起打|组队)/.test(text);
 }
 
-/** 从玩家原话里抽房间号：必须带「房间 / 加入 / 进」语义，避免把普通数字当房间号 */
+/**
+ * 从玩家原话里抽挑战编号：主路径是「接受挑战，编号1234」，
+ * 旧说法「加入房间1234」「进房1234」继续兼容；普通数字不当编号。
+ */
 export function roomCodeFromPhrase(text: string): string | null {
-  if (!/(房间|加入|进房)/.test(text)) return null;
+  if (!/(接受挑战|加入|进房|房间)/.test(text)) return null;
   return normalizeRoomCode(text);
 }
 
