@@ -39,3 +39,19 @@ test('旧配置逐字段回退；空白专用值视为未配置', () => {
   assert.equal(config.decisionBaseUrl, 'https://old.invalid');
   assert.equal(config.chatBaseUrl, 'https://old.invalid');
 });
+
+test('显式 provider 地址不能回退共享密钥跨域使用', () => {
+  const config = loadConfig({ API_KEY: 'legacy-test',
+    DECISION_BASE_URL: 'https://decision.invalid', CHAT_BASE_URL: 'https://chat.invalid' });
+  assert.equal(config.decisionApiKey, undefined);
+  assert.equal(config.chatApiKey, undefined);
+});
+
+test('显式专用地址只阻止对应 provider 的共享密钥回退', () => {
+  const chat = loadConfig({ API_KEY: 'legacy-test', CHAT_BASE_URL: 'https://chat.invalid' });
+  assert.equal(chat.chatApiKey, undefined);
+  assert.equal(chat.decisionApiKey, 'legacy-test');
+  const decision = loadConfig({ API_KEY: 'legacy-test', DECISION_BASE_URL: 'https://decision.invalid' });
+  assert.equal(decision.decisionApiKey, undefined);
+  assert.equal(decision.chatApiKey, 'legacy-test');
+});

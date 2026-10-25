@@ -82,7 +82,7 @@ curl http://127.0.0.1:8000/health
 ```bash
 DECISION_BASE_URL=https://api.modelink.ai/v1
 DECISION_API_KEY=<决策 provider 密钥>
-CHAT_BASE_URL=https://api.modelink.ai/v1
+CHAT_BASE_URL=https://api.qnaigc.com/v1
 CHAT_API_KEY=<聊天 provider 密钥>
 DECISION_PATH=/systemone
 CHAT_PATH=/chat/completions
@@ -212,4 +212,6 @@ v2 实现与验收完成前，不将 JSON 提示词应用到当前文本服务�
 
 命令路由与 JEV 对手决策使用 `DECISION_API_KEY`、`DECISION_BASE_URL`、`DECISION_PATH`；DeepSeek 规则外问答使用 `CHAT_API_KEY`、`CHAT_BASE_URL`、`CHAT_PATH`。两方地址、密钥和路径互不借用，模型名仍分别用 `DECISION_MODEL` / `CHAT_MODEL`。
 
-迁移时分别填写两方 provider 的地址与密钥，路径按各自协议设置（默认 `/systemone` 与 `/chat/completions`）。每个地址/密钥字段的优先级是非空专用变量 → 旧 `BASE_URL` / `API_KEY` → 默认地址或无密钥；空白值视为未设置。路径原本已独立，无共享路径回退。旧配置继续有效，但拆分 provider 后建议移除共享变量，避免一方误用旧密钥。只有决策密钥时仅启用路由/对手决策；只有聊天密钥时仅启用规则外问答，另一方保持本地或固定话术回退。密钥仅放运行环境。
+迁移时分别填写两方 provider 的地址与密钥，路径按各自协议设置（默认 `/systemone` 与 `/chat/completions`）。地址优先级是非空专用变量 → 旧 `BASE_URL` → 默认地址。密钥优先使用专用变量；仅未设置对应专用地址时允许回退旧 `API_KEY`，否则缺少专用密钥就禁用对应能力。空白值视为未设置。路径原本已独立，无共享路径回退。旧配置继续有效，但拆分 provider 后建议移除共享变量，避免一方误用旧密钥。只有决策密钥时仅启用路由/对手决策；只有聊天密钥时仅启用规则外问答，另一方保持本地或固定话术回退。密钥仅放运行环境。
+
+显式配置专用地址后，应由用户核对 provider 并填写对应专用密钥，不自动搬移旧密钥。非秘密示例为决策 `https://api.modelink.ai/v1`、聊天 `https://api.qnaigc.com/v1`。

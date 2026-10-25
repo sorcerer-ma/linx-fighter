@@ -24,7 +24,7 @@ export interface AppConfig {
   battleTtlMs: number;
   /** 是否暴露 /debug/* 调试端点，生产环境建议关闭 */
   enableDebugEndpoints: boolean;
-  /** 旧共享 API Key；专用密钥未配置时回退 */
+  /** 旧共享 API Key；仅未设置专用地址时允许回退，避免跨 provider 使用 */
   apiKey?: string;
   /** 旧共享根地址；专用地址未配置时回退 */
   baseUrl?: string;
@@ -99,9 +99,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableDebugEndpoints: parseBoolean(env.ENABLE_DEBUG_ENDPOINTS, env.NODE_ENV !== 'production'),
     apiKey: env.API_KEY?.trim() || undefined,
     baseUrl: env.BASE_URL?.trim() || undefined,
-    decisionApiKey: env.DECISION_API_KEY?.trim() || env.API_KEY?.trim() || undefined,
+    decisionApiKey: env.DECISION_API_KEY?.trim() || (env.DECISION_BASE_URL?.trim() ? undefined : env.API_KEY?.trim() || undefined),
     decisionBaseUrl: env.DECISION_BASE_URL?.trim() || env.BASE_URL?.trim() || undefined,
-    chatApiKey: env.CHAT_API_KEY?.trim() || env.API_KEY?.trim() || undefined,
+    chatApiKey: env.CHAT_API_KEY?.trim() || (env.CHAT_BASE_URL?.trim() ? undefined : env.API_KEY?.trim() || undefined),
     chatBaseUrl: env.CHAT_BASE_URL?.trim() || env.BASE_URL?.trim() || undefined,
     decisionPath: env.DECISION_PATH?.trim() || undefined,
     chatPath: env.CHAT_PATH?.trim() || undefined,
