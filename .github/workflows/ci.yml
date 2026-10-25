@@ -5,9 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# 类型检查、测试与覆盖率、数值对拍、构建各占一个 job，并行执行：
+# 哪一项挂了看 check 名字就知道，不必等前面几项跑完
 jobs:
-  verify:
-    name: 类型检查 · 测试 · 覆盖率 · 构建
+  typecheck:
+    name: 类型检查
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,11 +26,23 @@ jobs:
 
       - run: pnpm typecheck
 
-      # 覆盖率为软指标的仓库容易腐化，这里直接按阈值失败
-      - run: pnpm coverage
+  test:
+    name: 测试与覆盖率
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      # 与参考实现逐项对拍，数值/随机数/结算顺序漂移直接失败
-      - run: pnpm validate
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # 覆盖率阈值在跑测试时统计，所以门槛和用例是同一次运行，不能拆成两个 job
+      - run: pnpm coverage
 
       # 生成 lcov 供 Codecov 展示（私有仓库必须配 CODECOV_TOKEN secret）
       - run: pnpm coverage:lcov
@@ -39,5 +53,38 @@ jobs:
           files: ./coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  validate:
+    name: 数值对拍
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # 与参考实现逐项对拍，数值/随机数/结算顺序漂移直接失败
+      - run: pnpm validate
+
+  build:
+    name: 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm build
