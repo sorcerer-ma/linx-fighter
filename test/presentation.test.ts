@@ -46,7 +46,7 @@ it('开局、重说、明确拒绝来自真实服务结果且不推进被拒绝�
  const invalid=await service.say(key,'大招');
  assert.equal(invalid.presentation?.facts.rejection,'insufficient-ap');
  assert.equal(JSON.stringify(invalid.battle),before);
- const room=await service.say('waiting-feedback','开房间');
+ const room=await service.say('waiting-feedback','共鸣对决，发起挑战');
  assert.equal(room.presentation?.kind,'opening');
  assert.equal(room.presentation?.facts.next,'wait-join');
  assert.equal(room.presentation?.facts.opponent,undefined);

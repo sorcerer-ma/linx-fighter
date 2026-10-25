@@ -154,7 +154,7 @@ function stateLine(step: DuelStep): string {
   return `R${step.round} · 房主 ${step.host.hp}/${step.host.maxHp} 能量${step.host.ap}${ult(step.host)} · 访客 ${step.guest.hp}/${step.guest.maxHp} 能量${step.guest.ap}${ult(step.guest)}${pending}`;
 }
 
-/** 打一局：开房 → 加入 → 轮流出手直到分出胜负 */
+/** 打一局：发起挑战 → 接受挑战 → 轮流出手直到分出胜负 */
 async function playDuel(options: DuelOptions, round: number): Promise<DuelResult> {
   const { client } = options;
   const [host, guest] = playersFor(round);
@@ -189,10 +189,10 @@ async function playDuel(options: DuelOptions, round: number): Promise<DuelResult
     return result.reply;
   };
 
-  const opened = await say(host, '开房间');
-  const room = /房间(\d{4})/.exec(opened)?.[1];
-  if (!room) throw new Error(`开房失败，播报里没有房间号：${opened}`);
-  await say(guest, `加入房间${room}`);
+  const opened = await say(host, '共鸣对决，发起挑战');
+  const room = /编号(\d{4})/.exec(opened)?.[1];
+  if (!room) throw new Error(`发起挑战失败，播报里没有编号：${opened}`);
+  await say(guest, `接受挑战，编号${room}`);
 
   // 每局穿插一次「查战况」与一次 ASR 误识别，验证非招式语句不会推进回合
   await say(host, '战况如何');

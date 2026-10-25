@@ -47,16 +47,21 @@ describe('一句话读成命令', () => {
     }
   });
 
-  it('开房与联机读成 open-room，和单人开局分开', () => {
-    for (const text of ['开房间', '联机', '双人对战', '开个房', '一起打吧']) {
+  it('发起挑战与联机读成 open-room，和单人开局分开', () => {
+    for (const text of ['共鸣对决，发起挑战', '发起挑战', '联机', '双人对战', '开个房', '一起打吧']) {
       expectKind(text, 'open-room');
     }
   });
 
-  it('带房间号的加入读成 join-room', () => {
+  it('带编号的接受挑战读成 join-room，旧说法仍兼容', () => {
+    assert.deepEqual(readCommand('接受挑战，编号1234'), { kind: 'join-room', code: '1234' });
+    assert.deepEqual(readCommand('接受挑战编号一二三四'), { kind: 'join-room', code: '1234' });
+    // 旧口令留作输入兼容，不再作为引导文案
     assert.deepEqual(readCommand('加入房间1234'), { kind: 'join-room', code: '1234' });
     assert.deepEqual(readCommand('进房一二三四'), { kind: 'join-room', code: '1234' });
-    // 只有数字没有房间语义：不当成加入房间
+    // 没有编号、只有编号或只有数字，都不算接受挑战
+    assert.notEqual(readCommand('接受挑战').kind, 'join-room');
+    assert.notEqual(readCommand('编号1234').kind, 'join-room');
     assert.notEqual(readCommand('今天1234').kind, 'join-room');
   });
 
@@ -205,7 +210,7 @@ describe('问句与规则外的句子交给模型', () => {
     }
   });
 
-  it('问玩法在出招与开房之前', () => {
+  it('问玩法在出招与发起挑战之前', () => {
     for (const text of ['怎么玩', '怎么放大招', '怎么出招']) {
       expectKind(text, 'help');
     }
@@ -229,17 +234,48 @@ describe('命令之间的优先级', () => {
     }
   });
 
-  it('房间语义优先于问句：「能不能联机」是开双人局', () => {
-    // 这句既是问句又带联机语义，按开房处理，不能只播一句局面
-    for (const text of ['能不能联机', '要不要开房间', '可不可以开房间']) {
+  it('挑战语义优先于问句：「能不能联机」是发起双人挑战', () => {
+    // 这句既是问句又带联机语义，按发起挑战处理，不能只播一句局面
+    for (const text of ['能不能联机', '要不要发起挑战', '可不可以发起挑战']) {
       expectKind(text, 'open-room');
     }
   });
 
-  it('问玩法优先于开房：「双人怎么玩」问的是规则', () => {
+  it('问玩法优先于发起挑战：「双人怎么玩」问的是规则', () => {
     for (const text of ['双人怎么玩', '联机怎么操作']) {
       expectKind(text, 'help');
     }
+  });
+
+  it('明确否定先于挑战口令：说「不要接受挑战」不能真去换房或重开', () => {
+    // 这两句以前落到 join-room / open-room，会真把玩家自己那一局连同对手撤掉
+    for (const text of ['不要接受挑战，编号1234', '不要发起挑战']) {
+      expectKind(text, 'refused');
+    }
+    // 否定换成别的说法同样收住，只要 blockReason 认得出是明确否定
+    for (const text of ['不用联机', '不想开房', '算了不联机了']) {
+      expectKind(text, 'refused');
+    }
+    // 否定词表认不出的组合也要单独收住：这些说法在基线不会直接执行挑战
+    for (const text of ['不接受挑战，编号1234', '别发起挑战', '不挑战你', '别联机了']) {
+      expectKind(text, 'refused');
+    }
+    // 但否定词只是句首客套时仍是发起挑战：别把裸「别/不」当成全局否定
+    for (const text of ['别担心，发起挑战吧', '不用怕，联机吧', '别急，发起挑战']) {
+      expectKind(text, 'open-room');
+    }
+    // 肯定口令与反问式入口照旧：问「要不要」不是否定
+    assert.deepEqual(readCommand('接受挑战，编号1234'), { kind: 'join-room', code: '1234' });
+    expectKind('发起挑战', 'open-room');
+    expectKind('要不要发起挑战', 'open-room');
+  });
+
+  it('问玩法先于多招式歧义：点到两招是在问区别，不是要同时出两招', () => {
+    for (const text of ['普攻和强攻怎么用', '格挡和闪避怎么用', '双人怎么玩']) {
+      expectKind(text, 'help');
+    }
+    // 没有问法的两招仍然判歧义，让玩家重说
+    expectKind('普攻和强攻', 'refused');
   });
 });
 

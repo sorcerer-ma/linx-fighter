@@ -62,8 +62,8 @@ const STATUS_RULES = [
 /** 明确说「开始」的整句；单字「开」不算，避免误判 */
 const START_EXACT = ['开始', '开始吧', '开打', '开战', '开局', '来一局', '打一局', '开一局', '重开', '再来一局', '重新开始'];
 
-/** 开局意图的长句说法：开房、联机这类还要再判一次，看是不是真的要开房 */
-const START_RULES = ['开始游戏', '开始对战', '开房间', '开个房', '开房', '建房间', '新建房间', '创建房间', '联机', '双人对战'];
+/** 开局意图的长句说法；发起挑战、联机这类由 wantsOpenRoom 先判成 open-room */
+const START_RULES = ['开始游戏', '开始对战'];
 
 /**
  * 叙述对手的子句：「对手放大招，」不是本机的招。
@@ -122,8 +122,30 @@ const NEGATE_RULES = [
 /** 带「别」但不是否定的词：判定前先剔掉，「特别强的攻击」仍是正常出招 */
 const NEGATE_FALSE_POSITIVES = ['特别', '区别', '告别', '别的', '分别'];
 
+/**
+ * 挑战动词前面的否定：「不接受挑战」「别发起挑战」「不联机」……
+ *
+ * 挑战入口会撤掉玩家现有那一局（换房、重开双人房），所以这几句必须收住。
+ * 只认否定词紧挨着挑战动词的说法，不把裸「别/不」当成全局否定：
+ * 「别担心，发起挑战吧」「不用怕，联机吧」仍然是要发起挑战。
+ * 动词与 pvp.ts 里的开房口令保持一致，改口令时两边一起看。
+ */
+const CHALLENGE_NEGATION =
+  /(?:不要|不用|不想|不打算|甭|算了|不|别)(?:再|去|要|想|用)?(?:发起挑战|接受挑战|挑战你|挑战|联机|开房|开个?房|建个?房|创建房|组队|一起打)/;
+
 function includesAny(text: string, rules: string[]): boolean {
   return rules.some((rule) => text.includes(rule));
+}
+
+/**
+ * 剔除会误伤否定的词：句首的反问（「要不要」里的「不要」）和「特别/区别」这类词。
+ * 否定判断与挑战否定共用这一份清洗，免得两处口径不一样。
+ */
+function negatableText(text: string): string {
+  return [...NEGATE_FALSE_POSITIVES, ...QUESTION_RULES].reduce(
+    (rest, word) => rest.split(word).join(''),
+    text,
+  );
 }
 
 /**
@@ -139,11 +161,7 @@ function blockReason(raw: string, text: string): BlockReason | null {
   const asked = /[?？]/.test(raw);
 
   // 先剔掉「特别/区别/告别」这类词和「要不要」里的「不要」，再判否定
-  const negatable = [...NEGATE_FALSE_POSITIVES, ...QUESTION_RULES].reduce(
-    (rest, word) => rest.split(word).join(''),
-    text,
-  );
-  if (includesAny(negatable, NEGATE_RULES)) return 'negated';
+  if (includesAny(negatableText(text), NEGATE_RULES)) return 'negated';
 
   // 一句话点到两种招式，分不清要放哪一招，宁可让玩家重说
   if (matchActionIds(raw).length > 1) return 'ambiguous';
@@ -158,34 +176,47 @@ function blockReason(raw: string, text: string): BlockReason | null {
 /**
  * 把一句玩家原话读成命令，只认一次。
  *
- * 判定顺序按「意图强度」排：带房间号的加入 → 问玩法 → 开房 → 不该出手 → 招式 → 战况 → 开局 → 交给模型。
+ * 判定顺序按「意图强度」排：挑战相关的否定 → 带编号的接受挑战 → 问玩法 → 发起挑战 → 其余否定与歧义 → 招式 → 战况 → 开局 → 交给模型。
  * 几个容易踩的点：
- * - 房间语义在前：说「能不能联机」是问怎么开双人，不是问战况；
- * - 玩法问句在开房之前：「双人怎么玩」问的是规则，不能顺手开一局；
+ * - 挑战动词的否定最先判：说「不要接受挑战，编号1234」是要收手，不能真去换房或重开双人房；
+ * - 其他否定句不提前：排在问玩法之后，免得「不打了，怎么重新开始」从玩法说明变成一句拒绝；
+ * - 挑战语义在前：说「能不能联机」是问怎么开双人，不是问战况；
+ * - 玩法问句在发起挑战与歧义之前：「双人怎么玩」「普攻和强攻怎么用」问的是规则，不能顺手开一局，也不该判成多招式歧义；
  * - 问句必须在招式之前：「我的大招还剩几次」带招式词，但只是问；
- * - 否定与歧义不执行，也不能因为这句话顺手开一局；
  * - 战况与开局不含招式词，放在招式后面判断不会抢走出招。
  */
 export function readCommand(raw: string): Command {
   const text = compactText(raw);
 
   // 回灌判定最先做：平台会把我们的播报也转成一句「玩家原话」送回来，
-  // 这类句子哪怕含招式和房间号，也不能当新指令执行。
+  // 这类句子哪怕含招式和编号，也不能当新指令执行。
   if (text && looksLikeAssistantEcho(raw)) return { kind: 'echo' };
-
-  // 带房间号的加入最明确：已经在房间里的玩家也要能凭这句话换房
-  const code = text ? roomCodeFromPhrase(raw) : null;
-  if (code) return { kind: 'join-room', code };
-
-  if (text && includesAny(text, HELP_RULES)) return { kind: 'help' };
-
-  // 语音链路常把整句话塞进参数，「开房 / 联机」这类说法在这里兜底
-  if (text && wantsOpenRoom(text)) return { kind: 'open-room' };
 
   // 判断出招前先剥掉叙述对手的子句，只留玩家自己那一手
   const own = withoutOpponent(raw);
   const block = blockReason(own, compactText(own));
+
+  const code = text ? roomCodeFromPhrase(raw) : null;
+  const opens = text ? wantsOpenRoom(text) : false;
+
+  // 挑战入口会撤掉玩家现有那一局（换房、重开双人房），所以挑战动词前的否定必须先收住：
+  // 「不接受挑战，编号1234」「别发起挑战」都不能当成挑战口令执行。
+  // 这里只认紧挨着挑战动词的否定，别的否定句仍走下面的原顺序，
+  // 「不打了，怎么重新开始」这类话还能得到玩法说明。
+  // 反问式疑问（「要不要发起挑战」）先剔掉「要不要」再判，不算否定。
+  if (CHALLENGE_NEGATION.test(negatableText(text))) return { kind: 'refused', why: 'negated' };
+
+  // 带编号的接受挑战最明确：已经在房间里的玩家也要能凭这句话换房
+  if (code) return { kind: 'join-room', code };
+
+  // 问玩法在歧义判定之前：「普攻和强攻怎么用」提到两招是在问区别，不是要同时出两招
+  if (text && includesAny(text, HELP_RULES)) return { kind: 'help' };
+
+  // 语音链路常把整句话塞进参数，「发起挑战 / 联机」这类说法在这里兜底
+  if (opens) return { kind: 'open-room' };
+
   if (block === 'negated' || block === 'ambiguous') return { kind: 'refused', why: block };
+
   if (block === 'query') {
     // 问的是对局里的数字，本地直接查：战况不消耗资源，不必等模型
     if (text && includesAny(text, STATUS_RULES)) return { kind: 'status' };
