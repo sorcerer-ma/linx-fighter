@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { GameService } from '../src/game/service.js';
 import { mirrorEvents, normalizeRoomCode, pvpBattleKey } from '../src/game/pvp.js';
+import { narrateRoomFull } from '../src/game/narrator.js';
 import { battleKey, type DeviceContext } from '../src/mcp/context.js';
 import { registerGameTools } from '../src/mcp/tools.js';
 import type { CommandRouter } from '../src/game/router.js';
@@ -649,5 +650,51 @@ describe('挑战与席位的边界', () => {
     const room = rooms.get(code);
     assert.ok(room);
     assert.equal(room.guestKey, null);
+  });
+
+  it('房间满提示分段回灌与明确否定都不动现有挑战，补账照常送达', async () => {
+    const echo = new EchoStore({ ttlMs: 60_000 });
+    const { service, rooms, store } = setup({ echo });
+    await service.start(HOST, { mode: 'pvp' });
+    const code = findRoom(service, HOST);
+    await service.start(GUEST, { room: code });
+
+    // 先打一手完整结算，给房主留一条补账：挑战若被撤掉，这条也一起没了
+    await service.say(HOST, '普攻');
+    assert.match((await service.say(GUEST, '格挡')).text, /我格挡/);
+    const key = pvpBattleKey(code);
+    const battleBefore = store.get(key);
+    assert.ok(battleBefore);
+    assert.equal(echo.size, 1);
+
+    // 装置的缓存里还留着房间满提示，按逗号切碎后逐段当「玩家原话」回灌
+    const parts = narrateRoomFull(code)
+      .split(/[，,。！？]/)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    assert.ok(parts.length >= 2, `房间满提示应能分段：${narrateRoomFull(code)}`);
+    for (const part of parts) {
+      const echoed = await service.say(HOST, part);
+      assert.equal(echoed.battle?.id, battleBefore.id, `${part} 撤掉了当前对局`);
+    }
+    // 归属、对局与补账一点没动：没有换房，也没有把对手那间房撤掉
+    assert.equal(rooms.byPlayer(HOST)?.code, code);
+    assert.equal(rooms.byPlayer(GUEST)?.code, code);
+    assert.equal(store.get(key), battleBefore);
+    assert.equal(echo.size, 1);
+
+    // 明确否定照旧收手，但攒着的结算要在这句里补给他
+    const negated = await service.say(HOST, '不要发起挑战');
+    assert.match(negated.text, /刚才那一手/);
+    assert.match(negated.text, /没打出去/);
+    assert.equal(store.get(key), battleBefore);
+    assert.equal(rooms.byPlayer(GUEST)?.code, code);
+    assert.equal(echo.size, 0);
+
+    // 带编号的否定同样不能真去换房
+    const declined = await service.say(HOST, `不要接受挑战，编号${code}`);
+    assert.match(declined.text, /没打出去/);
+    assert.equal(rooms.byPlayer(HOST)?.code, code);
+    assert.equal(store.get(key), battleBefore);
   });
 });

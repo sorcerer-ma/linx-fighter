@@ -246,6 +246,21 @@ describe('命令之间的优先级', () => {
       expectKind(text, 'help');
     }
   });
+
+  it('明确否定先于挑战口令：说「不要接受挑战」不能真去换房或重开', () => {
+    // 这两句以前落到 join-room / open-room，会真把玩家自己那一局连同对手撤掉
+    for (const text of ['不要接受挑战，编号1234', '不要发起挑战']) {
+      expectKind(text, 'refused');
+    }
+    // 否定换成别的说法同样收住，只要 blockReason 认得出是明确否定
+    for (const text of ['不用联机', '不想开房', '算了不联机了']) {
+      expectKind(text, 'refused');
+    }
+    // 肯定口令与反问式入口照旧：问「要不要」不是否定
+    assert.deepEqual(readCommand('接受挑战，编号1234'), { kind: 'join-room', code: '1234' });
+    expectKind('发起挑战', 'open-room');
+    expectKind('要不要发起挑战', 'open-room');
+  });
 });
 
 

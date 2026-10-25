@@ -158,12 +158,12 @@ function blockReason(raw: string, text: string): BlockReason | null {
 /**
  * 把一句玩家原话读成命令，只认一次。
  *
- * 判定顺序按「意图强度」排：带编号的接受挑战 → 问玩法 → 发起挑战 → 不该出手 → 招式 → 战况 → 开局 → 交给模型。
+ * 判定顺序按「意图强度」排：明确否定与歧义 → 带编号的接受挑战 → 问玩法 → 发起挑战 → 招式 → 战况 → 开局 → 交给模型。
  * 几个容易踩的点：
+ * - 否定与歧义最先判：说「不要接受挑战，编号1234」是要收手，不能真去换房或重开双人房；
  * - 挑战语义在前：说「能不能联机」是问怎么开双人，不是问战况；
  * - 玩法问句在发起挑战之前：「双人怎么玩」问的是规则，不能顺手开一局；
  * - 问句必须在招式之前：「我的大招还剩几次」带招式词，但只是问；
- * - 否定与歧义不执行，也不能因为这句话顺手开一局；
  * - 战况与开局不含招式词，放在招式后面判断不会抢走出招。
  */
 export function readCommand(raw: string): Command {
@@ -172,6 +172,15 @@ export function readCommand(raw: string): Command {
   // 回灌判定最先做：平台会把我们的播报也转成一句「玩家原话」送回来，
   // 这类句子哪怕含招式和编号，也不能当新指令执行。
   if (text && looksLikeAssistantEcho(raw)) return { kind: 'echo' };
+
+  // 判断出招前先剥掉叙述对手的子句，只留玩家自己那一手
+  const own = withoutOpponent(raw);
+  const block = blockReason(own, compactText(own));
+
+  // 挑战口令只执行肯定说法：明确否定与歧义先收住，否则这一手会把玩家自己那一局
+  // 连同对手一起撤掉（换房、重开双人房都走挑战入口）。
+  // 反问式疑问（「要不要发起挑战」）被 blockReason 判成 query，照旧走挑战入口，不算否定。
+  if (block === 'negated' || block === 'ambiguous') return { kind: 'refused', why: block };
 
   // 带编号的接受挑战最明确：已经在房间里的玩家也要能凭这句话换房
   const code = text ? roomCodeFromPhrase(raw) : null;
@@ -182,10 +191,6 @@ export function readCommand(raw: string): Command {
   // 语音链路常把整句话塞进参数，「发起挑战 / 联机」这类说法在这里兜底
   if (text && wantsOpenRoom(text)) return { kind: 'open-room' };
 
-  // 判断出招前先剥掉叙述对手的子句，只留玩家自己那一手
-  const own = withoutOpponent(raw);
-  const block = blockReason(own, compactText(own));
-  if (block === 'negated' || block === 'ambiguous') return { kind: 'refused', why: block };
   if (block === 'query') {
     // 问的是对局里的数字，本地直接查：战况不消耗资源，不必等模型
     if (text && includesAny(text, STATUS_RULES)) return { kind: 'status' };
