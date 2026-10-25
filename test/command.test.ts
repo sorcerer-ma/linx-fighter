@@ -281,10 +281,10 @@ describe('命令之间的优先级', () => {
     }
   });
 
-  it('挑战语义优先于问句：「能不能联机」是发起双人挑战', () => {
-    // 这句既是问句又带联机语义，按发起挑战处理，不能只播一句局面
+  it('挑战问句优先于执行，不能直接开房', () => {
+    // 明确问句不改变房间，交给只读的 question 路由菜单。
     for (const text of ['能不能联机', '要不要发起挑战', '可不可以发起挑战']) {
-      expectKind(text, 'open-room');
+      assert.deepEqual(readCommand(text),{kind:'route',question:true});
     }
   });
 
@@ -314,7 +314,7 @@ describe('命令之间的优先级', () => {
     // 肯定口令与反问式入口照旧：问「要不要」不是否定
     assert.deepEqual(readCommand('接受挑战，编号1234'), { kind: 'join-room', code: '1234' });
     expectKind('发起挑战', 'open-room');
-    expectKind('要不要发起挑战', 'open-room');
+    assert.deepEqual(readCommand('要不要发起挑战'),{kind:'route',question:true});
   });
 
   it('问玩法先于多招式歧义：点到两招是在问区别，不是要同时出两招', () => {

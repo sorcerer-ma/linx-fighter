@@ -509,7 +509,7 @@ describe('不该出手的表达', () => {
     assertSpeakable(negated);
 
     const ambiguous = narrateActionBlocked('ambiguous');
-    assert.match(ambiguous, /两种招式/);
+    assert.match(ambiguous, /不止一个操作或编号/);
     assertSpeakable(ambiguous);
   });
 

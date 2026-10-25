@@ -300,7 +300,7 @@ export function narrateRoomInvalid(): string {
 export function narrateActionBlocked(reason: 'negated' | 'ambiguous'): string {
   return reason === 'negated'
     ? '这一手我没打出去，听着像先不动手。想出手就直接说招式。'
-    : '这句话里提到了两种招式，我没敢替你选。一次只说一种。';
+    : '这句话有不止一个操作或编号，我没敢替你选。请先明确一个。';
 }
 
 /** 异步等待期间局面已经变了：这次识别作废，让玩家对着新局重说 */

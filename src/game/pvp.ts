@@ -12,11 +12,15 @@ export function pvpBattleKey(code: string): string {
  * 房间号归一：接受阿拉伯数字，也容忍语音识别给出的中文数字。
  * 不足或超过四位直接判为无效，交给播报层提示重说。
  */
+/** Width conversion is local to room identifiers; never rewrites ASR/tool input. */
+function roomDigits(raw: string): string {
+  return raw.replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xfee0));
+}
 export function normalizeRoomCode(raw: string): string | null {
-  const match = /^(?:(?:挑战)?编号|房间号?)?\s*([0-9零〇一幺二两三四五六七八九\s]+)[。.!！]?$/u.exec(raw.trim());
+  const match = /^(?:(?:挑战)?编号|房间号?)?[ \t　]*([0-9零〇一幺二两三四五六七八九 \t　]+)[。.!！]?$/u.exec(roomDigits(raw).trim());
   if (!match) return null;
   const spoken: Record<string,string> = {零:'0',〇:'0',一:'1',幺:'1',二:'2',两:'2',三:'3',四:'4',五:'5',六:'6',七:'7',八:'8',九:'9'};
-  const digits = match[1]!.replace(/\s/g,'').replace(/[零〇一幺二两三四五六七八九]/g, ch=>spoken[ch]!);
+  const digits = match[1]!.replace(/[ \t　]/g,'').replace(/[零〇一幺二两三四五六七八九]/g, ch=>spoken[ch]!);
   return digits.length === ROOM_CODE_LENGTH ? digits : null;
 }
 
@@ -30,24 +34,46 @@ export function wantsOpenRoom(text: string): boolean {
 
 /** Explicit acceptance intent must not fall through to generic creation/model routing. */
 export function wantsJoinRoom(text: string): boolean {
-  return /(?:接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)|进房)/.test(text);
+  return /(?:接受(?:双人)?挑战|加入(?:双人)?(?:挑战|房间?|对局|对战)|进房)/.test(text);
 }
 
 /**
  * 从玩家原话里抽挑战编号：主路径是「接受挑战，编号1234」，
  * 旧说法「加入房间1234」「进房1234」继续兼容；普通数字不当编号。
  */
+export interface RoomCodePhrase { code: string | null; ambiguous: boolean }
+/** A complete single identifier, or a non-executable invalid/ambiguous result. */
+export function parseRoomCodePhrase(raw: string): RoomCodePhrase {
+  const text=roomDigits(raw), none:RoomCodePhrase={code:null,ambiguous:false};
+  if (!/(接受(?:双人)?挑战|加入|进房|房间)/.test(text)) return none;
+  const labelled=[...text.matchAll(/(?:挑战编号|房间号|编号)[ \t　]*[:：]?[ \t　]*([0-9零〇一幺二两三四五六七八九][0-9零〇一幺二两三四五六七八九 \t　]*)/gu)];
+  const direct=[...text.matchAll(/(?:接受(?:双人)?挑战|加入(?:双人)?(?:挑战|房间?|对局|对战)?|进房(?:间)?|房间)[ \t　]*[，,:：]?[ \t　]*([0-9零〇一幺二两三四五六七八九][0-9零〇一幺二两三四五六七八九 \t　]*)/gu)];
+  const references=new Map<string,RegExpMatchArray>();
+  for(const match of [...labelled,...direct]) {
+    const start=match.index!+match[0].indexOf(match[1]!);
+    references.set(start+':'+(match.index!+match[0].length),match);
+  }
+  if(references.size>1)return {code:null,ambiguous:true};
+  const match=[...references.values()][0];
+  if(!match)return none;
+  const rest=text.slice(match.index!+match[0].length);
+  // Alternatives are not permission to take the first candidate. Decimals,
+  // ranges, unsupported numeral suffixes and line breaks are never truncated.
+  if(/^(?:(?:或(?:者|是)?|还是|和|以及|到|至)[ \t　]*(?:编号)?|[、/／][ \t　]*)[0-9零〇一幺二两三四五六七八九十百千万萬壹贰貳叁參肆伍陆陸柒捌玖拾佰仟兩]/u.test(rest)) return {code:null,ambiguous:true};
+  const commaCandidate=/^[，,][ \t　]*([0-9零〇一幺二两三四五六七八九]+)(.*)$/u.exec(rest);
+  if(commaCandidate && !/^(?:点|轮|次|回合|生命|能量|血|年|月|日|时|分|秒)/.test(commaCandidate[2]!.trimStart()))return {code:null,ambiguous:true};
+  // A later standalone identifier is another candidate even without repeating
+  // 编号. Resource quantities are not candidate identifiers.
+  for(const candidate of rest.matchAll(/[0-9零〇一幺二两三四五六七八九]{4,}/gu)) {
+    const after=rest.slice(candidate.index!+candidate[0].length).trimStart();
+    if(!/^(?:点|轮|次|回合|生命|能量|血|年|月|日|时|分|秒)/.test(after))return {code:null,ambiguous:true};
+  }
+  if(rest && !/^(?:[，,。.!！?？;；]|(?:吧|号)[。.!！?？]?$)/u.test(rest))return none;
+  if(/^[.。．][ \t　]*[0-9]/u.test(rest))return none;
+  return {code:normalizeRoomCode(match[1]!),ambiguous:false};
+}
 export function roomCodeFromPhrase(text: string): string | null {
-  if (!/(接受挑战|加入|进房|房间)/.test(text)) return null;
-  // Extract a number at its semantic position, never concatenate unrelated digits
-  // (e.g. “编号12，我还有34点能量” must not become room 1234).
-  const labelled = [...text.matchAll(/(?:挑战编号|房间号|编号)\s*[:：]?\s*([0-9零〇一幺二两三四五六七八九][0-9零〇一幺二两三四五六七八九\s]*)/gu)];
-  if (labelled.length > 1) return null;
-  const match = labelled[0] ?? /(?:接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)?|进房(?:间)?|房间)\s*[，,:：]?\s*([0-9零〇一幺二两三四五六七八九][0-9零〇一幺二两三四五六七八九\s]*)/u.exec(text);
-  if (!match) return null;
-  const rest = text.slice(match.index! + match[0].length);
-  if (/^(?:点|轮|次|回合|生命|能量|血)/.test(rest)) return null;
-  return normalizeRoomCode(match[1]!);
+  return parseRoomCodePhrase(text).code;
 }
 
 /**
