@@ -1,5 +1,5 @@
 /**
- * PR #1 Python 参考仿真（tests/simulation/v02_validation.py）的 TypeScript 移植。
+ * PR #1 Python 参考仿真（test/simulation/v02_validation.py）的 TypeScript 移植。
  *
  * 目的不是重新设计玩法，而是「对拍」：用本仓库移植后的 engine 重跑参考仿真的
  * 全部对局，逐项比对 outputs 里的基准结果，证明移植零漂移。因此这里的策略、

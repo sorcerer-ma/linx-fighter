@@ -47,12 +47,12 @@
 在仓库根目录执行：
 
 ```sh
-python3 tests/simulation/v02_validation.py
+python3 test/simulation/v02_validation.py
 ```
 
-脚本使用 Python 标准库，读取同目录两个历史模拟模块的定义部分，不会运行它们的历史批量测试。约运行256,000局，更新 `tests/simulation/v02_validation_results.json`。固定随机种子为20261023；跨Python版本的随机序列与结果不承诺完全一致。
+脚本使用 Python 标准库，读取同目录两个历史模拟模块的定义部分，不会运行它们的历史批量测试。约运行256,000局，更新 `test/simulation/v02_validation_results.json`。固定随机种子为20261023；跨Python版本的随机序列与结果不承诺完全一致。
 
-文件：`tests/simulation/v02_validation.py`、`tests/simulation/pace_tuning.py`、`tests/simulation/limited_ults.py`、`tests/simulation/v02_validation_results.json`。本次归档保留既有脚本结构，后续可重构，不能据此视为正式游戏实现。
+文件：`test/simulation/v02_validation.py`、`test/simulation/pace_tuning.py`、`test/simulation/limited_ults.py`、`test/simulation/v02_validation_results.json`。本次归档保留既有脚本结构，后续可重构，不能据此视为正式游戏实现。
 
 ## 面对面试玩计划
 
