@@ -46,6 +46,28 @@ describe('招式识别', () => {
     assert.equal(parseAction('长寿'), 'take');
   });
 
+  it('收窄后的口语只判提及，不直接执行', () => {
+    // 执行层只留高频说法，这些口语交给模型路由；但它们仍算「点到了这一招」
+    for (const text of ['猛攻', '重机', '大召', '哥挡', '成受', '公鸡', '蓄势待发']) {
+      assert.equal(parseAction(text), null, `「${text}」不该被本地直接执行`);
+    }
+    for (const [text, ids] of [
+      ['猛攻还是普攻', ['heavy', 'light']],
+      ['公鸡还是强攻', ['heavy', 'light']],
+      ['回能量还是强攻', ['charge', 'heavy']],
+      ['蓄势待发还是硬扛', ['charge', 'take']],
+    ] as const) {
+      assert.deepEqual([...matchActionIds(text)].sort(), [...ids].sort(), `「${text}」点到了两种招式`);
+    }
+  });
+
+  it('带「大招」的蓄力说法仍读成蓄力，不落进大招', () => {
+    // 这两个字一删，「憋大招」会被包含匹配的「大招」抢走，打掉一局一次的大招
+    for (const text of ['憋大招', '攒大招', '留大招', '存大招']) {
+      assert.equal(parseAction(text), 'charge', `「${text}」是攒能量，不是放大招`);
+    }
+  });
+
   it('念出唤出指令也能出招，并带回原文', () => {
     assert.deepEqual(matchAction('共鸣斩破军'), { id: 'light', chant: '共鸣斩破军' });
     assert.equal(parseAction('我要用共鸣壁立千仞'), 'guard');

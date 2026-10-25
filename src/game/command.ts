@@ -76,6 +76,7 @@ const CHARGE_ENERGY = /(?:回|攒|补|蓄|聚|存|加)[^，。！？]{0,2}能量
  * 叙述对手的子句：「对手放大招，」不是本机的招。
  * 统计歧义与选招只看剥掉之后自己那半句，否则玩家自报应对会被对手的招式带成「两种招式」。
  * 只剥两种形态：以标点收尾的完整子句，以及「对手的大招」这类名词短语。
+ * 没有标点的「对手回能量还是强攻」不剥：谁出招本来就没说清，留着让歧义判定拦下。
  *
  * 目标介词后面的「对手」不算叙述：那里是我这一手打向谁，不是那句话的主语。
  * 「我要对对手强攻」剥掉就成了没人称的「我要对」，既读不出招式、也数不出两种招式。
@@ -152,8 +153,12 @@ function blockReason(raw: string, text: string): BlockReason | null {
   );
   if (includesAny(negatable, NEGATE_RULES)) return 'negated';
 
-  // 一句话点到两种招式，分不清要放哪一招，宁可让玩家重说
-  if (matchActionIds(raw).length > 1) return 'ambiguous';
+  // 一句话点到两种招式，分不清要放哪一招，宁可让玩家重说。
+  // 提及词表比执行词表宽：收窄后「猛攻」「公鸡」不再直接执行，但仍算点到强攻/普攻。
+  const mentioned = new Set(matchActionIds(raw));
+  // 「回能量」不在招式表里，但也是在蓄力：和另一招并提时同样要重说
+  if (CHARGE_ENERGY.test(text)) mentioned.add('charge');
+  if (mentioned.size > 1) return 'ambiguous';
 
   // 问句一律不执行：带问号、疑问说法或查询口吻的句子先交给模型路由，
   // 由它分到「查战况 / 问玩法 / 规则外」——问句绝不落到出招分支。
@@ -191,7 +196,8 @@ export function readCommand(raw: string): Command {
 
   // 判断出招前先剥掉叙述对手的子句，只留玩家自己那一手
   const own = withoutOpponent(raw);
-  const block = blockReason(own, compactText(own));
+  const ownText = compactText(own);
+  const block = blockReason(own, ownText);
   if (block === 'negated' || block === 'ambiguous') return { kind: 'refused', why: block };
   if (block === 'query') {
     // 问的是对局里的数字，本地直接查：战况不消耗资源，不必等模型
@@ -199,10 +205,11 @@ export function readCommand(raw: string): Command {
     return { kind: 'route', question: true };
   }
 
-  const match = compactText(own) ? matchAction(own) : null;
+  const match = ownText ? matchAction(own) : null;
   if (match) return { kind: 'turn', action: match.id, chant: match.chant };
 
-  if (text && CHARGE_ENERGY.test(text)) return { kind: 'turn', action: 'charge' };
+  // 同样只认自己那半句：「对手回能量」是在描述对手，不是本机蓄力
+  if (ownText && CHARGE_ENERGY.test(ownText)) return { kind: 'turn', action: 'charge' };
 
   if (text && includesAny(text, STATUS_RULES)) return { kind: 'status' };
 
