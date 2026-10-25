@@ -32,7 +32,7 @@
 
 接入与协议层调用游戏编排，编排调用规则、策略、表现与存储；`/state`、`/events` 可直接查询编排层快照。规则和播报不得反向依赖 HTTP 或 MCP；沙箱只通过 HTTP/MCP 使用服务，不引用服务端内部业务实现。
 
-TypeScript 使用 ESM / NodeNext，相对导入带 `.js` 后缀。运行时与包管理器版本以 `package.json` 为准，依赖版本以锁文件为准；完整命令见根目录 README。
+TypeScript 使用 ESM / NodeNext，相对导入带 `.js` 后缀。运行时与包管理器版本以 `package.json` 为准，依赖版本以锁文件为准；完整命令见[开发与运行](docs/engineering/development.md)，以 `package.json` 脚本为准。
 
 | 修改内容 | 入口 |
 | --- | --- |
@@ -67,7 +67,7 @@ CI 门禁以 `.github/workflows/ci.yml` 与 `package.json` 为准，包含类型
 
 产品总览按产品设计构成组织，明确游戏玩法、玩家旅程、语音与信息反馈共同构成核心体验，使用产品文档表述，不以“分专题讨论”描述文档结构。游戏玩法独立维护在 `docs/game/game-design.md`，总览必须提供明确入口；其他设计维护在 `docs/product/` 对应文档，涉及多个部分的待决策项同步总览，不把详细设计堆回总览。
 
-根目录 `README.md` 是项目和文档统一入口；`AGENTS.md` 只维护协作约束。所有专题文档集中在 `docs/`，临时草稿、日志和备份保存在仓库外。`archive/` 是历史依据，不覆盖现行规则。
+根目录 `README.md` 是项目和文档统一入口，只做项目介绍、快速上手与文档导航；技术设计、接口、配置、测试与目录维护在 `docs/` 对应文档，不把实现细节堆回 README。`AGENTS.md` 只维护协作约束。所有专题文档集中在 `docs/`，临时草稿、日志和备份保存在仓库外。`archive/` 是历史依据，不覆盖现行规则。
 
 | 发生变化 | 同步文档 |
 | --- | --- |
@@ -75,9 +75,12 @@ CI 门禁以 `.github/workflows/ci.yml` 与 `package.json` 为准，包含类型
 | 战斗规则与调参 | [玩法机制](docs/game/game-design.md)，并检查实现与验证口径 |
 | 架构、传输、状态归属 | [架构与决策](docs/engineering/architecture.md)；协作边界变更时更新本文件 |
 | 平台配置、部署与排障 | [平台接入](docs/engineering/linx-integration.md) |
+| 接口、身份头与返回格式 | [MCP 接口](docs/engineering/mcp-api.md) |
+| 本地命令、配置与调试入口 | [开发与运行](docs/engineering/development.md) |
 | 沙箱操作、接口与回归 | [沙箱说明](docs/testing/sandbox.md) |
+| 测试矩阵与质量门禁 | [测试与质量](docs/testing/testing.md) |
 | 同类案例与设计依据 | [设计参考](docs/references/design-references.md) |
-| 已验证的新能力、命令、端点、配置或目录 | README 对应条目与相关专题文档 |
+| 已验证的新能力、命令、端点、配置或目录 | 对应专题文档；README 只保留面向玩家的能力概述与入口 |
 
 用户已明确的决定随本次修改写入相应文档；建议与未决事项在产品文档中明确标注，不能写成已确认或已交付功能。README 可以区分现状与待验收项，不将仓库测试等同于硬件体验验证。不重复维护测试数量、模型超时、覆盖率快照和部署地址；从实现、配置、最新验证或对应文档获取。
 
