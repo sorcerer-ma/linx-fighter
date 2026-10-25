@@ -2,8 +2,6 @@
 
 ![共鸣：闻声对决——两位战斗伙伴](asserts/banner.png)
 
-[![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
-
 > 灵犀语音硬件上的 1v1 回合制对战。玩家用嘴下令，服务端持有对局并裁定每一手；平台侧只负责听、说和调用工具。
 
 中文名「共鸣：闻声对决」已定稿；仓库名、包名、`systemd` 单元与镜像名统一用 `linx-fighter`。
