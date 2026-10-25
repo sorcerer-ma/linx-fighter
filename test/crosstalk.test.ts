@@ -154,6 +154,13 @@ const legacyPhrases = [
   '轮到我们了，大招',
   '你已经出招，这一手等对手应对',
   '能量耗尽',
+  // 旧版房间播报：现场固件或回放里还会念，不能把「我进了房间1234」读成加入指令
+  '房间1234开好了，把房间号告诉另一位玩家，说「加入房间1234」就能进来',
+  '我进了房间1234，对面就是另一位玩家',
+  '房间1234还等着另一位玩家加入，进来就能开打',
+  '没找到房间1234，确认四位房间号再试一次',
+  '房间1234已经满员，自己开一局，或者换一个房间号',
+  '房间号要四位数字，再说一遍试试',
 ];
 
 /** 玩家正常指挥时说得出的话：一句都不能被当成回灌，否则玩家喊了没反应 */
@@ -191,6 +198,8 @@ const playerPhrases = [
   '怎么玩',
   '双人怎么玩',
   '开始游戏',
+  '接受挑战，编号1234',
+  '共鸣对决，发起挑战',
   '加入房间1234',
   '开房间',
   '联机',
@@ -365,20 +374,38 @@ describe('读命令时的归属判定', () => {
     }
   });
 
-  it('房间播报与唤出回念不会自己踩自己', () => {
-    // 房间播报里带着「加入房间1234」，判晚了就成了自己加入自己的房间
-    assert.equal(readCommand(narrateRoomCreated('1234')).kind, 'echo');
-    assert.equal(readCommand(narrateWaitingRoom('1234')).kind, 'echo');
-    assert.equal(readCommand(narrateRoomMissing('1234')).kind, 'echo');
+  it('挑战播报与唤出回念不会自己踩自己', () => {
+    // 挑战播报里带着「接受挑战，编号1234」，判晚了就成了自己接受自己的挑战
+    for (const text of [
+      narrateRoomCreated('1234'),
+      narrateRoomJoined('1234'),
+      narrateWaitingRoom('1234'),
+      narrateRoomMissing('1234'),
+      narrateRoomFull('1234'),
+      narrateRoomInvalid(),
+    ]) {
+      assert.equal(readCommand(text).kind, 'echo', text);
+    }
+    // 旧版房间播报仍可能被历史设备回放，同样不能读成指令
+    for (const text of ['我进了房间1234，对面就是另一位玩家', '房间1234开好了，把房间号告诉另一位玩家']) {
+      assert.equal(readCommand(text).kind, 'echo', text);
+    }
     // 唤出回念里带着招式词，判晚了就成了二次出招
     assert.equal(readCommand(narrateChant('共鸣斩破军')).kind, 'echo');
     assert.equal(readCommand(narrateBattleStart(battle())).kind, 'echo');
   });
 
+  it('新口令照常执行，裸「接受挑战」不会被当成进房', () => {
+    assert.equal(readCommand('共鸣对决，发起挑战').kind, 'open-room');
+    assert.equal(readCommand('接受挑战，编号1234').kind, 'join-room');
+    assert.notEqual(readCommand('接受挑战').kind, 'join-room');
+    assert.notEqual(readCommand('编号1234').kind, 'join-room');
+  });
+
   it('玩家正常说法照旧走原来的分支', () => {
     assert.equal(readCommand('普攻').kind, 'turn');
     assert.equal(readCommand('我出普攻').kind, 'turn');
-    assert.equal(readCommand('加入房间1234').kind, 'join-room');
+    assert.equal(readCommand('接受挑战，编号1234').kind, 'join-room');
     assert.equal(readCommand('战况如何').kind, 'status');
     assert.equal(readCommand('开始游戏').kind, 'start');
     // 闲聊问句：规则不接，交给模型路由去答
@@ -486,7 +513,7 @@ describe('串音落地到对局', () => {
     assert.equal(echoed.battle?.history.length, 0);
   });
 
-  it('房间播报回灌不会替玩家开房，也不会自己加入自己的房间', async () => {
+  it('房间播报回灌不会替玩家发起挑战，也不会自己加入自己的房间', async () => {
     const { service, rooms } = setup();
     const echoed = await service.say(HOST, narrateRoomCreated('1234'));
     assert.equal(echoed.text, '嗯。');
@@ -605,7 +632,7 @@ function setup(overrides: Partial<GameServiceDeps> = {}) {
 }
 
 function findRoom(service: GameService, host: string): string {
-  const match = service.status(host).text.match(/房间(\d{4})/);
-  assert.ok(match, `战况里应带房间号：${service.status(host).text}`);
+  const match = service.status(host).text.match(/编号(\d{4})/);
+  assert.ok(match, `战况里应带编号：${service.status(host).text}`);
   return match[1]!;
 }

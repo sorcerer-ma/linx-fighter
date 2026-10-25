@@ -325,8 +325,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   }
 
   function describeStatus(battle) {
-    if (!battle) return { text: '还没有对局，说「开始」或「开房间」', tone: 'idle' };
-    if (battle.waiting) return { text: '等对手加入', tone: 'wait' };
+    if (!battle) return { text: '还没有对局，说「开始」或「共鸣对决，发起挑战」', tone: 'idle' };
+    if (battle.waiting) return { text: '等对方接受挑战', tone: 'wait' };
     if (battle.phase === 'victory') return { text: '伙伴赢了', tone: 'win' };
     if (battle.phase === 'defeat') return { text: '伙伴被击倒了', tone: 'lose' };
     var pending = battle.pending;

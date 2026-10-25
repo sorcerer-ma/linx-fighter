@@ -60,10 +60,10 @@ function flagText(flags: ParsedArgs['flags'], name: string): string | undefined 
 
 /** 一句话概括局面，CLI 每次调用后打一行，方便脚本里连着跑 */
 function describeState(state: BattleSnapshot | null): string {
-  if (!state?.battle) return state?.room ? `房间 ${state.room} · 暂无对局` : '暂无对局';
+  if (!state?.battle) return state?.room ? `挑战编号 ${state.room} · 暂无对局` : '暂无对局';
   const battle = state.battle;
   const parts: string[] = [];
-  if (battle.room) parts.push(`房间 ${battle.room}`);
+  if (battle.room) parts.push(`挑战编号 ${battle.room}`);
   parts.push(`第${battle.round}轮`);
   parts.push(phaseText(battle));
   parts.push(`你 ${battle.you.hp}/${battle.you.maxHp} 能量${battle.you.ap}`);
@@ -102,7 +102,7 @@ async function main(argv: string[]): Promise<number> {
   if (command === 'say') {
     const text = flagText(flags, 'text') ?? positionals.join(' ').trim();
     if (!text) {
-      console.error('缺少要说的内容，例如：tsx sandbox/cli.ts say --device web-p1 "开房间"');
+      console.error('缺少要说的内容，例如：tsx sandbox/cli.ts say --device web-p1 "共鸣对决，发起挑战"');
       return 1;
     }
 

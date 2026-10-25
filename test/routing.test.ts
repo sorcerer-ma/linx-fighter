@@ -106,7 +106,7 @@ describe('三层解析：规则 → 端侧同音 → 命令路由', () => {
   it('等对手时端侧不猜招：那句话多半不是本机说的', async () => {
     const { service, calls } = setup();
     await service.start(KEY, { mode: 'pvp' });
-    const room = service.status(KEY).text.match(/房间(\d{4})/)![1]!;
+    const room = service.status(KEY).text.match(/编号(\d{4})/)![1]!;
     await service.start('device-b#agent-2', { room });
     await service.say(KEY, '普攻');
 

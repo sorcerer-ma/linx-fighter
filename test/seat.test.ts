@@ -36,12 +36,12 @@ function setup(overrides: Partial<ConstructorParameters<typeof GameService>[0]> 
 
 function findRoom(service: GameService, host: string): string {
   const text = service.status(host).text;
-  const match = text.match(/房间(\d{4})/);
-  assert.ok(match, `战况里应带房间号：${text}`);
+  const match = text.match(/编号(\d{4})/);
+  assert.ok(match, `战况里应带编号：${text}`);
   return match[1]!;
 }
 
-/** 开一桌双人房：房主红方、加入者蓝方，两人都就位但还没人出招 */
+/** 开一桌双人挑战：发起方红方、接受方蓝方，两人都就位但还没人出招 */
 async function openTable(overrides: Partial<ConstructorParameters<typeof GameService>[0]> = {}) {
   const { service, advance } = setup(overrides);
   await service.start(HOST, { mode: 'pvp' });
