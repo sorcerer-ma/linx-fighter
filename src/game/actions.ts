@@ -25,8 +25,8 @@ export const ACTIONS: Record<ActionId, ActionMeta> = {
   light: {
     id: 'light',
     label: '普攻',
-    // 只留最常用的两三种说法；其余口语交给命令路由模型判断
-    aliases: ['普攻', '攻击'],
+    // 只留最常用的说法；「打」是最高频单字指令，模型单独判它容易犹豫，留在本地
+    aliases: ['普攻', '攻击', '打'],
     chants: ['共鸣斩破军', '轻锋裂长空'],
   },
   heavy: {

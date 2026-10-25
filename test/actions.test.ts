@@ -64,9 +64,9 @@ describe('招式识别', () => {
     }
   });
 
-  it('不再保留单字别名，短句交给命令路由', () => {
+  it('单字只保留最高频的「打」，其余短句交给命令路由', () => {
     assert.equal(parseAction('躲'), null);
-    assert.equal(parseAction('打'), null);
+    assert.equal(parseAction('打'), 'light');
     assert.equal(parseAction('打开菜单'), null);
     assert.equal(parseAction('讲个笑话'), null);
     assert.equal(parseAction(''), null);
@@ -121,8 +121,8 @@ describe('一句话里的招式集合', () => {
     assert.deepEqual(matchActionIds('打开菜单'), []);
   });
 
-  it('短句不再靠单字别名兜底', () => {
-    assert.deepEqual(matchActionIds('打'), []);
+  it('单字只保留「打」，其余短句不再靠别名兜底', () => {
+    assert.deepEqual(matchActionIds('打'), ['light']);
     assert.deepEqual(matchActionIds('躲'), []);
     // 「打开菜单」里的「打」不是出招，也不能被当成第二种招式
     assert.deepEqual(matchActionIds('打开菜单'), []);

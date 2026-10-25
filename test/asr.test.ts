@@ -174,8 +174,8 @@ describe('宁可认不出，也不认错', () => {
     }
   });
 
-  it('单字说法不再进本地词表，交给命令路由', () => {
-    assert.equal(matchSpokenAction('打'), null);
+  it('单字只保留「打」，其余交给命令路由', () => {
+    assert.equal(matchSpokenAction('打')?.id, 'light');
     assert.equal(matchSpokenAction('躲'), null);
     assert.equal(matchSpokenAction('大家'), null);
     assert.equal(matchSpokenAction('躲开')?.id, 'dodge');
