@@ -13,7 +13,7 @@ import { isActiveAction, isResponseAction } from './types.js';
  *
  * 原则是「宁可认不出，也不认错」：错配会消耗能量和回合，比回一句「没听清」更糟。
  * 因此只接受整句就是某个说法、整句以某个说法开头/结尾、或等长且只差一处轻微混淆；
- * 单字别名（打、躲、防）只参与精确匹配，不做任何近音扩展。
+ * 短词只参与精确匹配，不做任何近音扩展，避免误伤日常对话。
  *
  * 不处理的两类：
  * - 唤出咒语：原文要回念给玩家听，交给 actions.ts 的 matchAction；
@@ -73,7 +73,7 @@ function stripHead(text: string): string {
   return rest;
 }
 
-/** 反复剥句尾填充；保留最后一个字，避免把「打」这种单字别名连尾巴一起剥掉 */
+/** 反复剥句尾填充；保留最后一个字，避免把单字指令连尾巴一起剥掉 */
 function stripTail(text: string): string {
   let rest = text;
   for (let changed = true; changed; ) {
@@ -374,7 +374,7 @@ export function matchSpokenAction(raw: string, stage?: SpokenStage): SpokenMatch
 
   const terms = termsFor(stage);
 
-  // 1. 精确：整句就是一个说法，单字别名只在这一步生效
+  // 1. 精确：整句就是一个说法，短词只在这一步生效
   const exact = terms.find((entry) => entry.term === text);
   if (exact) return { id: exact.id, score: 1, via: 'exact' };
 

@@ -66,6 +66,13 @@ const START_EXACT = ['开始', '开始吧', '开打', '开战', '开局', '来�
 const START_RULES = ['开始游戏', '开始对战', '开房间', '开个房', '开房', '建房间', '新建房间', '创建房间', '联机', '双人对战'];
 
 /**
+ * 「回能量」是在蓄力，不是在查战况。
+ * 别名表不再展开「回点/补满/攒满」十几种写法，用「动词 + 能量」兜住；
+ * 带疑问、回合数的句子会先被 blockReason 拦成查询，不会走到这里。
+ */
+const CHARGE_ENERGY = /(?:回|攒|补|蓄|聚|存|加)[^，。！？]{0,2}能量/;
+
+/**
  * 叙述对手的子句：「对手放大招，」不是本机的招。
  * 统计歧义与选招只看剥掉之后自己那半句，否则玩家自报应对会被对手的招式带成「两种招式」。
  * 只剥两种形态：以标点收尾的完整子句，以及「对手的大招」这类名词短语。
@@ -194,6 +201,8 @@ export function readCommand(raw: string): Command {
 
   const match = compactText(own) ? matchAction(own) : null;
   if (match) return { kind: 'turn', action: match.id, chant: match.chant };
+
+  if (text && CHARGE_ENERGY.test(text)) return { kind: 'turn', action: 'charge' };
 
   if (text && includesAny(text, STATUS_RULES)) return { kind: 'status' };
 

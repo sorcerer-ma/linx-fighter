@@ -68,6 +68,13 @@ describe('一句话读成命令', () => {
     assert.deepEqual(readCommand('天倾共此声'), { kind: 'turn', action: 'ult', chant: '天倾共此声' });
   });
 
+  it('本地只认高频说法，语义口语交给模型', () => {
+    // 这些说法原本靠长别名表覆盖，现在收敛掉，改由命令路由按阶段判断
+    for (const text of ['猛攻', '抡他', '生吃这一下', '防一下', '躲一下']) {
+      expectKind(text, 'route');
+    }
+  });
+
   it('认不出来的句子交给模型路由', () => {
     for (const text of ['', '   ', '今天天气不错', '开', '打开菜单']) {
       expectKind(text, 'route');

@@ -56,15 +56,15 @@ describe('三层解析：规则 → 端侧同音 → 命令路由', () => {
     assert.deepEqual(calls.router, [], '规则命中就不该等模型');
   });
 
-  it('端侧同音认得出就不等模型：轻机 → 普攻', async () => {
+  it('端侧同音认得出就不等模型：公鸡 → 普攻', async () => {
     const { service, calls } = setup();
     await service.start(KEY);
 
-    // 「轻机」不在招式词表里，只有同音节匹配能认；模型这一步不该被叫起来
-    const result = await service.say(KEY, '轻机');
+    // 「公鸡」不在招式词表里，只有同音节匹配能认；模型这一步不该被叫起来
+    const result = await service.say(KEY, '公鸡');
 
     assert.equal(result.battle?.pending?.move, 'light');
-    assert.deepEqual(calls.fuzzy, ['active:轻机']);
+    assert.deepEqual(calls.fuzzy, ['active:公鸡']);
     assert.deepEqual(calls.router, [], '端侧已经认出来了，不能再花一次模型往返');
   });
 

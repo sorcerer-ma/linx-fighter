@@ -132,8 +132,8 @@ describe('词表里没有的写法靠音节比较兜住', () => {
   });
 
   it('前后鼻音、声母混淆的近似说法', () => {
-    // 多散：duo/san 与「躲闪」只差 s/sh 这一处，整句只容一处混淆
-    const match = matchSpokenAction('多散');
+    // 散避：san/bi 与「闪避」只差 s/sh 这一处，整句只容一处混淆
+    const match = matchSpokenAction('散避');
     assert.ok(match);
     assert.equal(match.id, 'dodge');
     assert.equal(match.via, 'syllable');
@@ -174,9 +174,9 @@ describe('宁可认不出，也不认错', () => {
     }
   });
 
-  it('单字别名只做精确匹配，不做近音扩展', () => {
-    assert.equal(matchSpokenAction('打')?.id, 'light');
-    assert.equal(matchSpokenAction('躲')?.id, 'dodge');
+  it('单字说法不再进本地词表，交给命令路由', () => {
+    assert.equal(matchSpokenAction('打'), null);
+    assert.equal(matchSpokenAction('躲'), null);
     assert.equal(matchSpokenAction('大家'), null);
     assert.equal(matchSpokenAction('躲开')?.id, 'dodge');
   });

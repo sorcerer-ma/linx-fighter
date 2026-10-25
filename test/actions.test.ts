@@ -22,7 +22,7 @@ describe('招式识别', () => {
     assert.equal(parseAction('格挡'), 'guard');
     assert.equal(parseAction('闪避'), 'dodge');
     assert.equal(parseAction('硬抗'), 'take');
-    assert.equal(parseAction('attack'), 'light');
+    assert.equal(parseAction('light'), 'light');
     assert.equal(parseAction('  HEAVY  '), 'heavy');
     assert.equal(parseAction('攻击。'), 'light');
   });
@@ -32,7 +32,7 @@ describe('招式识别', () => {
     assert.equal(parseAction('先调息片刻'), 'charge');
     assert.equal(parseAction('向右闪避！'), 'dodge');
     assert.equal(parseAction('我选择格挡'), 'guard');
-    assert.equal(parseAction('生吃这一下'), 'take');
+    assert.equal(parseAction('硬抗这一下'), 'take');
   });
 
   it('精确层只兜拼音规则接不住的误识别', () => {
@@ -64,9 +64,9 @@ describe('招式识别', () => {
     }
   });
 
-  it('单字别名只在精确匹配生效，不误判日常对话', () => {
-    assert.equal(parseAction('躲'), 'dodge');
-    assert.equal(parseAction('打'), 'light');
+  it('不再保留单字别名，短句交给命令路由', () => {
+    assert.equal(parseAction('躲'), null);
+    assert.equal(parseAction('打'), null);
     assert.equal(parseAction('打开菜单'), null);
     assert.equal(parseAction('讲个笑话'), null);
     assert.equal(parseAction(''), null);
@@ -121,9 +121,9 @@ describe('一句话里的招式集合', () => {
     assert.deepEqual(matchActionIds('打开菜单'), []);
   });
 
-  it('单字别名只在整句精确匹配时生效', () => {
-    assert.deepEqual(matchActionIds('打'), ['light']);
-    assert.deepEqual(matchActionIds('躲'), ['dodge']);
+  it('短句不再靠单字别名兜底', () => {
+    assert.deepEqual(matchActionIds('打'), []);
+    assert.deepEqual(matchActionIds('躲'), []);
     // 「打开菜单」里的「打」不是出招，也不能被当成第二种招式
     assert.deepEqual(matchActionIds('打开菜单'), []);
     assert.deepEqual(matchActionIds('打开大招'), ['ult']);

@@ -4,7 +4,7 @@ export interface ActionMeta {
   id: ActionId;
   /** 中文招式名，播报与提示用 */
   label: string;
-  /** 玩家可能说的同义说法；单字项只在精确匹配时生效，避免误判 */
+  /** 玩家可能说的同义说法；短词只在精确匹配时生效，避免误判 */
   aliases: string[];
   /**
    * 只放拼音规则接不住的误识别：语义级，或音节表还没收录的字。
@@ -25,13 +25,15 @@ export const ACTIONS: Record<ActionId, ActionMeta> = {
   light: {
     id: 'light',
     label: '普攻',
-    aliases: ['普攻', '普通攻击', '轻击', '轻攻', '攻击', '打击', '进攻', '出手', '出招', '打', '砍', '斩', '揍', 'attack', 'atk'],
+    // 只留最常用的两三种说法；其余口语交给命令路由模型判断
+    aliases: ['普攻', '攻击'],
     chants: ['共鸣斩破军', '轻锋裂长空'],
   },
   heavy: {
     id: 'heavy',
     label: '强攻',
-    aliases: ['强攻', '重击', '重攻', '强击', '猛攻', '全力攻击', '大力攻击', '狠打'],
+    // 「全力攻击」要在本地压过「攻击」，否则会被普攻抢走；其余狠话交给模型
+    aliases: ['强攻', '重击', '全力攻击', '大力攻击'],
     chants: ['重锋碎山河', '千钧落星河'],
   },
   ult: {
@@ -39,7 +41,7 @@ export const ACTIONS: Record<ActionId, ActionMeta> = {
     label: '大招',
     // 「开大/开大招/放大招」是子串匹配的大坑（打开大家、把大门打开），不进词表；
     // 这几种口语简称由 asr.ts 的整句匹配认。
-    aliases: ['大招', '绝招', '必杀', '必杀技', '绝技', '终极技', '终极大招', '奥义'],
+    aliases: ['大招', '绝招'],
     // 「大着」是「大招」的语义级误听，音节规则接不住
     asrErrors: ['大着'],
     chants: ['天倾共此声', '万籁俱寂灭'],
@@ -49,17 +51,14 @@ export const ACTIONS: Record<ActionId, ActionMeta> = {
     label: '蓄力',
     // 游戏已统一叫「能量」，因此玩家会把蓄力说成「回能量」「攒点能量」；
     // 旧资源口语与对应 ASR 误识别仅兼容输入，推荐名称仍为蓄力。
-    aliases: [
-      '蓄力', '蓄气', '回气', '聚气', '憋大招', '攒气', '蓄势', '调息', '回力', '运气', 'recover',
-      '回能量', '回点能量', '回满能量', '补能量', '补点能量', '补满能量',
-      '攒能量', '攒点能量', '攒满能量', '存能量', '蓄能量', '聚能量',
-    ],
+    // 「回能量」「攒一下」这类说法不在本地展开，由模型按当前阶段判断
+    aliases: ['蓄力', '调息', '回气'],
     chants: ['一息归元海', '静听吾心跳'],
   },
   guard: {
     id: 'guard',
     label: '格挡',
-    aliases: ['格挡', '格档', '抵挡', '防御', '防守', '护盾', '架住', '挡', '防'],
+    aliases: ['格挡', '防御'],
     // 「可党」的「可」还没进音节表，先留一条；其余同音写法交给 asr.ts
     asrErrors: ['可党'],
     chants: ['声海化金汤', '共鸣壁立千仞'],
@@ -67,7 +66,7 @@ export const ACTIONS: Record<ActionId, ActionMeta> = {
   dodge: {
     id: 'dodge',
     label: '闪避',
-    aliases: ['闪避', '躲避', '躲开', '躲闪', '闪开', '闪身', '避开', '回避', '规避', '躲', '闪'],
+    aliases: ['闪避', '躲避', '躲开'],
     // 「闪币」「朵开」「傻逼」这类同音、近音、吞韵尾的误写由 asr.ts 统一处理，
     // 这里不再逐词列；列得越多，越容易把真正的新错法漏掉。
     chants: ['踏歌借流光', '身随声影动'],
@@ -75,7 +74,7 @@ export const ACTIONS: Record<ActionId, ActionMeta> = {
   take: {
     id: 'take',
     label: '承受',
-    aliases: ['承受', '硬抗', '硬扛', '扛住', '吃伤害', '硬吃', '生吃', '扛'],
+    aliases: ['承受', '硬抗'],
     // 这几个是语义/非近音误听，或音节表还没收录的字，拼音规则接不住
     asrErrors: ['狠抗', '硬坑', '硬航', '长寿'],
     chants: ['以身为剑鞘', '此身擎天地'],
@@ -118,7 +117,7 @@ function matchTerms(meta: ActionMeta): string[] {
   return [meta.id, ...meta.aliases, ...(meta.asrErrors ?? [])];
 }
 
-/** 包含匹配用的长词候选；单字项（打、躲、防）不参与，避免「打开菜单」被误判 */
+/** 包含匹配用的长词候选；单字项不参与，避免「打开菜单」被误判 */
 interface TermCandidate {
   id: ActionId;
   term: string;
@@ -154,7 +153,7 @@ function normalize(raw: string): string {
  * 把玩家口语归一化成招式，并带回命中的唤出指令。
  *
  * 匹配顺序：
- * 1. 精确匹配——单字别名（打、躲、防）只在这里生效，避免「打开菜单」被误判；
+ * 1. 精确匹配——短词只在这里生效，避免「打开菜单」被误判；
  * 2. 包含匹配——长词优先，让「免疫这次公鸡」先命中「公鸡」而不是更短的词；
  *    唤出指令与普通说法一起按长度排序，命中咒语时回念整句。
  *
@@ -164,7 +163,7 @@ export function matchAction(raw: string): ActionMatch | null {
   const text = normalize(raw);
   if (!text) return null;
 
-  // 1. 精确匹配：整句就是某个说法（含单字别名与平台直接下发的英文标识）
+  // 1. 精确匹配：整句就是某个说法（含平台直接下发的英文标识）
   for (const meta of Object.values(ACTIONS)) {
     if (matchTerms(meta).includes(text)) return { id: meta.id };
   }
@@ -194,7 +193,7 @@ export function matchActionIds(raw: string): ActionId[] {
   const text = normalize(raw);
   if (!text) return [];
 
-  // 整句就是一个说法：单字别名（打、躲）只在这一步生效，与 matchAction 保持一致
+  // 整句就是一个说法：短词只在这一步生效，与 matchAction 保持一致
   const exact = Object.values(ACTIONS).find((meta) => matchTerms(meta).includes(text));
   if (exact) return [exact.id];
 
