@@ -1,3 +1,5 @@
+import { backendPlayback } from './playback.js';
+import { diagnosticText } from './speech-diagnostic.js';
 import { createConversation } from './conversation.js';
 import { createListeningSession } from './listening.js';
 import { companionView, newSettlement, renderCompanion, opponentDetails } from './companion.js';
@@ -78,6 +80,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var turnSequence = 0;
   var waitAbort = null;
   var finishPlayback = null;
+  var cloudPlayback = null;
   var activeReplyBattleId = null;
 
   /* ---------------- 身份 ---------------- */
@@ -433,6 +436,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     const segments = plan && plan.version === 1 && Array.isArray(plan.segments)
       ? plan.segments : [{ text: reply, emotion: 'neutral' }];
     if (!segments.length) return Promise.resolve('silent');
+    if (config && config.voice && config.voice.tts === 'backend') return speakBackend(segments, turn);
     if (!canSpeak()) return Promise.resolve('displayed');
     listener.pause();
     return new Promise(function (resolve) {
@@ -485,7 +489,43 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     });
   }
 
+  async function speakBackend(segments, turn) {
+    const controller = new AbortController();
+    cloudPlayback = controller;
+    listener.pause();
+    try {
+      for (const segment of segments) {
+        if (controller.signal.aborted || turn !== turnSequence || document.hidden) return 'cancelled';
+        await backendPlayback({ text: segment.text, emotion: segment.emotion }, controller.signal, function (emotion) {
+          if (cloudPlayback !== controller) return;
+          el.replies.dataset.emotionIntent = emotion.requested;
+          el.replies.dataset.emotionApplied = emotion.applied;
+          el.replies.dataset.emotionControl = emotion.control;
+          el.replies.setAttribute('aria-label', '伙伴正在朗读，情绪请求 ' + emotion.requested + '，应用 ' + emotion.applied + '，控制 ' + emotion.control);
+        });
+      }
+      return controller.signal.aborted || turn !== turnSequence ? 'cancelled' : 'ended';
+    } catch (error) {
+      if (controller.signal.aborted) return 'cancelled';
+      const detail = diagnosticText(error.diagnostic);
+      pushReply('伙伴语音播放失败，文字回复已保留。' + (detail ? '\n' + detail : ''), 'warn', 'system');
+      return 'error';
+    } finally {
+      if (cloudPlayback === controller) {
+        cloudPlayback = null;
+        delete el.replies.dataset.emotionIntent;
+        delete el.replies.dataset.emotionApplied;
+        delete el.replies.dataset.emotionControl;
+        el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
+      }
+    }
+  }
+
   function stopSpeaking() {
+    if (cloudPlayback) { const current = cloudPlayback; cloudPlayback = null; current.abort(); }
+    delete el.replies.dataset.emotionIntent;
+    delete el.replies.dataset.emotionApplied;
+    delete el.replies.dataset.emotionControl;
     if (finishPlayback) finishPlayback('cancelled');
     clearTimeout(ttsTimer);
     ttsTimer = null;

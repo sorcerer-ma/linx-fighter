@@ -6,7 +6,8 @@ import vm from 'node:vm';
 const script = readFileSync(new URL('../sandbox/public/app.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise<void>(resolve => setImmediate(resolve)); };
 const outcome = (reply: string, need = 'move') => ({ ok: true, isError: false, reply, silent: false, protocol: { v: 2, ok: true, need, phase: 'battle', events: [] } });
-function harness(audio = true) {
+function harness(audio = true, cloud = false) {
+  const cloudItems: any[] = [];
   const nodes = new Map<string, any>(), messages: any[] = [], utterances: any[] = [], calls: any[] = [], docEvents: Record<string, () => void> = {};
   const timers = new Map<number, () => void>(); let timerId = 0, listeningOptions: any, stream: any;
   function node(id: string): any {
@@ -39,19 +40,26 @@ function harness(audio = true) {
     close() {}
   }
   const fetch = (url: string, init: any = {}) => {
-    if (url === '/api/config') return Promise.resolve({ ok: true, json: async () => ({ agentMode: 'relay', eventsUrl: '/events' }) });
+    if (url === '/api/config') return Promise.resolve({ ok: true, json: async () => ({ agentMode: 'relay', eventsUrl: '/events', voice:{tts:cloud ? 'backend' : 'browser'} }) });
     let resolve: (data: any) => void = () => {};
     const promise = new Promise<any>(done => { resolve = done; });
     calls.push({ url, init, respond(data: any) { resolve({ ok: true, json: async () => data }); } });
     return promise;
   };
   vm.runInContext(script, vm.createContext({ window, document, fetch, EventSource, AbortController, URLSearchParams, Uint8Array,
+    backendPlayback(item: any, signal: AbortSignal, onEmotion: any) {
+      return new Promise((resolve, reject) => {
+        cloudItems.push({ item, signal, finish() { onEmotion({requested:item.emotion,applied:item.emotion,control:'instruction'}); resolve(undefined); }, fail() { reject(new Error('synthesis_failed')); } });
+        signal.addEventListener('abort', () => reject(new Error('cancelled')), { once:true });
+      });
+    },
+    diagnosticText() { return ''; },
     createConversation: () => ({ append(role: string, text: string) { messages.push({ role, text }); } }),
     createListeningSession(options: any) { listeningOptions = options; return listener; },
     companionView() { return {}; }, renderCompanion() {}, opponentDetails() { return ''; }, newSettlement() { return null; },
     setTimeout(fn: () => void) { const id = ++timerId; timers.set(id, fn); return id; }, clearTimeout(id: number) { timers.delete(id); },
   }));
-  return { nodes, messages, utterances, calls, listener,
+  return { nodes, messages, utterances, calls, listener, cloudItems,
     async ready() { await flush(); stream.onopen(); },
     input(text: string) { listeningOptions.onFinal(text); },
     partial(text: string) { listeningOptions.onText(text, false); },
@@ -189,5 +197,26 @@ it('播放到中间段后换局或隐藏页面取消余段，迟到 onend 不继
     h.utterances[1].onend(); await flush();
     assert.equal(h.utterances.length, 2, mode);
     assert.equal(h.calls.length, 1, mode);
+  }
+});
+
+it('真实音频逐段传递情绪，全部播放完成前不等待且不播放拼接reply', async () => {
+  const h=harness(true,true);await h.ready();h.input('防御');
+  h.calls[0].respond({...outcome('挡住啦！轮到你指挥我了。','wait_foe'),speech:{version:1,source:'model',segments:[{text:'挡住啦！',emotion:'proud'},{text:'轮到你指挥我了。',emotion:'expectant'}]}});await flush();
+  assert.equal(h.cloudItems.length,1);assert.equal(h.utterances.length,0);assert.equal(h.listener.paused,true);
+  assert.equal(h.cloudItems[0].item.emotion,'proud');h.cloudItems[0].finish();await flush();
+  assert.equal(h.cloudItems.length,2);assert.equal(h.calls.length,1);assert.equal(h.listener.paused,true);
+  assert.equal(h.cloudItems[1].item.emotion,'expectant');h.cloudItems[1].finish();await flush();
+  assert.equal(h.calls[1].url,'/api/wait');assert.equal(h.listener.paused,false);
+  assert.equal(h.messages.filter(x=>x.role==='partner').length,1);
+});
+it('真实音频失败或取消清空剩余段，不等待、不重做MCP',async()=>{
+  for(const cancel of [false,true]){
+    const h=harness(true,true);await h.ready();h.input('攻击');
+    h.calls[0].respond({...outcome('第一句第二句','wait_foe'),speech:{version:1,source:'model',segments:[{text:'第一句',emotion:'determined'},{text:'第二句',emotion:'excited'}]}});await flush();
+    if(cancel)h.hide();else h.cloudItems[0].fail();await flush();
+    assert.equal(h.cloudItems.length,1);assert.equal(h.calls.length,1);
+    if(cancel)assert.equal(h.cloudItems[0].signal.aborted,true);
+    else assert.equal(h.messages.at(-1).role,'system');
   }
 });

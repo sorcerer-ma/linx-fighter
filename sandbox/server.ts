@@ -1,3 +1,4 @@
+import { installTtsBridge } from './tts-bridge.js';
 import { createSandboxAgent } from './platform/agent.js';
 import { readFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
@@ -74,6 +75,7 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '32kb' }));
+  installTtsBridge(app, config.ttsBridge === true);
 
   // 页面加载时读一次配置：地址、身份默认值、语音语言
   app.get('/api/config', (req, res) => {
@@ -88,7 +90,7 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
       agentId: config.agentId,
       defaultDeviceId: `web-${randomSuffix()}`,
       display: config.display,
-      voice: { lang: 'zh-CN' },
+      voice: { lang: 'zh-CN', tts: config.ttsBridge ? 'backend' : 'browser' },
     });
   });
 

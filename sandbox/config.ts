@@ -22,6 +22,8 @@ export interface SandboxAgentConfig {
 
 export interface SandboxConfig {
   agent: SandboxAgentConfig;
+  /** 固定本机语音服务桥接，不接受任意上游 URL。 */
+  ttsBridge?: boolean;
   port: number;
   host: string;
   /** 游戏服务地址：MCP 调用与状态查询都走它 */
@@ -63,6 +65,7 @@ export function loadSandboxConfig(env: NodeJS.ProcessEnv = process.env): Sandbox
   const key = env.SANDBOX_TLS_KEY?.trim();
 
   return {
+    ttsBridge: env.SANDBOX_TTS_BRIDGE === 'local',
     agent: {
       model: env.SANDBOX_AGENT_MODEL?.trim() || undefined,
       baseUrl: env.SANDBOX_AGENT_BASE_URL?.trim() || undefined,
