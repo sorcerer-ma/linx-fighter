@@ -1,8 +1,8 @@
 # 沙箱：灵犀设备模拟器
 
-本机跑一个「假灵犀平台」：浏览器页面提供语音／文字输入，原话经 `/api/say` → MCP `game_say` 进入真实服务；本分支经 Agent 转发与可选表达后形成最终 reply，局面经长连接只读同步。本分支持久重建 v2，由 Agent 依据事实形成最终话术，再交语音播放；不能用旧版测试或 mock 声称真实模型通过。迁移与验收见 [实施说明](../engineering/mcp-v2-migration.md)。
+本机模拟灵犀平台：浏览器提供语音／文字输入，最终原话经 `/api/say` → Agent → MCP `game_say` 进入真实游戏服务；Agent依据v2权威事实形成最终话术，再交语音播放。局面经长连接只读同步，SSE不另行播报。迁移与验收见[实施说明](../engineering/mcp-v2-migration.md)。
 
-本分支已包含双视图、持续聆听、伙伴表达与提示词配置；这些文本兼容实现不代表 v2 已交付。ASR/TTS 适配层与 MCP 协议独立，不因语音替换而改变游戏裁决或重做行动。
+当前实现包含双视图、持续聆听、v2两工具事实协议、伙伴表达与提示词配置。ASR/TTS适配层与MCP协议独立，不能用mock代替真实模型验收，也不因语音替换而改变裁决或重做行动。
 
 做这个沙箱的原因：
 
@@ -293,17 +293,17 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 
 ## v2 联调边界
 
-本分支重建后必须重新验证：原话只执行一次、JSON 编解码与未知版本、`silent` 零话术／零播放、表达成功与 `say` 兜底、`failed/unknown` 恢复、等待取消／超时／换局、等待与查询不重复消费战果。`/state` 和 `/events` 仍是视觉快照，不另起原文播报。
+v2联调必须验证：原话只执行一次、JSON 编解码与未知版本、`silent` 零话术／零播放、表达成功与 `say` 兜底、`failed/unknown` 恢复、等待取消／超时／换局、等待与查询不重复消费战果。`/state` 和 `/events` 仍是视觉快照，不另起原文播报。
 
 页面只把最终伙伴话术加入伙伴日志并播放，玩家输入与系统错误分开；部分识别不调用游戏，TTS 失败只处理播放，不重做 MCP。音频开始、结束和取消必须来自实际播放器事件，不能以合成完成替代播完。脚本记录应区分协议事实与最终话术，历史记录保留版本，不能改写旧录制冒充新协议验证。
 
-## 独立真实 v2 本地测试
+## 真实 v2 本地测试
 
-在持久重建目录使用已有依赖，分别启动以下两个前台进程。命令直接加载原项目已有 .env，不复制密钥；只覆盖非秘密端口／身份，不改原 8000/8100 或独立语音服务。
+在项目根目录使用已有依赖，分别启动以下两个前台进程。命令直接加载原项目已有 .env，不复制密钥；只覆盖非秘密端口／身份，不改原 8000/8100 或独立语音服务。
 
 ```bash
-HOST=127.0.0.1 PORT=18482 LOG_LEVEL=info node --env-file=/Users/mayiqing/qiniu/hack1024/linx-fighter/.env --import tsx src/index.ts
-SANDBOX_HOST=127.0.0.1 SANDBOX_PORT=18483 SANDBOX_UPSTREAM=http://127.0.0.1:18482 SANDBOX_AGENT_ID=linx-v2-real LOG_LEVEL=info node --env-file=/Users/mayiqing/qiniu/hack1024/linx-fighter/.env --import tsx sandbox/server.ts
+HOST=127.0.0.1 PORT=18482 LOG_LEVEL=info node --env-file=.env --import tsx src/index.ts
+SANDBOX_HOST=127.0.0.1 SANDBOX_PORT=18483 SANDBOX_UPSTREAM=http://127.0.0.1:18482 SANDBOX_AGENT_ID=linx-v2-real LOG_LEVEL=info node --env-file=.env --import tsx sandbox/server.ts
 ```
 
-入口为 http://127.0.0.1:18483/?player=1 和 ?player=2。开房／加入通过文字或语音原话完成；麦克风依浏览器权限与能力，文字输入无需麦克风。页面 relay 只证明表达适配器已装配，真实调用、校验回退与实际播放须分别检查。最终音频仍为浏览器能力，独立云语音未在本次重建自动整合。停止仅针对本人确认的进程，不结束其他服务。
+入口为 http://127.0.0.1:18483/?player=1 和 ?player=2。开房／加入通过文字或语音原话完成；麦克风依浏览器权限与能力，文字输入无需麦克风。页面 relay 只证明表达适配器已装配，真实调用、校验回退与实际播放须分别检查。最终音频仍为浏览器能力，独立云语音不属于本节浏览器语音路径。停止仅针对本人确认的进程，不结束其他服务。
