@@ -4,7 +4,7 @@ import { it } from 'node:test';
 import { SandboxAgent, loadAgentPrompt } from '../sandbox/platform/agent.js';
 import { SandboxClient } from '../sandbox/platform/client.js';
 import { OpenAiReplyModel } from '../sandbox/platform/reply-model.js';
-import { SPEECH_PROFILES, speechProfile, profilePrompt, resolveProfileId, type SpeechProfileId } from '../sandbox/platform/profiles.js';
+import { SPEECH_PROFILES, speechProfile, profilePrompt, resolveProfileId, companionPrompt, type SpeechProfileId } from '../sandbox/platform/profiles.js';
 import { createLogger } from '../src/log.js';
 import type { GameReply } from '../src/game/protocol.js';
 
@@ -35,7 +35,7 @@ it('actual expression adapter receives three different style supplements and kee
  }
  assert.equal(calls.length,3);for(const call of calls)assert.deepEqual(call,{name:'game_say',args:{text:'原话一字不改'}});
  assert.equal(new Set(systems).size,3);
- for(const system of systems){assert.ok(system.startsWith(main));assert.match(system,/只调用一次game_say/);assert.match(system,/【主规则优先】/);assert.match(system,/unknown/);assert.ok(!system.includes('你的名字是“小喵”'));}
+ for(const system of systems){assert.ok(system.startsWith(main.split('【第三层：可变人格】')[0]!.trimEnd()));assert.match(system,/只调用一次game_say/);assert.match(system,/【主规则优先】/);assert.match(system,/unknown/);assert.ok(!system.includes('你的名字是“小喵”'));}
  assert.match(systems[0]!,/【知性灿灿声线：温暖机灵的共鸣精灵】/);assert.match(systems[1]!,/【擎苍声线：沉稳有斗志的共鸣精灵】/);assert.match(systems[2]!,/【天才童声声线：活泼勇敢的共鸣精灵】/);
 });
 it('invalid profile rejects run and wait before any MCP or expression, and missing profile defaults cancan',async()=>{
@@ -87,4 +87,17 @@ it('本机个体名独立于三种音色并实际进入表达prompt；未命名�
  assert.equal(systems.length,3);for(const system of systems)assert.ok(system.includes('companionName="小喵"'));
  systems.length=0;await new SandboxAgent('共享主规则',model).run('嗯',tools,{profileId:'tiancai'});
  assert.ok(!systems[0]!.includes('小喵'));assert.ok(systems[0]!.includes('尚未设置个体名字'));
+});
+
+it('three styles only replace persona: fixed execution and world stay identical and are not duplicated',()=>{
+ const main=loadAgentPrompt(new URL('../config/linx-agent-prompt.md',import.meta.url).pathname);
+ const execution=main.indexOf('【第一层：执行契约（不可覆盖）】'),world=main.indexOf('【第二层：固定世界观（不可覆盖）】'),persona=main.indexOf('【第三层：可变人格】');
+ assert.ok(execution===0 && execution<world && world<persona);
+ const fixed=main.slice(0,persona).trimEnd();
+ for(const id of Object.keys(SPEECH_PROFILES) as SpeechProfileId[]){
+  const generated=companionPrompt(main,id,'小喵');assert.equal(generated.slice(0,fixed.length),fixed);
+  assert.equal(generated.split('在《共鸣：闻声对决》的世界里').length-1,1);
+  assert.match(generated,/纯正常timeout|正常空超时/);assert.match(generated,/silent:true/);
+  assert.ok(!/最多等待一次|最多调用一次 wait_event|不自动续挂/.test(generated));
+ }
 });
