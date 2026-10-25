@@ -297,7 +297,9 @@ flowchart TB
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error`，日志为单行 JSON |
 | `BATTLE_TTL_SECONDS` | `1800` | 对局与房间的空闲过期时间 |
 | `ENABLE_DEBUG_ENDPOINTS` | 非生产环境开启 | 是否暴露 `/debug/*` |
-| `API_KEY` | 空 | 配置后启用命令路由、对手决策与规则外问答；为空只用规则匹配与本地决策 |
+| `DECISION_API_KEY` / `CHAT_API_KEY` | 空 | 分别启用决策与规则外问答；未设置时回退 `API_KEY` |
+| `DECISION_BASE_URL` / `CHAT_BASE_URL` | 默认网关 | 各自优先于旧 `BASE_URL`，可连接不同 provider |
+| `API_KEY` | 空 | 旧共享密钥回退 |
 | `BASE_URL` | `https://api.modelink.ai/v1` | 模型网关根地址，换代理、网关或厂商时覆盖 |
 | `DECISION_PATH` | `/systemone` | 决策模型路径，换网关时一起改 |
 | `CHAT_PATH` | `/chat/completions` | 语言模型路径，换网关时一起改 |
@@ -518,3 +520,9 @@ tests/simulation/     Python 参考模拟与原始结果（区别于 test/ 的�
 2. 命令路由与对手决策的提示词、阈值调优（真实 Key 下的选择质量与延迟）。
 3. 双人断线重连提示、房间内再来一局、观战与回放。
 4. 按需扩展：Redis 存储、对局结算音效（`structuredContent.funcs` 触发 `linx_play`）。
+
+### MCP 模型 provider 独立配置
+
+命令路由与 JEV 对手决策使用 `DECISION_API_KEY`、`DECISION_BASE_URL`、`DECISION_PATH`；DeepSeek 规则外问答使用 `CHAT_API_KEY`、`CHAT_BASE_URL`、`CHAT_PATH`。两方地址、密钥和路径互不借用，模型名仍分别用 `DECISION_MODEL` / `CHAT_MODEL`。
+
+迁移时分别填写两方 provider 的地址与密钥，路径按各自协议设置（默认 `/systemone` 与 `/chat/completions`）。每个地址/密钥字段的优先级是非空专用变量 → 旧 `BASE_URL` / `API_KEY` → 默认地址或无密钥；空白值视为未设置。路径原本已独立，无共享路径回退。旧配置继续有效，但拆分 provider 后建议移除共享变量，避免一方误用旧密钥。只有决策密钥时仅启用路由/对手决策；只有聊天密钥时仅启用规则外问答，另一方保持本地或固定话术回退。密钥仅放运行环境。
