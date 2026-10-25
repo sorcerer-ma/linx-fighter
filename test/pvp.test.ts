@@ -696,5 +696,15 @@ describe('挑战与席位的边界', () => {
     assert.match(declined.text, /没打出去/);
     assert.equal(rooms.byPlayer(HOST)?.code, code);
     assert.equal(store.get(key), battleBefore);
+
+    // 否定词表认不出的挑战说法也要收住：修复前这两句会真去换房 / 真重开双人房
+    for (const text of [`不接受挑战，编号${code}`, '别发起挑战']) {
+      const refused = await service.say(HOST, text);
+      assert.match(refused.text, /没打出去/, `${text} 没有收住：${refused.text}`);
+      assert.equal(rooms.byPlayer(HOST)?.code, code, `${text} 把房主换到了别的房间`);
+      assert.equal(rooms.byPlayer(GUEST)?.code, code, `${text} 把对手移出了房间`);
+      assert.equal(store.get(key), battleBefore, `${text} 撤掉了当前对局`);
+      assert.equal(refused.battle?.id, battleBefore.id);
+    }
   });
 });
