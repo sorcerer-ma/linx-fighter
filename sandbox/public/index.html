@@ -67,7 +67,11 @@
             <p class="alert" id="alert" hidden></p>
           </div>
 
-        <section class="speech-panel" aria-label="语音交流，设备外文字"><p id="transcript" class="transcript" aria-live="polite">玩家 · 尚未识别指令</p>
+        <section class="speech-panel" aria-label="语音交流，设备外文字">
+          <label class="speech-profile" for="speech-profile"><span>音色与性格</span><select id="speech-profile" aria-describedby="profile-status" disabled><option value="">正在加载</option></select></label>
+          <p id="profile-status" class="speech-detail" role="status">正在加载音色与性格。</p>
+          <p id="speech-detail" class="speech-detail" aria-live="polite"></p>
+          <p id="transcript" class="transcript" aria-live="polite">玩家 · 尚未识别指令</p>
         <div id="conversation-scroll" class="conversation-scroll" tabindex="0" role="region" aria-label="对话记录，可滚动">
           <ul class="replies" id="replies" role="log" aria-live="polite" aria-relevant="additions" aria-label="玩家、伙伴与系统的对话记录"></ul>
         </div>

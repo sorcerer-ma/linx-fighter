@@ -382,7 +382,7 @@ describe('原始报文日志', () => {
           jsonrpc: '2.0',
           id: 1,
           method: 'tools/call',
-          params: { name: 'game_status', arguments: {}, _meta: { lang_code: 'zh' } },
+          params: { name: 'game_say', arguments: { text: '战况如何' }, _meta: { lang_code: 'zh' } },
         }),
       });
       assert.equal(res.status, 200);

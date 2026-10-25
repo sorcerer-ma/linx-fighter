@@ -1,226 +1,78 @@
-import { presentation } from '../game/presentation.js';
-import { ATTACKS } from '../game/rules.js';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Logger } from '../log.js';
 import type { GameService, ServiceResult } from '../game/service.js';
 import { battleKey, type DeviceContext } from './context.js';
+import { encodeReply, unknownReply } from './reply.js';
 
 export interface ToolDependencies {
   service: GameService;
   logger: Logger;
   /** 当前 MCP 连接对应的设备上下文，POST 调用时会先刷新 */
   ctx: DeviceContext;
-  /** wait_event 最多挂多久（毫秒）：由部署配置决定，不交给模型 */
-  waitTimeoutMs: number;
+  waitTimeoutMs?: number;
 }
+const speakerField = z.string().trim().min(1).max(20).optional()
+  .describe('由平台声纹填入的说话人称呼；没有就不传，不要自己编。仅用于门禁，不决定对局身份');
 
-// 平台侧的声纹识别结果：在工具参数里声明了这个字段，灵犀才会把说话人带上。
-// 只用来记日志与以后判断归属，不参与招式裁决。
-const speakerField = z
-  .string()
-  .trim()
-  .min(1)
-  .max(20)
-  .optional()
-  .describe('说话人的名字，由平台声纹填入；没识别出来就不传，不要自己编一个');
-
-const startInput = {
+// SDK 会先执行 Zod 校验。长度放在公开 JSON Schema 元数据中，处理器再按
+// Unicode 字符计数拒绝，才能返回业务 unclear，而非 SDK 的非 JSON 错误；绝不截断原话。
+const sayInput = z.object({
+  text: z.string().meta({ minLength: 1, maxLength: 200 })
+    .describe('玩家原话，一字不改，不总结、不补上下文；1～200 字，超长不会执行'),
   speaker: speakerField,
-  opponent: z.string().trim().min(1).max(20).optional().describe('单人模式的对手名字，可不填，由系统安排'),
-  mode: z
-    .enum(['solo', 'pvp'])
-    .optional()
-    .describe('solo=和 AI 对手单挑（默认）；pvp=发起双人挑战，等对方凭编号接受'),
-  room: z
-    .string()
-    .trim()
-    .min(1)
-    .max(12)
-    .optional()
-    .describe('四位挑战编号，填了就接受该编号的挑战，和另一位玩家对打；发起挑战时会拿到编号'),
-  text: z
-    .string()
-    .trim()
-    .min(1)
-    .max(60)
-    .optional()
-    .describe('玩家原话（可选）：不确定该填 mode 还是 room 时把原话放这里，服务端会识别「共鸣对决，发起挑战」「接受挑战，编号1234」'),
-};
+}).strict();
 
-const actionInput = {
-  speaker: speakerField,
-  action: z
-    .string()
-    .trim()
-    .min(1)
-    .describe(
-      `招式：主动阶段 light=普攻、heavy=强攻、ult=大招（需${ATTACKS.ult.apCost}点能量、每局一次）、charge=蓄力；对手出招后 guard=格挡、dodge=闪避、take=承受。也可以直接填玩家原话，例如「闪避」或「共鸣斩破军」`,
-    ),
-};
-
-const sayInput = {
-  speaker: speakerField,
-  text: z
-    .string()
-    .trim()
-    .min(1)
-    .max(120)
-    .describe('玩家原话，一字不改地传进来，例如「攻击」「我的生命值还剩多少」「共鸣对决，发起挑战」「接受挑战，编号1234」「怎么玩」'),
-};
-
-/**
- * 注册游戏工具。
- * 工具层只做参数形状与错误兜底，业务编排在 GameService，方便后续替换实现。
- */
+/** v2 只暴露原话入口与等待；游戏事实来自服务，不从播报文案反推。 */
 export function registerGameTools(server: McpServer, deps: ToolDependencies): void {
-  const { service, logger, ctx, waitTimeoutMs } = deps;
-
-  // 有屏客户端自己能看到局面，不需要补账播报；无屏终端（平台默认）保留。
-  // 说话人一并带上：服务端据此过滤非本机的请求
-  const speakOptions = () => ({
-    catchUp: ctx.display !== 'screen',
-    speaker: ctx.speakerName || undefined,
-  });
-
-  // 统一包装：异常不外抛，转成玩家能听懂的一句失败播报，同时记日志
+  const { service, logger, ctx } = deps;
   const invoke = async (
-    tool: string,
-    args: Record<string, unknown>,
-    run: () => ServiceResult | Promise<ServiceResult>,
+    tool: string, speaker: string | undefined,
+    run: (key: string, speaker: string | undefined) => ServiceResult | Promise<ServiceResult>,
   ) => {
-    // 平台把声纹结果放在工具参数里，比头更贴近这一次发言；头里没有时以它为准
-    const spoken = typeof args.speaker === 'string' ? args.speaker.trim() : '';
-    if (spoken) ctx.speakerName = spoken;
-    // 耗时也进日志：wait_event 会挂住十几秒，平台到底等了多久、有没有提前掐断，看这里
-    const startedAt = Date.now();
+    const argumentSpeaker = speaker?.trim() || undefined;
+    const headerSpeaker = ctx.speakerName.trim() || undefined;
+    const conflict = Boolean(argumentSpeaker && headerSpeaker && argumentSpeaker !== headerSpeaker);
+    const currentSpeaker = argumentSpeaker ?? headerSpeaker;
+    // 在 await 之前捕获身份；同一连接的其他请求不能改变这次调用的归属。
+    const key = battleKey(ctx);
     try {
-      // 入参、身份头与返回文案都进日志：平台侧模型传了什么、系统回了什么，都能逐轮回放
-      logger.info('工具调用', {
-        tool,
-        sessionKey: battleKey(ctx),
-        deviceId: ctx.deviceId,
-        agentId: ctx.agentId,
-        speaker: ctx.speakerName || undefined,
-        args: previewArgs(args),
-      });
-      const result = await run();
+      logger.info('工具调用', { tool, sessionKey: key, deviceId: ctx.deviceId, agentId: ctx.agentId });
+      // Conflicting current metadata is untrusted. Never reuse a previous tool argument.
+      const result: ServiceResult = conflict
+        ? {text:'',battle:null,reply:{v:2,ok:true,silent:true}}
+        : await run(key, currentSpeaker);
+      if (!result.reply) throw new Error('MissingProtocolReply');
+      const text = encodeReply(result.reply);
       logger.info('工具返回', {
-        tool,
-        sessionKey: battleKey(ctx),
-        speaker: ctx.speakerName || undefined,
-        text: result.text,
-        ms: Date.now() - startedAt,
-        round: result.battle?.round ?? 0,
-        phase: result.battle?.phase ?? null,
-        active: result.battle?.active ?? null,
-        pending: result.battle?.pending
-          ? `${result.battle.pending.actor}:${result.battle.pending.move}`
-          : null,
+        tool, sessionKey: key, version: result.reply.v, ok: result.reply.ok,
+        reason: result.reply.reason, silent: result.reply.silent === true,
+        phase: result.reply.phase, eventCount: result.reply.events?.length ?? 0,
       });
-      const details=result.presentation ?? presentation('other',result.battle);
-      return { content: [{ type: 'text' as const, text: result.text }], structuredContent:{presentation:{...details,renderings:[...new Set([result.text,...details.renderings])]}} };
+      return { content: [{ type: 'text' as const, text }], _meta: { 'linx/battleId': result.battle?.id ?? null } };
     } catch (error) {
-      logger.error('工具调用失败', {
-        tool,
-        sessionKey: battleKey(ctx),
-        error: error instanceof Error ? error.message : String(error),
-      });
+      // 执行可能已经发生，不能用异常推断「没生效」或建议自动重做。
+      // 不记录异常原文，防止上游错误夹带认证信息或用户原话。
+      logger.error('工具调用失败', { tool, sessionKey: key, error: error instanceof Error ? error.name : 'UnknownError' });
       return {
-        content: [{ type: 'text' as const, text: '服务出了点问题，刚才的结果还未确认，请先核实战况。' }],
-        isError: true,
-        structuredContent:{presentation:presentation('error',null)},
+        content: [{ type: 'text' as const, text: encodeReply(unknownReply()) }],
+        isError: true, _meta: { 'linx/battleId': null },
       };
     }
   };
-
-  server.registerTool(
-    'game_say',
-    {
-      title: '玩家说了什么',
-      description:
-        '玩家说完话就调用它，把原话一字不改地放进 text。不管听起来像不像游戏指令——闲聊、念诗、问天气、骂人都一样，先递过来由服务端判断，不要自己回答，也不要说「这跟游戏无关」。服务端会识别招式与同音误识别、战况、玩法、开局、发起挑战与接受挑战，游戏规则之外的问题由语言模型回答；返回的 text 可以直接朗读。不确定该用哪个工具时，永远用这个。',
-      inputSchema: sayInput,
-    },
-    async ({ text, speaker }) =>
-      invoke('game_say', { text, speaker }, () => service.say(battleKey(ctx), text, speakOptions())),
-  );
-
-  server.registerTool(
-    'game_start',
-    {
-      title: '开始游戏',
-      description:
-        '开一局新的灵犀对决。默认和 AI 对手单挑；玩家说「共鸣对决，发起挑战」或「联机」「双人对战」时必须传 mode=pvp，会发起挑战并拿到四位编号；另一位玩家说「接受挑战，编号1234」时传 room=1234。拿不准参数就把玩家原话放进 text。会覆盖当前未结束的对局。',
-      inputSchema: startInput,
-    },
-    async ({ opponent, mode, room, text, speaker }) =>
-      invoke('game_start', { opponent, mode, room, text, speaker }, () =>
-        // 身份和其他工具同一个来源：工具参数优先，没有就用请求头解析出的说话人
-        service.start(battleKey(ctx), { opponent, mode, room, text, speaker: speaker || ctx.speakerName || undefined }),
-      ),
-  );
-
-  server.registerTool(
-    'game_action',
-    {
-      title: '出招',
-      description:
-        `执行玩家这一手的招式或应对。轮到玩家主动时可出普攻、强攻、蓄力；大招要${ATTACKS.ult.apCost}点能量且每局一次，能量不够或次数用完时不要提示玩家可以用大招。对手出招后只能格挡、闪避、承受。玩家说出这些招式的同义说法（打、躲、硬抗等）或唤出指令时也调用。玩家说「共鸣对决，发起挑战」「接受挑战，编号1234」「联机」也原样传进 action，服务端会按挑战流程处理。操作不合法时不会推进回合，返回里会说明原因并给可选说法。`,
-      inputSchema: actionInput,
-    },
-    async ({ action, speaker }) =>
-      invoke('game_action', { action, speaker }, () =>
-        service.say(battleKey(ctx), action, speakOptions()),
-      ),
-  );
-
-  server.registerTool(
-    'game_status',
-    {
-      title: '查看战况',
-      description:
-        '查看当前对局双方的生命值、能量、大招剩余次数和回合数；双人房里还会说明现在轮到谁出招。玩家问「战况如何」「我的生命值还剩多少」时调用。',
-      inputSchema: { speaker: speakerField },
-    },
-    async ({ speaker }) =>
-      invoke('game_status', { speaker }, () => service.status(battleKey(ctx), speakOptions())),
-  );
-
-  server.registerTool(
-    'wait_event',
-    {
-      title: '挂起等对手',
-      description:
-        '等对手这一手，把这次调用挂在服务端不返回。双人局里刚出完招、对手还没应招，或者房间开好等另一位玩家进来时调用它：对手一动，服务端就借这次请求把结果送回来，你立刻念给玩家，玩家不用再开口。轮到自己出招、对手已经出招等你应招、单人局或没有对局时会立刻返回，不会卡住。如果返回的是「对手还没出手」这类超时收尾，而玩家没有改口，可以再调用一次续挂，最多连续两次；第二次仍然超时就如实说对手还没动，不要无限重试。',
-      inputSchema: { speaker: speakerField },
-    },
-    async ({ speaker }, extra) =>
-      invoke('wait_event', { speaker }, () =>
-        service.wait(battleKey(ctx), {
-          timeoutMs: waitTimeoutMs,
-          signal: extra.signal,
-          speaker: speaker || ctx.speakerName || undefined,
-        }),
-      ),
-  );
-
-  server.registerTool(
-    'game_help',
-    {
-      title: '玩法说明',
-      description: '说明玩法与可用指令。玩家问「怎么玩」「你能做什么」时调用。',
-      inputSchema: { speaker: speakerField },
-    },
-    async ({ speaker }) => invoke('game_help', { speaker }, () => service.help(speakOptions())),
-  );
-}
-
-/** 工具入参摘要：只留短字符串，避免把整段语音原话写进日志 */
-function previewArgs(args: Record<string, unknown>): Record<string, string> {
-  const preview: Record<string, string> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (typeof value === 'string' && value.trim()) preview[key] = value.trim().slice(0, 40);
-  }
-  return preview;
+  server.registerTool('game_say', {
+    title: '玩家说了什么',
+    description: '玩家每句话原样交给游戏，不改字、不分类、不补上下文。服务端理解并执行，返回 v2 JSON 事实；只依据事实演绎，不念 JSON。silent=true 不出声；need 为 wait_guest 或 wait_foe 时，先播完即时回复，再最多调用一次 wait_event。',
+    inputSchema: sayInput,
+  }, async ({ text, speaker }) => invoke('game_say', speaker, (key, currentSpeaker) => {
+    if (!text.trim() || [...text].length > 200) return service.invalidInput(key, {speaker:currentSpeaker});
+    return service.say(key, text, { catchUp: ctx.display !== 'screen', speaker:currentSpeaker });
+  }));
+  server.registerTool('wait_event', {
+    title: '等待对手',
+    description: '仅上一条 need 为 wait_guest 或 wait_foe 时，在即时话术播放完成后调用；每轮最多一次。speaker 仅为本次平台声纹元数据，不自行编造；等待对手进房或出招；超时、取消不执行游戏动作。返回与 game_say 相同的 v2 JSON。',
+    inputSchema: z.object({speaker:speakerField}).strict(),
+  }, async ({speaker}, extra) => invoke('wait_event', speaker, (key, currentSpeaker) => service.waitEvent(key, {
+    signal: extra?.signal, speaker:currentSpeaker, timeoutMs:Math.min(deps.waitTimeoutMs??30000,30000),
+  })));
 }

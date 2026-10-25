@@ -8,7 +8,7 @@
 | --- | --- |
 | `pnpm typecheck` | TypeScript 类型检查（`tsc --noEmit`） |
 | `pnpm test` | 全量单元与集成测试（Node 内置 test runner + tsx） |
-| `pnpm coverage` | 覆盖率门槛：行 95%、分支 90%、函数 95%（统计 `src/**/*.ts`，排除 `src/index.ts`） |
+| `pnpm coverage` | 覆盖率门槛：行 95%、分支 95%、函数 95%（统计 `src/**/*.ts`，排除 `src/index.ts`） |
 | `pnpm validate` | v0.2 规则对拍：8 种策略 × 各参数组合 × 2000 局，共 256,000 局 |
 | `pnpm build` | 清理 `dist/` 后按 `tsconfig.build.json` 编译 |
 | `pnpm smoke` | 对本地运行中的服务做 MCP 冒烟（先 `pnpm dev`） |
@@ -26,16 +26,17 @@ Codecov 上传使用仓库 Secret `CODECOV_TOKEN`（公开仓库 tokenless 也�
 | 语义解析 | `command.test.ts`、`asr.test.ts`、`routing.test.ts`、`router.test.ts` | 一句话读成命令、否定与问句拦截、同音纠错、三层路由顺序、模型路由解析与回退 |
 | 归属与串音 | `seat.test.ts`、`crosstalk.test.ts` | 双人座位口令、回灌识别、`strict` 模式的串音降噪、命中后不推进 |
 | 对局编排与并发 | `service.test.ts`、`serialize.test.ts`、`rooms.test.ts`、`store.test.ts`、`state.test.ts` | 开局/出招/换房、按对局排队与写回校验、房间索引、过期清理、局面快照 |
-| 双人与载体 | `pvp.test.ts`、`echoes.test.ts` | 双人视角镜像、无屏补账、模型路由兜底 |
-| 播报与事实 | `narrator.test.ts`、`presentation.test.ts`、`reply-check.test.ts` | 开局/回合/终局播报、事实与文本同源、改写检查的数值与归属校验 |
+| 双人与载体 | `pvp.test.ts`、`service-v2.test.ts`、`echoes.test.ts` | 双人视角镜像、v2 事实交付、无屏补账、模型路由兜底 |
+| 播报与事实 | `narrator.test.ts`、`presentation.test.ts`、`reply-check.test.ts`、`protocol-size.test.ts` | 开局/回合/终局播报、v2 事实编码与报文上限、改写检查的数值与归属校验 |
 | 对手与问答 | `enemy.test.ts`、`enemy-jev.test.ts`、`chat.test.ts` | 本地决策、JEV 输入输出与超时回退、规则外问答清洗 |
-| MCP 与 HTTP | `tools.test.ts`、`mcp.e2e.test.ts`、`streamable.test.ts`、`http.test.ts`、`context.test.ts`、`config.test.ts`、`provider-config.test.ts`、`log.test.ts` | 工具契约与返回、两种传输、身份与载体头、配置解析与密钥路由、日志脱敏 |
+| MCP 与 HTTP | `tools.test.ts`、`wait-event.test.ts`、`mcp-v2-cancel.test.ts`、`protocol-size.test.ts`、`mcp.e2e.test.ts`、`streamable.test.ts`、`http.test.ts`、`notifications-http.test.ts`、`v2-notifications.test.ts`、`context.test.ts`、`speaker.test.ts`、`config.test.ts`、`provider-config.test.ts`、`log.test.ts` | 两工具契约与 v2 JSON、等待与取消、报文上限、两种传输、页面提醒、声纹门禁、身份与载体头、配置解析与密钥路由、日志脱敏 |
 | 后台监控 | `admin.test.ts` | 只读读模型、访问控制、错误口令也计入限速 |
-| 沙箱 | `sandbox.test.ts`、`sandbox-agent.test.ts`、`sandbox-companion.test.ts`、`sandbox-conversation.test.ts`、`sandbox-listening.test.ts` | 沙箱服务接口、每条原话只调一次 `game_say`、伙伴视图与大招就绪、会话列表滚动、浏览器识别会话 |
+| 沙箱 | `sandbox.test.ts`、`sandbox-agent.test.ts`、`sandbox-v2-protocol.test.ts`、`sandbox-v2-playback.test.ts`、`sandbox-push.test.ts`、`sandbox-backend-recognition.test.ts`、`sandbox-companion.test.ts`、`sandbox-conversation.test.ts`、`sandbox-listening.test.ts` | 沙箱服务接口、v2 协议与播放、页面提醒、浏览识别、每条原话只调一次 `game_say`、伙伴视图与大招就绪、会话列表滚动 |
+| 语音适配 | `speech.test.ts`、`speech-api.test.ts`、`speech-doubao.test.ts`、`speech-transport.test.ts`、`speech-profiles.test.ts`、`speech-voices.test.ts`、`tts-bridge.test.ts`、`tts-playback.test.ts` | 沙箱 ASR/TTS 协议与编解码、音色 profile、语音桥与播放队列；真实平台语音仍需真机试听 |
 
 ## 口径与边界
 
-- **同源事实**：`presentation.test.ts` 要求事实直接来自结算结果，不从播报文本反解析；`reply-check.test.ts` 校验改写不能新增数字、交换归属或丢掉下一步。
+- **同源事实**：结算与协议测试要求 v2 事实直接来自结算结果，不从播报文本反解析；`reply-check.test.ts` 校验改写不能新增数字、交换归属或丢掉下一步。
 - **模型替身**：命令路由、JEV 对手、规则外问答与沙箱表达模型在测试里注入假实现，不依赖真实密钥或外部网络。真实模型的输出质量只能靠本地授权联调与人工验收。
 - **数值对拍**：`simulation.test.ts` 跑快速子集保证日常反馈，`pnpm validate` 用 CPython 同款 MT19937 跑全量；规则、随机顺序或伤害数值变动必须同步夹具与 [玩法机制](../game/game-design.md)，不能只改夹具消除失败。
 - **HTTP 与端口**：HTTP/Streamable 测试会在本机监听端口，CI 环境需允许本地回环。

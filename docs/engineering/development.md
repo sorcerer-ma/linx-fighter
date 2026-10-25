@@ -17,7 +17,7 @@
 | `pnpm build` | 清理后编译 TypeScript |
 | `pnpm typecheck` | 类型检查 |
 | `pnpm test` | 全量单元与集成测试 |
-| `pnpm coverage` | 覆盖率门槛检查（行 95% / 分支 90% / 函数 95%） |
+| `pnpm coverage` | 覆盖率门槛检查（行 95% / 分支 95% / 函数 95%） |
 | `pnpm validate` | v0.2 数值对拍（256,000 局） |
 | `pnpm smoke` | 对本地运行中的服务做 MCP 冒烟 |
 | `pnpm demo` | 脱离 MCP，直接跑一局看玩法与播报 |

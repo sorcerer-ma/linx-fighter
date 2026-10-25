@@ -1,3 +1,4 @@
+import { createSandboxAgent } from './platform/agent.js';
 import { createLogger } from '../src/log.js';
 import { loadSandboxConfig } from './config.js';
 import type { BattleState } from '../src/game/state.js';
@@ -154,7 +155,7 @@ function stateLine(step: DuelStep): string {
   return `R${step.round} · 房主 ${step.host.hp}/${step.host.maxHp} 能量${step.host.ap}${ult(step.host)} · 访客 ${step.guest.hp}/${step.guest.maxHp} 能量${step.guest.ap}${ult(step.guest)}${pending}`;
 }
 
-/** 打一局：发起挑战 → 接受挑战 → 轮流出手直到分出胜负 */
+/** 打一局：开房 → 加入 → 轮流出手直到分出胜负 */
 async function playDuel(options: DuelOptions, round: number): Promise<DuelResult> {
   const { client } = options;
   const [host, guest] = playersFor(round);
@@ -182,17 +183,23 @@ async function playDuel(options: DuelOptions, round: number): Promise<DuelResult
     });
   };
 
-  const say = async (deviceId: string, text: string): Promise<string> => {
+  const say = async (deviceId: string, text: string) => {
     const result = await client.say(deviceId, text);
     if (!result.ok) throw new Error(`${deviceId} 调用失败：${result.reply}`);
     await capture(deviceId, text, result.reply);
-    return result.reply;
+    return result;
   };
 
   const opened = await say(host, '共鸣对决，发起挑战');
-  const room = /编号(\d{4})/.exec(opened)?.[1];
-  if (!room) throw new Error(`发起挑战失败，播报里没有编号：${opened}`);
+  const room = opened.protocol?.room ?? opened.state?.room;
+  if (!room) throw new Error('发起挑战结果没有权威编号');
   await say(guest, `接受挑战，编号${room}`);
+  // 已有访客加入再消费等待，避免自对弈先阻塞等待自己尚未执行的动作。
+  if (opened.protocol?.need === 'wait_guest') {
+    const joined = await client.wait(host);
+    if (!joined.ok) throw new Error('等待加入结果未确认');
+    await capture(host, '（等待对手加入）', joined.reply);
+  }
 
   // 每局穿插一次「查战况」与一次 ASR 误识别，验证非招式语句不会推进回合
   await say(host, '战况如何');
@@ -264,6 +271,7 @@ async function main(): Promise<number> {
 
   const config = loadSandboxConfig();
   const client = new SandboxClient({
+    agent: createSandboxAgent(config.agent),
     upstream: config.upstream,
     agentId: config.agentId,
     timeoutMs: config.timeoutMs,

@@ -596,7 +596,8 @@ describe('异步与状态的边界', () => {
 
     const asked = await service.say(KEY, '怎么出招');
     assert.match(asked.text, /普攻/);
-    assert.equal(asked.battle, null);
+    assert.equal(asked.battle?.id, before?.id);
+    assert.ok(asked.reply?.text);
     assert.equal(store.get(KEY), before);
   });
 
@@ -994,16 +995,17 @@ describe('挂起等对手', () => {
 
     const pending = service.wait(HOST, { timeoutMs: 1000 });
     // 请求已经挂在这一局上，等访客应招
-    assert.equal(echo.waitingOn(HOST), true);
-    assert.equal(echo.waiting, 1);
+    assert.equal(echo.waitingOn(HOST), false, 'v2 不注册第二个旧台词等待消费者');
+    assert.equal(echo.waiting, 0);
 
     const response = await service.say(GUEST, '格挡');
     assert.match(response.text, /格挡/);
 
     const woken = await immediate(pending);
-    assert.match(woken.text, /我强攻，对手格挡，掉3点生命值，剩15/);
+    assert.ok(woken.reply?.events?.some(event=>event.t==='hit' && event.by==='you' && event.r==='guard' && event.dmg===3));
     // 挂起等来的结果当场就念，不能带补账前缀
-    assert.doesNotMatch(woken.text, /刚才那一手/);
+    assert.ok(woken.reply?.say);
+    assert.deepEqual(service.status(HOST).reply?.events, []);
     assert.equal(woken.battle?.pending, null);
     assert.equal(woken.battle?.history.length, 1);
     assert.equal(echo.waiting, 0);
@@ -1026,16 +1028,16 @@ describe('挂起等对手', () => {
     store.set(pvpBattleKey(code), { ...battle, enemy: { ...battle.enemy, hp: 3 } });
 
     const pending = service.wait(HOST, { timeoutMs: 1000 });
-    assert.equal(echo.waitingOn(HOST), true);
+    assert.equal(echo.waitingOn(HOST), false, 'v2 不注册第二个旧台词等待消费者');
 
     const response = await service.say(GUEST, '格挡');
     assert.match(response.text, /格挡/);
 
     const woken = await immediate(pending);
     // 既有这一手的结算，也有结束语：只念过程等于让模型自己推胜负
-    assert.match(woken.text, /掉\d+点生命值/);
-    assert.match(woken.text, /我赢了，击倒对手啦/);
-    assert.match(woken.text, /说「开始游戏」可以再来一局/);
+    assert.ok(woken.reply?.events?.some(event=>event.t==='hit'));
+    assert.ok(woken.reply?.events?.some(event=>event.t==='end' && event.win==='you'));
+    assert.equal(woken.reply?.phase,'victory');
     assert.equal(woken.battle?.phase, 'victory');
     assert.equal(echo.waiting, 0);
   });
@@ -1046,13 +1048,13 @@ describe('挂起等对手', () => {
     const code = await openRoom(service);
 
     const pending = service.wait(HOST, { timeoutMs: 1000 });
-    assert.equal(echo.waitingOn(HOST), true);
+    assert.equal(echo.waitingOn(HOST), false, 'v2 不注册第二个旧台词等待消费者');
 
     await service.start(GUEST, { room: code });
 
     const woken = await immediate(pending);
-    assert.match(woken.text, /^对手进房间了。/);
-    assert.match(woken.text, /对决开始/);
+    assert.ok(woken.reply?.events?.some(event=>event.t==='start'));
+    assert.equal(woken.reply?.phase,'battle');
     assert.equal(echo.waiting, 0);
     assert.equal(woken.battle?.mode, 'pvp');
   });
@@ -1064,7 +1066,8 @@ describe('挂起等对手', () => {
     await service.say(HOST, '强攻');
 
     const timedOut = await service.wait(HOST, { timeoutMs: 20 });
-    assert.equal(timedOut.text, narrateWaitTimeout('opponent'));
+    assert.deepEqual(timedOut.reply?.events,[{t:'timeout',what:'foe'}]);
+    assert.equal(timedOut.reply?.need,'wait_foe');
 
     // 超时不算失败：访客应完的这一手还要留着，等房主下次开口补上
     await service.say(GUEST, '格挡');
@@ -1078,7 +1081,8 @@ describe('挂起等对手', () => {
     await openRoom(service);
 
     const timedOut = await service.wait(HOST, { timeoutMs: 20 });
-    assert.equal(timedOut.text, narrateWaitTimeout('guest'));
+    assert.deepEqual(timedOut.reply?.events,[{t:'timeout',what:'guest'}]);
+    assert.equal(timedOut.reply?.need,'wait_guest');
   });
 
   it('轮到自己出招时不挂起，直接提醒出招', async () => {
@@ -1086,7 +1090,7 @@ describe('挂起等对手', () => {
     await service.start(HOST);
 
     const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
-    assert.equal(result.text, narrateWaitTurn());
+    assert.equal(result.reply?.silent,true, '该阶段已通过开局交付，不重复播报');
     assert.equal(result.battle?.round, 1);
   });
 
@@ -1097,7 +1101,7 @@ describe('挂起等对手', () => {
     await service.say(HOST, '普攻');
 
     const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
-    assert.equal(result.text, narrateWaitRespond());
+    assert.equal(result.reply?.silent,true, '该 pending 已通过行动交付，不重复播报');
     assert.equal(result.battle?.pending?.actor, 'enemy');
   });
 
@@ -1132,8 +1136,9 @@ describe('挂起等对手', () => {
     controller.abort();
 
     const result = await immediate(service.wait(HOST, { timeoutMs: 5000, signal: controller.signal }));
-    // 平台已经断开：这一手没有结果，回一句收尾文案，别静默
-    assert.equal(result.text, narrateWaitTimeout('opponent'));
+    // 平台已断开：v2 取消静默，不消费事实，也不编造超时。
+    assert.deepEqual(result.reply,{v:2,ok:true,silent:true});
+    assert.equal(result.text,'');
   });
 
   it('对局已经结束、队列里还攒着结算时，先把补账念掉再播结束语', async () => {
@@ -1167,7 +1172,8 @@ describe('挂起等对手', () => {
     const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
     assert.match(result.text, /刚才那一手/);
     assert.match(result.text, /我强攻，对手格挡/);
-    assert.match(result.text, /格挡、闪避还是承受/);
+    assert.equal(result.reply?.need,'respond');
+    assert.ok(result.reply?.choices?.includes('格挡'));
     assert.equal(result.battle?.pending?.actor, 'enemy');
   });
 });

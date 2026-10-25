@@ -131,6 +131,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
     speakers: parseSpeakers(env.ALLOWED_SPEAKERS),
-    waitEventTimeoutMs: Math.max(1000, Math.min(120000, parseInteger(env.WAIT_EVENT_TIMEOUT_MS, 30000))),
+    waitEventTimeoutMs: Math.max(1000, Math.min(30000, parseInteger(env.WAIT_EVENT_TIMEOUT_MS, 30000))),
   };
 }

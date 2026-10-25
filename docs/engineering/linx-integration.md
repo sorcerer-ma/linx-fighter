@@ -129,9 +129,7 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 
 - 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
 - 地址填到 `/mcp` 即可。服务端同时支持两种传输：平台若走 Streamable HTTP 会直接 `POST /mcp`（实测就是这样），若走老式 SSE 会先 `GET /mcp` 再由 `endpoint` 事件下发 POST 地址，控制台不用区分。
-- 配好后控制台通常有「测试/校验」按钮，能看到 6 个工具（`game_say`、`game_start`、`game_action`、`game_status`、`game_help`、`wait_event`）即说明连通。推荐只把 `game_say` 当主入口，`wait_event` 只在等对手时用。
-- `wait_event` 是挂起等对手的工具，无入参：模型调用后这次请求挂在服务端不返回，对手应招、对手进房间时，服务端借这次请求把要念的句子送回去，玩家不用再开口。轮到自己出招、对手已出招等自己应招、单人局、没有进行中的对局、对局已结束时它会立刻返回，不会卡住。挂起期间攒下的结算优先交给这次请求（唤醒文案不带「刚才那一手。」）；没人挂着时播报继续留在补账里，下次 `game_say` / `game_status` 照样补。挂多久由 `WAIT_EVENT_TIMEOUT_MS` 决定，默认 30000 毫秒、夹在 1000～120000；平台先掐断连接时以平台为准。这条链路依赖平台不掐断长请求，目前只有本机与沙箱结论，真机行为看日志确认。
-- v2 的两工具、JSON 事实与等待语义尚未实现，不能仅凭这个工具当作协议切换完成。
+- 配好后控制台通常有「测试/校验」按钮，本分支应看到 game_say 与 wait_event 两工具；仍需验证事实 JSON、表达、静默和等待顺序。线上旧服务可能尚未切换。
 
 ## 4. 控制台：配置智能体
 
@@ -145,14 +143,14 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 
 服务端已经做掉的（代码里，不用配）：
 
-1. **播报回灌判定**：`src/game/crosstalk.ts` 认得出伙伴自己的播报句式（结算数字、回合提示、编号播报、结局宣告等），命中后只回一个「嗯。」，同一局 2 秒内不再开口，不推进对局、不扣资源。玩家正常提问、否定、口号令不受影响。
+1. **播报回灌判定**：`src/game/crosstalk.ts` 认得出伙伴自己的播报句式（结算数字、回合提示、编号播报、结局宣告等），命中后 v2 返回 `silent:true`，不发声、不生成占位符，不推进对局、不扣资源。玩家正常提问、否定、口号令不受影响。
 2. **座位口令（可选）**：`ATTRIBUTION_MODE=strict` 后，双人房说话带上「红方 / 蓝方」（发起方=红方、接受方=蓝方）就能标明是替谁说，带对方口令的直接静默、零变化；不带口令的话照旧按轮次仲裁。口令只是可选的归属标签，没有「二次确认」环节：命令路由只接受置信度 ≥ 0.6 的判定，低于阈值按没听出来处理。默认 `off`：口令一开就要玩家先习惯，没商量好反而更乱。
 3. **座位引导语**：strict 模式下本机会说「红方这边，我在听，说招式就行。」，让玩家知道自己这台认哪一边。
 
 服务端做不到、必须靠平台侧的：
 
-- 说话人身份要「先要」才「再给」：MCP 请求头里只有 Device / Agent / Session 三个 `X-Linx-*` 头，不带说话人；但**在工具的 `inputSchema` 里声明了 `speaker` 参数之后，平台会把声纹识别出的名字填进这个参数**（平台支持侧的说明；真机待验）。五个工具都声明了它，真机已验：日志里出现过 `"speaker":"张朔铭"`。服务端把它写进 `DeviceContext.speakerName` 并进日志，归属判定与名单过滤都基于这个称呼。
-- 请求头里如果也带了 `X-Linx-Speaker-Name` / `X-Linx-Speaker-Id` 会一并接住（同样只进日志），并且每个进程第一次见到某种请求头组合时会打一条 `请求身份头快照`，把平台实际下发的自定义头列出来（`authorization`、`cookie` 之类按名字打码）。确认办法：`journalctl -u linx-fighter --no-pager -o cat --since "10 min ago" | grep -E '工具调用|请求身份头快照'`，看 `speaker` 字段有没有值。
+- 说话人身份要「先要」才「再给」：MCP 请求头里只有 Device / Agent / Session 三个 `X-Linx-*` 头，不带说话人；但**在工具的 `inputSchema` 里声明了 `speaker` 参数之后，平台会把声纹识别出的名字填进这个参数**（平台支持侧的说明；真机待验）。game_say 与 wait_event 都声明了它；服务端用它做 `ALLOWED_SPEAKERS` 白名单、日志与称呼，参数与 `X-Linx-Speaker-Name` 冲突时静默，不参与招式裁决与座位归属。
+- 请求头里如果也带了 `X-Linx-Speaker-Name` / `X-Linx-Speaker-Id` 会一并接住（同样只进白名单与日志），并且每个进程第一次见到某种请求头组合时会打一条 `请求身份头快照`，把平台实际下发的自定义头列出来（`authorization`、`cookie` 之类按名字打码）。确认办法：`journalctl -u linx-fighter --no-pager -o cat --since "10 min ago" | grep -E '工具调用|请求身份头快照'`，看 `speaker` 字段有没有值。
 - 平台的声纹开关（控制台「声纹功能：只回应指定的人」）是**内部门禁**：命中就转发、不命中设备直接不吭声。它要求**每台设备绑各自的智能体**，否则两台设备在平台眼里是同一个主人，声纹也分不开。
 - 换设备所属智能体有官方接口（`PUT /v1/devices/{mac_address}/agent/{agent_id}`，原文「将设备切换到目标智能体」）：
 
@@ -175,13 +173,12 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 ## 6. 智能体提示词与协议切换
 
-本分支保留五工具、可朗读 text 和兼容的 structuredContent.presentation；平台／沙箱 Agent 每条原话固定调用一次 game_say，理解和执行由服务端负责。沙箱已有整句表达与有限事实检查，失败采用工具原文，不再次执行游戏；这不是 v2 JSON 事实协议。
+本分支只注册 game_say 与 wait_event，content 内返回 v:2 JSON，不依赖 structuredContent。Agent 依据事实生成人设话术，失败采用 say/text；玩家原话只执行一次，不自动重做行动。
+平台可手动复制 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 的共享提示词内容（不复制沙箱代码或内部情绪格式）。沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
 
-沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。提示词用 `presentation.facts.you.ultimateReady` 判断大招是否可表达；平台侧提示词需要手动同步这一字段，不能只按能量数值推断。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
+表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；v2不依赖 presentation 或 structuredContent，平台须实际读到content文本块内的事实JSON；不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
 
-表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；旧平台是否消费 presentation 仍需验证，不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
-
-v2 目标见 [协议](mcp-protocol.md#7-智能体提示词)，实施与验收见 [迁移说明](mcp-v2-migration.md)。两工具、wait_event 与 content 文本块内 JSON 尚未实现。MCP_PROTOCOL=text|json 目前只是迁移建议，不能仅设置环境变量或换提示词就当作切换完成；JSON 服务与文本模板也不能错配。
+字段见 [协议](mcp-protocol.md#7-智能体提示词)，验收见 [迁移说明](mcp-v2-migration.md)。未新增 MCP_PROTOCOL 开关或协议猜测；发布前必须配对更新平台提示词，旧文本模板不得直接朗读 JSON。仓库模板不会自动同步平台。
 
 ## 7. 环境变量
 
@@ -211,7 +208,7 @@ v2 目标见 [协议](mcp-protocol.md#7-智能体提示词)，实施与验收见
 | `ENEMY_TIMEOUT_MS` | `2000` | JEV 对手单次决策超时，超时回退本地 |
 | `ATTRIBUTION_MODE` | `off` | 双人房座位归属：`strict` 时按口令过滤串音 |
 | `ALLOWED_SPEAKERS` | — | 逗号分隔的声纹称呼白名单；配置后未登记的说话人不回应，留空不限制 |
-| `WAIT_EVENT_TIMEOUT_MS` | `30000` | `wait_event` 挂起上限，夹在 1000～120000 毫秒 |
+| `WAIT_EVENT_TIMEOUT_MS` | `30000` | `wait_event` 挂起上限，夹在 1000～30000 毫秒 |
 | `ADMIN_TOKEN` | — | 后台监控页口令；为空时 `/admin` 公开，只适合演示环境 |
 
 沙箱自己的变量（`SANDBOX_*`）见 [沙箱配置](../testing/sandbox.md#配置项)。
@@ -252,3 +249,9 @@ v2 目标见 [协议](mcp-protocol.md#7-智能体提示词)，实施与验收见
 迁移时分别填写两方 provider 的地址与密钥，路径按各自协议设置（默认 `/systemone` 与 `/chat/completions`）。地址优先级是非空专用变量 → 旧 `BASE_URL` → 默认地址。密钥优先使用专用变量；仅未设置对应专用地址时允许回退旧 `API_KEY`，否则缺少专用密钥就禁用对应能力。空白值视为未设置。路径原本已独立，无共享路径回退。旧配置继续有效，但拆分 provider 后建议移除共享变量，避免一方误用旧密钥。只有决策密钥时仅启用路由/对手决策；只有聊天密钥时仅启用规则外问答，另一方保持本地或固定话术回退。密钥仅放运行环境。
 
 显式配置专用地址后，应由用户核对 provider 并填写对应专用密钥，不自动搬移旧密钥。非秘密示例为决策 `https://api.modelink.ai/v1`、聊天 `https://api.qnaigc.com/v1`。
+
+### 说话人与页面提醒边界
+
+`game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。等待服务端最多30秒、客户端留35秒，取消静默且不消费事实。
+
+手机页面保留七类主动提醒：对手出招、对手接受挑战、大招资源就绪、主动／响应空闲、等待对手、等待接受挑战。SSE push是带身份／对局／一次性ID的信号，不是直接可播台词；沙箱向固定游戏服务取得当下事实，再交真实Agent表达与统一播放队列。入房／出招与wait_event消费去重，旧局、失效或取消信号不播，不重做游戏动作。忙碌、真实说话、输入或隐藏时让路；语音效果仍需平台与真人试听验收。

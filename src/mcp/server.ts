@@ -1,19 +1,20 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ATTACKS } from '../game/rules.js';
 
 export const SERVER_NAME = 'linx-fighter';
-export const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = '0.2.0';
 
 /**
  * 下发给平台侧模型的行为说明（MCP initialize 时返回）。
  * 写得越明确，模型越不会自己编战斗结果、也越愿意调用工具。
  */
 const INSTRUCTIONS = [
-  '这里是「灵犀对决」，一个回合制对战游戏的服务端。',
-  '玩家用语音下指令，你负责调用工具推进对局，再把工具返回的 text 用口语念给玩家；不要复述工具名或 JSON。',
-  '玩家说的每一句话都先调用 game_say，把原话一字不改地放进 text。不要自己判断这是开局、出招还是提问，也不要自己回答游戏之外的话题：招式、查战况、问玩法、发起挑战、接受挑战、闲聊、念诗、与游戏无关的问题，都交给服务端识别与回答。',
-  `主动阶段可出普攻、强攻、蓄力；大招要${ATTACKS.ult.apCost}点能量且每局一次，只有 presentation.facts.you.ultimateReady 为 true 时才可提示玩家可以用，能量不够、次数用完或字段为 false 时都不要提。具体以工具返回文本和该字段为准。对手出招后进入应对，只能说格挡、闪避、承受。玩家说得含糊或认不出时，照返回的提示让玩家重说，不要自己替玩家选招。`,
-  '生命值、能量、回合数和胜负一律以工具返回为准，不要自行推算或编造。',
+  '这里是「灵犀对决」MCP v2，只有 game_say 与 wait_event 两个工具。',
+  '玩家每句话原样调用一次 game_say，服务端理解并裁决；不要自行分类、推算或重复执行。',
+  'content[].text 是单个 v2 JSON 事实对象，不是台词，不要把 JSON 念出来。依据 events、need 和明确的局面事实按伙伴人设表达；say 仅为安全兜底。',
+  'silent=true 时不生成话术或播放；failed 表示明确未执行，unknown 表示结果未确认，先核实，不要求重复出招。',
+  'need=wait_guest 或 wait_foe 时先播放完即时回复，再调用一次 wait_event；一轮最多等待一次。其他 need 不等待，不自动出招。',
+  '招式选择只看 choices；大招不在 choices 时不能提示可释放，不从能量自行推算。',
+  '身份来自请求头；speaker 仅由平台为本次 game_say 或 wait_event 填入，不自行编造或复用上次名字；参数与本次请求头冲突时静默。快照和 SSE 用于画界面，不能另开一条原文播报通道。',
 ].join('\n');
 
 /**
