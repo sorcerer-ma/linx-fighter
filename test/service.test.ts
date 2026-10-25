@@ -986,6 +986,33 @@ describe('挂起等对手', () => {
     assert.doesNotMatch(later.text, /刚才那一手/);
   });
 
+  it('访客应招把生命值打完时，被唤醒的房主要听到这一手和胜负', async () => {
+    const echo = new EchoStore();
+    const { service, store } = setup({ echo });
+    const code = await openRoom(service);
+    await service.say(GUEST, `加入房间${code}`);
+    await service.say(HOST, '强攻');
+
+    // 把访客生命值压到这一手必倒：接下来由真实应招触发终局，房主正挂着等结果
+    const battle = store.get(pvpBattleKey(code));
+    assert.ok(battle);
+    store.set(pvpBattleKey(code), { ...battle, enemy: { ...battle.enemy, hp: 3 } });
+
+    const pending = service.wait(HOST, { timeoutMs: 1000 });
+    assert.equal(echo.waitingOn(HOST), true);
+
+    const response = await service.say(GUEST, '格挡');
+    assert.match(response.text, /格挡/);
+
+    const woken = await immediate(pending);
+    // 既有这一手的结算，也有结束语：只念过程等于让模型自己推胜负
+    assert.match(woken.text, /掉\d+点生命值/);
+    assert.match(woken.text, /我赢了，击倒对手啦/);
+    assert.match(woken.text, /说「开始游戏」可以再来一局/);
+    assert.equal(woken.battle?.phase, 'victory');
+    assert.equal(echo.waiting, 0);
+  });
+
   it('房主开房后挂起，访客进房间后醒来先说人到了再报开局', async () => {
     const echo = new EchoStore();
     const { service } = setup({ echo });

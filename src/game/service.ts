@@ -354,7 +354,11 @@ export class GameService {
       ms: elapsed,
       lines: lines.length,
     });
-    if (lines.length > 0) return { text: narrateWake(lines), battle: view };
+    if (lines.length > 0) {
+      // 叫醒这一手的应招可能已经打完：只念过程不给胜负，玩家就不知道该不该再来一局
+      const ended = view && view.phase !== 'battle' ? narrateEnded(view) : '';
+      return { text: `${narrateWake(lines)}${ended}`, battle: view };
+    }
 
     // 只是局面有动静、没有攒下播报：照醒来时的最新局面说该做什么，不复述旧账
     if (!view) return { text: narrateNoBattle(), battle: null };
