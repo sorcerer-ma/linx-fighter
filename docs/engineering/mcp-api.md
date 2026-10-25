@@ -12,7 +12,7 @@
 - 平台固定只调用 `game_say`；`need` 为 `wait_guest` 或 `wait_foe` 时，先播完即时话术，再最多调用一次 `wait_event`。旧 `game_start`、`game_action`、`game_status`、`game_help` 不再注册。
 - 两个工具都只带本次平台声纹元数据 `speaker`（≤20 字）。配置 `ALLOWED_SPEAKERS` 后未登记的说话人静默；参数与 `X-Linx-Speaker-Name` 冲突时静默，不沿用旧身份。`speaker` 不参与招式裁决与对局归属。
 - `text` 为空或超过 200 字返回 `ok:false/reason:"unclear"`，不截断、不执行。工具不自行分类、归一化或补上下文。
-- 挂起上限由 `WAIT_EVENT_TIMEOUT_MS` 控制（默认 30000，夹在 1000～30000 毫秒），客户端留 35 秒；唤醒、超时与平台取消返回同一外形，挂起期间不占对局事务。
+- 挂起上限由 `WAIT_EVENT_TIMEOUT_MS` 控制（默认 300000，即 5 分钟，夹在 1000～300000 毫秒），客户端留 305 秒；唤醒、超时与平台取消返回同一外形，挂起期间不占对局事务。
 - 返回的 `content` 只有一条 `text` 块，`_meta["linx/battleId"]` 是对局 id（没有对局时为 `null`）。
 
 ## HTTP 入口

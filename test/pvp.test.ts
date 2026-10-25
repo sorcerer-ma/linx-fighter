@@ -341,7 +341,7 @@ describe('双人联机', () => {
       speakerId: '',
       anonymousId: 'anon-1',
     };
-    registerGameTools(server, { service, logger: createLogger('error'), ctx, waitTimeoutMs: 30_000 });
+    registerGameTools(server, { service, logger: createLogger('error'), ctx, waitTimeoutMs: 300_000 });
 
     const start = handlers.get('game_say')!;
     const opened = await start({ text: '共鸣对决，发起挑战' });

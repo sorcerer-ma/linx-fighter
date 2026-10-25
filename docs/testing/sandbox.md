@@ -125,13 +125,15 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
   "eventsUrl": "http://10.30.222.30:8000/events",
   "agentId": "linx-sandbox",
   "defaultDeviceId": "web-7f3a",
-  "voice": { "lang": "zh-CN" }
+  "voice": { "lang": "zh-CN" },
+  "waitTimeoutMs": 310000
 }
 ```
 
 - `eventsUrl` 是页面直接连游戏服务的状态流地址（按访问页面的 Host 推导，端口取 `upstream` 的端口）。
 - 页面是 HTTPS 而服务端是 HTTP 时，`eventsUrl` 会退化成同源代理 `/api/events`（浏览器不允许混合内容）。
 - `defaultDeviceId` 只在页面没带 `?player=` 且 sessionStorage 里也没有身份时用一次。
+- `waitTimeoutMs` 是页面等 `/api/wait` 的预算：服务端挂起上限（默认 5 分钟）加收尾余量，页面按它设断路，不再写死 40 秒。
 
 ### POST /api/say
 
@@ -174,7 +176,7 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
 
 ### POST /api/wait
 
-即时话术播放完成后，页面用当前 `deviceId`、`profileId` 请求一次；沙箱调 `wait_event` 把这次请求挂起，返回与 `/api/say` 同形的 `reply`、`protocol`、`sourceReply`、`state` 与 `trace`。轮到自己出招、单人局、没有进行中对局或对局已结束时立即返回；新输入、隐藏、手动停止或换局会取消旧等待，迟到的旧局回复不播放。
+即时话术播放完成后，页面用当前 `deviceId`、`profileId` 请求一次；沙箱调 `wait_event` 把这次请求挂起，返回与 `/api/say` 同形的 `reply`、`protocol`、`sourceReply`、`state` 与 `trace`。轮到自己出招、单人局、没有进行中对局或对局已结束时立即返回；新输入、隐藏、手动停止或换局会取消旧等待，迟到的旧局回复不播放。页面最多等 `/api/config` 下发的 `waitTimeoutMs`，超时后按连接中断处理，不自动重试。
 
 ### POST /api/notify
 
@@ -348,7 +350,7 @@ SANDBOX_HOST=127.0.0.1 SANDBOX_PORT=18483 SANDBOX_UPSTREAM=http://127.0.0.1:1848
 
 ### 说话人与页面提醒边界
 
-`game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。等待服务端最多30秒、客户端留35秒，取消静默且不消费事实。
+`game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。等待服务端最多5分钟、客户端留305秒，取消静默且不消费事实。
 
 手机页面保留七类主动提醒：对手出招、对手接受挑战、大招资源就绪、主动／响应空闲、等待对手、等待接受挑战。SSE push是带身份／对局／一次性ID的信号，不是直接可播台词；沙箱向固定游戏服务取得当下事实，再交真实Agent表达与统一播放队列。入房／出招与wait_event消费去重，旧局、失效或取消信号不播，不重做游戏动作。忙碌、真实说话、输入或隐藏时让路；语音效果仍需平台与真人试听验收。
 

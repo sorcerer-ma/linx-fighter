@@ -10,6 +10,7 @@ export interface ToolDependencies {
   logger: Logger;
   /** 当前 MCP 连接对应的设备上下文，POST 调用时会先刷新 */
   ctx: DeviceContext;
+  /** wait_event 挂起时长（毫秒）；装配层传入配置值，缺省交给服务按上限兜底 */
   waitTimeoutMs?: number;
 }
 const speakerField = z.string().trim().min(1).max(20).optional()
@@ -73,6 +74,6 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     description: '仅上一条 need 为 wait_guest 或 wait_foe 时，在即时话术播放完成后调用；每轮最多一次。speaker 仅为本次平台声纹元数据，不自行编造；等待对手进房或出招；超时、取消不执行游戏动作。返回与 game_say 相同的 v2 JSON。',
     inputSchema: z.object({speaker:speakerField}).strict(),
   }, async ({speaker}, extra) => invoke('wait_event', speaker, (key, currentSpeaker) => service.waitEvent(key, {
-    signal: extra?.signal, speaker:currentSpeaker, timeoutMs:Math.min(deps.waitTimeoutMs??30000,30000),
+    signal: extra?.signal, speaker:currentSpeaker, timeoutMs:deps.waitTimeoutMs,
   })));
 }

@@ -13,11 +13,14 @@ it('未配置模型不自动选供应商；共享提示词启动读取',()=>{
  assert.throws(()=>createSandboxAgent({...config.agent,promptPath:'/no-such-prompt'}));
 });
 it('原话只调用一次game_say，空格不改；wait仅独立调用wait_event',async()=>{
- const calls:unknown[]=[]; const tools={async callTool(name:string,args:Record<string,unknown>){calls.push({name,args});return {reply:opening,isError:false};}};
+ const calls:unknown[]=[]; const waits:Array<number|undefined>=[];
+ const tools={async callTool(name:string,args:Record<string,unknown>,options?:{timeoutMs?:number}){calls.push({name,args});if(name==='wait_event')waits.push(options?.timeoutMs);return {reply:opening,isError:false};}};
  const agent=new SandboxAgent('伙伴');
  await agent.run('  强攻！  ',tools);await agent.wait(tools);
  for(const text of ['共鸣对决，发起挑战','接受挑战，编号1234','开房间','加入房间1234']){await agent.run(text,tools);assert.deepEqual(calls.pop(),{name:'game_say',args:{text}});}
  assert.deepEqual(calls,[{name:'game_say',args:{text:'  强攻！  '}},{name:'wait_event',args:{}}]);
+ // 传输允许时间要盖住服务端 5 分钟挂起，不能让沙箱先把请求掐断
+ assert.ok((waits[0] ?? 0) > 300_000);
 });
 it('事实驱动自由表达不要求朗读整个资源快照或固定邀请短语',async()=>{
  const facts:GameReply={...opening,you:{hp:14,maxHp:14,ap:3,maxAp:5,ult:1},foe:{name:'教头',hp:18,maxHp:18,ap:3,ult:1}};

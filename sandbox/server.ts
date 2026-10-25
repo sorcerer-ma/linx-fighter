@@ -3,7 +3,7 @@ import type { ConnectSpeech } from './speech/doubao.js';
 import { installSpeechRoutes, loadSpeechConfig, type SpeechConfig } from './speech.js';
 import { SPEECH_PROFILES, speechProfile } from './platform/profiles.js';
 import { installTtsBridge } from './tts-bridge.js';
-import { createSandboxAgent } from './platform/agent.js';
+import { createSandboxAgent, PAGE_WAIT_TIMEOUT_MS } from './platform/agent.js';
 import { readFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
@@ -87,7 +87,7 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
   if (config.ttsBridge) installTtsBridge(app, true);
   installSpeechRoutes(app, speech, deps.connectSpeech ?? defaultConnectSpeech, createLogger(config.logLevel), {tts:!config.ttsBridge});
 
-  // 页面加载时读一次配置：地址、身份默认值、语音语言
+  // 页面加载时读一次配置：地址、身份默认值、语音语言、等待预算
   app.get('/api/config', (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({
@@ -102,6 +102,7 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
       agentId: config.agentId,
       defaultDeviceId: `web-${randomSuffix()}`,
       display: config.display,
+      waitTimeoutMs: PAGE_WAIT_TIMEOUT_MS,
       voice: { lang:'zh-CN', asr:speech.asr, tts:config.ttsBridge || speech.tts !== 'browser' ? 'backend' : 'browser', ttsMode:config.ttsBridge ? 'bridge' : speech.tts, simulation:speech.simulation },
     });
   });
