@@ -11,6 +11,7 @@ import { BattleStore } from '../src/store/battles.js';
 import { EchoStore } from '../src/store/echoes.js';
 import { RoomStore } from '../src/store/rooms.js';
 import type { BattleEvent } from '../src/game/types.js';
+import type { GameReply } from '../src/game/protocol.js';
 
 const HOST = 'device-a#agent-1';
 const GUEST = 'device-b#agent-2';
@@ -26,10 +27,12 @@ function toolset(service: GameService, ctx: DeviceContext) {
     },
   } as unknown as McpServer;
   registerGameTools(server, { service, logger: createLogger('error'), ctx });
-  return async (tool: string, input: Record<string, unknown> = {}): Promise<string> => {
+  return async (tool: string, input: Record<string, unknown> = {}): Promise<GameReply> => {
     const text = (await handlers.get(tool)!(input)).content[0]?.text;
     assert.ok(text);
-    return text;
+    const reply = JSON.parse(text) as GameReply;
+    assert.equal(reply.v, 2);
+    return reply;
   };
 }
 
@@ -313,22 +316,26 @@ describe('双人联机', () => {
     };
     registerGameTools(server, { service, logger: createLogger('error'), ctx });
 
-    const start = handlers.get('game_start')!;
-    const opened = await start({ mode: 'pvp' });
-    const text = opened.content[0]!.text;
-    assert.match(text, /房间\d{4}/);
+    const start = handlers.get('game_say')!;
+    const opened = await start({ text: '开房间' });
+    const reply = JSON.parse(opened.content[0]!.text) as GameReply;
+    assert.match(reply.room ?? '', /^\d{4}$/);
+    assert.equal(reply.need, 'wait_guest');
+    assert.ok(reply.events?.some(event => event.t === 'room' && event.code === reply.room));
 
     // 换一个设备身份加入，避免房主自己进自己的房
     ctx.deviceId = 'device-b';
     ctx.agentId = 'agent-2';
-    const joined = await handlers.get('game_start')!({ room: findRoom(service, HOST) });
-    assert.match(joined.content[0]!.text, /进了房间/);
+    const joined = await start({ text: `加入房间${reply.room}` });
+    const joinedReply = JSON.parse(joined.content[0]!.text) as GameReply;
+    assert.ok(joinedReply.events?.some(event => event.t === 'join' && event.code === reply.room));
+    assert.ok(joinedReply.events?.some(event => event.t === 'start'));
     assert.equal(rooms.size, 1);
   });
 });
 
 describe('载体形态下的补账播报', () => {
-  it('有屏客户端不念补账，语音终端照旧补上', async () => {
+  it('v2 有屏和语音客户端均提供遗漏事实，消费后不重复', async () => {
     const { service } = setup();
     const hostCtx: DeviceContext = {
       deviceId: 'device-a',
@@ -352,21 +359,28 @@ describe('载体形态下的补账播报', () => {
     const guest = toolset(service, guestCtx);
 
     const opened = await host('game_say', { text: '开房间' });
-    const code = /房间(\d{4})/.exec(opened)?.[1]!;
+    const code = opened.room!;
+    assert.match(code, /^\d{4}$/);
     await guest('game_say', { text: `加入房间${code}` });
 
     // 房主出招、访客应招：欠房主一条补账
     await host('game_say', { text: '强攻' });
     await guest('game_say', { text: '格挡' });
     const hostStatus = await host('game_say', { text: '战况如何' });
-    assert.doesNotMatch(hostStatus, /刚才那一手/);
-    assert.match(hostStatus, /第1轮/);
+    assert.equal(hostStatus.round, 1);
+    assert.ok(hostStatus.events?.some(event => event.t === 'hit' && event.by === 'you' && event.r === 'guard'));
+    assert.match(hostStatus.say ?? '', /格挡/);
+    const hostAgain = await host('game_say', { text: '战况如何' });
+    assert.deepEqual(hostAgain.events, []);
 
     // 访客攻击、房主应招：欠访客的那条，语音终端必须补
     await guest('game_say', { text: '强攻' });
     await host('game_say', { text: '格挡' });
     const guestStatus = await guest('game_say', { text: '战况如何' });
-    assert.match(guestStatus, /^刚才那一手。/);
+    assert.ok(guestStatus.events?.some(event => event.t === 'hit' && event.by === 'you' && event.r === 'guard'));
+    assert.match(guestStatus.say ?? '', /格挡/);
+    const guestAgain = await guest('game_say', { text: '战况如何' });
+    assert.deepEqual(guestAgain.events, []);
   });
 });
 
