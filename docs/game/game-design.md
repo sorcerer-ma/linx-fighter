@@ -124,9 +124,3 @@ battle ──某方生命值归零──> victory / defeat
 2. **规则对拍**：`pnpm validate` 用纯 TS 复刻 PR 参考仿真的 8 种策略、各组合 2000 局（共 256,000 局），与 `test/fixtures/v02-validation.json` 逐项比对；任何数值/随机数/结算顺序漂移都会失败。
 3. **随机数**：Python `random.Random(seed)` 的 MT19937 在 `test/helpers/mt19937.ts` 精确移植，同一 seed 可逐位复现。
 4. **快速子集**：`test/simulation.test.ts` 只跑 2000 局镜像，日常 `pnpm test` 秒级反馈。
-
-## 后续可做（未实现）
-
-- 数值平衡与更多招式（扩展 `ActionId` 即可，工具不新增）。
-- 观战/回放、连胜记录、房间内再来一局（当前重开会撤房）。
-- 双人断线重连提示与超时判负（目前只靠 TTL 清理）。
