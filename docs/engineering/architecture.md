@@ -42,13 +42,45 @@
 | 桌子与事务 | `src/game/table.ts`、`src/game/serialize.ts` | 单人局与双人局共用的接口（存储键、座位、视角、等对手、补账给谁）与对局事务（排队、写回前校验） |
 | 规则层 | `src/game/engine.ts`、`src/game/rules.ts` | 回合结算与全部数值，纯函数、随机数由 seed 派生 |
 | 策略层 | `src/game/enemy.ts` | AI 对手的决策模型，只读公开视角、不掷随机数 |
-| 问答层 | `src/game/chat.ts`、`llm.ts` | 回答规则外提问，调用语言模型并清成可朗读的短句 | 不动对局、不产出数值 |
+| 问答层 | `src/game/chat.ts`、`llm.ts` | 回答规则外提问，调用语言模型并清成可朗读的短句；不动对局、不产出数值 |
 | 联机层 | `src/game/pvp.ts` | 房间号、双人视角镜像与写回 |
 | 表现层 | `src/game/narrator.ts` | 播报文案，只依赖对局状态与事件 |
-| 命令与视图 | `src/game/command.ts`、`src/game/state.ts` | 把原话读成一条命令（招式 / 战况 / 玩法 / 开局 / 发起挑战 / 接受挑战 / 规则外问答 / 不该出手）与界面用的局面快照 |
-| 存储层 | `src/store/battles.ts`、`src/store/rooms.ts` | 对局与房间的读写、过期清理 |
+| 命令与视图 | `src/game/command.ts`、`asr.ts`、`state.ts` | 把原话读成一条命令（招式 / 战况 / 玩法 / 开局 / 发起挑战 / 接受挑战 / 规则外问答 / 不该出手），端侧同音纠错，以及界面用的局面快照 |
+| 归属与补账 | `src/game/seat.ts`、`crosstalk.ts`、`src/store/echoes.ts` | 双人座位口令、回灌识别、无屏补账的存取 |
+| 存储层 | `src/store/battles.ts`、`rooms.ts` | 对局与房间的读写、过期清理 |
+| 后台监控 | `src/admin/overview.ts`、`page.ts` | 只读的房间与对局总览，页面内嵌在服务里 |
+| 沙箱与平台模拟 | `sandbox/server.ts`、`platform/agent.ts` | 本地假平台：转发原话、表达模式与页面，只通过 HTTP/MCP 使用服务 |
+| 入口装配 | `src/index.ts`、`config.ts`、`log.ts` | 进程启动、环境配置解析与结构化日志 |
 
-依赖方向自上而下，规则层不感知 MCP，因此可以用 `scripts/demo.ts` 脱离协议直接跑玩法。
+依赖方向自上而下，规则层不感知 MCP，因此可以用 `scripts/demo.ts` 脱离协议直接跑玩法。专题入口见根目录 [README](../../README.md)。
+
+## 仓库布局
+
+```
+src/
+  index.ts            进程入口：读取配置、装配存储与模型、启动 HTTP
+  config.ts           环境变量解析（模型 provider 路由、超时、开关）
+  log.ts              结构化 logger
+  http/app.ts         两种 MCP 传输、/state 与 /events、调试端点
+  mcp/                server.ts 注册传输，tools.ts 五个工具，context.ts 身份与载体头
+  game/               engine.ts 与 rules.ts 结算、enemy*.ts 对手、command.ts/asr.ts 读原话、
+                      service.ts/table.ts/serialize.ts 编排与事务、pvp.ts、narrator.ts、state.ts、presentation.ts 等
+  store/              battles.ts、rooms.ts、echoes.ts 的内存存储与过期
+  admin/              只读监控页与总览
+sandbox/
+  server.ts           本地假平台、页面接口与状态流代理
+  platform/agent.ts   Agent 转发与表达模式
+  public/             沙箱页面（无前端框架）
+test/                 35+ 个测试文件与 fixtures/，详见测试文档
+scripts/              demo、smoke、validate（CPython 同款 MT19937 对拍）
+docs/                 产品、玩法、工程、测试与参考文档
+deploy/               演示环境 systemd 与 nginx 配置
+config/               沙箱提示词模板（不存密钥）
+asserts/              README 与文档用图
+archive/              历史依据，不覆盖现行规则
+```
+
+测试清单与门禁见 [测试与质量](../testing/testing.md)，本地联调见 [沙箱说明](../testing/sandbox.md)。
 
 ## 设计决策
 
