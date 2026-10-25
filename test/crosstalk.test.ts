@@ -217,6 +217,14 @@ function sentences(text: string): string[] {
     .filter((part) => part.length > 0);
 }
 
+/** 再按逗号切一刀：装置分段收音不会照顾逗号，半句也会单独回灌 */
+function commaParts(text: string): string[] {
+  return text
+    .split(/[，,。！？；;]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
 /** 读成某一招：kind 与招式一起断言 */
 function expectTurn(text: string, action: string): void {
   const command = readCommand(text);
@@ -393,6 +401,35 @@ describe('读命令时的归属判定', () => {
     // 唤出回念里带着招式词，判晚了就成了二次出招
     assert.equal(readCommand(narrateChant('共鸣斩破军')).kind, 'echo');
     assert.equal(readCommand(narrateBattleStart(battle())).kind, 'echo');
+  });
+
+  it('房间播报按逗号分段回灌，也不会被读成发起或接受挑战', () => {
+    // 装置分段收音不会照顾逗号：「自己发起挑战」曾经被单独回灌读成发起挑战，
+    // 把玩家原有双人局连同对手一起撤掉，所以半句也要能认出来
+    const roomBroadcasts = [
+      narrateRoomCreated('1234'),
+      narrateRoomJoined('1234'),
+      narrateWaitingRoom('1234'),
+      narrateRoomMissing('1234'),
+      narrateRoomFull('1234'),
+      narrateRoomInvalid(),
+    ];
+    for (const text of roomBroadcasts) {
+      const parts = commaParts(text);
+      assert.ok(parts.length >= 2, `房间播报应能分段：${text}`);
+      for (const part of parts) {
+        const kind = readCommand(part).kind;
+        assert.ok(
+          kind !== 'open-room' && kind !== 'join-room' && kind !== 'start',
+          `分段回灌被读成 ${kind}：${part}（整段：${text}）`,
+        );
+      }
+    }
+    // 房间满提示的每一段单独回灌都要认成回灌：这条是唯一会劝玩家自己开一局的文案
+    for (const part of commaParts(narrateRoomFull('1234'))) {
+      assert.equal(looksLikeAssistantEcho(part), true, `分段回灌没认出：${part}`);
+      assert.equal(readCommand(part).kind, 'echo', `分段回灌被当成指令：${part}`);
+    }
   });
 
   it('新口令照常执行，裸「接受挑战」不会被当成进房', () => {

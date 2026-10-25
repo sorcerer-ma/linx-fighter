@@ -259,9 +259,14 @@ export function narrateRoomMissing(code: string): string {
   return `没找到编号${code}的挑战，确认四位数编号再试一次`;
 }
 
-/** 双人联机：挑战已经有人接下 */
+/**
+ * 双人联机：挑战已经有人接下
+ *
+ * 尾句带「说「发起挑战」」：装置会分段收音，任何一句单独回灌都要被 crosstalk 认出来，
+ * 否则「自己发起挑战」会被读成发起挑战，把玩家自己那一局连同对手一起撤掉。
+ */
 export function narrateRoomFull(code: string): string {
-  return `编号${code}已经被接受了，自己发起挑战，或者换一个编号`;
+  return `编号${code}已经被接受了，说「发起挑战」自己开一局，或者换一个编号`;
 }
 
 /** 双人联机：编号格式不对 */
