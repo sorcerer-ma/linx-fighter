@@ -23,7 +23,7 @@ it('真实音频适配器发送情绪，等Audio ended并回报实际应用元�
   const first=backendPlayback({text:'挡住啦！',emotion:'proud'},new AbortController().signal,(value:any)=>{applied=value;}).then(()=>{done=true;});
   while(!audios.length)await new Promise(r=>setImmediate(r));
   assert.equal(done,false);assert.deepEqual(sent[0],{text:'挡住啦！',emotion:'proud'});
-  assert.deepEqual(applied,{requested:'proud',applied:'happy',control:'emotion'});
+  assert.deepEqual(applied,{requested:'proud',applied:'happy',profileId:null,speaker:null,control:'emotion'});
   audios[0].onended();await first;assert.equal(done,true);assert.equal(audios[0].paused,true);
   const controller=new AbortController();const second=backendPlayback({text:'有点痛！',emotion:'hurt'},controller.signal);
   const rejected=assert.rejects(second,/cancelled/);

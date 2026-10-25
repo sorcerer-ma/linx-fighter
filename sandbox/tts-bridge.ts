@@ -1,13 +1,16 @@
 // @ts-expect-error Shared browser diagnostic module is plain JS.
 import { speechDiagnostic } from './public/speech-diagnostic.js';
 import type { Express } from 'express';
+import { speechProfile } from './platform/profiles.js';
 import { EMOTIONS } from './platform/speech.js';
 
 /** Fixed loopback service; no caller URL, credential forwarding or redirects. */
 export function installTtsBridge(app: Express, enabled: boolean, request: typeof fetch = fetch): void {
   app.post('/api/speech/tts', async (req, res) => {
     if (!enabled) { res.status(503).json({ error: 'speech_bridge_disabled' }); return; }
-    const { text, emotion } = req.body ?? {};
+    const { text, emotion, profileId } = req.body ?? {};
+    const profile = speechProfile(profileId ?? 'cancan');
+    if (!profile) { res.status(400).json({ error:'invalid_speech_profile' }); return; }
     if (typeof text !== 'string' || !text.trim() || text.length > 2000 || !EMOTIONS.includes(emotion)) {
       res.status(400).json({ error: 'invalid_speech_segment' }); return;
     }
@@ -16,7 +19,7 @@ export function installTtsBridge(app: Express, enabled: boolean, request: typeof
     try {
       const response = await request('http://127.0.0.1:18391/api/speech/tts', {
         method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, emotion }),
+        body: JSON.stringify({ text, emotion, profileId:profile.profileId }),
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]),
       });
       if (!response.ok) {
@@ -27,6 +30,10 @@ export function installTtsBridge(app: Express, enabled: boolean, request: typeof
       if (response.headers.get('content-type')?.split(';')[0] !== 'audio/wav') {
         res.status(502).json({ error: 'speech_audio_invalid' }); return;
       }
+      if (response.headers.get('X-Speech-Profile') !== profile.profileId || response.headers.get('X-Speech-Speaker') !== profile.speaker) {
+        res.status(502).json({ error:'speech_profile_mismatch' }); return;
+      }
+      res.set('X-Speech-Profile',profile.profileId).set('X-Speech-Speaker',profile.speaker);
       const audio = Buffer.from(await response.arrayBuffer());
       if (controller.signal.aborted) return;
       for (const suffix of ['Requested', 'Applied']) {

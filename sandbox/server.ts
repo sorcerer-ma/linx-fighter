@@ -1,3 +1,4 @@
+import { SPEECH_PROFILES, speechProfile } from './platform/profiles.js';
 import { installTtsBridge } from './tts-bridge.js';
 import { createSandboxAgent } from './platform/agent.js';
 import { readFileSync } from 'node:fs';
@@ -83,6 +84,8 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
     res.json({
       ok: true,
       agentMode: client.agentMode,
+      speechProfiles: Object.entries(SPEECH_PROFILES).map(([id, value]) => ({ id, name: value.name })),
+      defaultSpeechProfile: 'cancan',
       sandbox: 'linx-sandbox',
       version: SANDBOX_VERSION,
       upstream: config.upstream,
@@ -96,27 +99,31 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
 
   // 唯一的输入入口：页面说了一句话
   app.post('/api/say', async (req, res) => {
-    const body = (req.body ?? {}) as { deviceId?: unknown; text?: unknown };
+    const body = (req.body ?? {}) as { deviceId?: unknown; text?: unknown; profileId?: unknown };
     const text = typeof body.text === 'string' ? body.text : '';
     if (!text.trim()) {
       res.status(400).json({ ok: false, reply: '没有听到内容，请再说一次。', error: 'empty_text' });
       return;
     }
+    const profile = speechProfile(body.profileId ?? 'cancan');
+    if (!profile) { res.status(400).json({ ok:false, error:'invalid_speech_profile' }); return; }
     const deviceId = normalizeDeviceId(body.deviceId) ?? `web-${randomSuffix()}`;
     const controller = new AbortController();
     res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-    const result = await client.say(deviceId, text, { signal:controller.signal });
+    const result = await client.say(deviceId, text, { signal:controller.signal, profileId:profile.profileId });
     if (!res.destroyed) res.json(result);
   });
 
   // Playback completes before the page requests this separate, cancellable wait.
   app.post('/api/wait', async (req, res) => {
-    const body = (req.body ?? {}) as { deviceId?:unknown };
+    const body = (req.body ?? {}) as { deviceId?:unknown; profileId?:unknown };
     const deviceId = normalizeDeviceId(body.deviceId);
     if (!deviceId) { res.status(400).json({ ok:false, error:'invalid_device' }); return; }
+    const profile = speechProfile(body.profileId ?? 'cancan');
+    if (!profile) { res.status(400).json({ ok:false, error:'invalid_speech_profile' }); return; }
     const controller = new AbortController();
     res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-    const result = await client.wait(deviceId, { signal:controller.signal });
+    const result = await client.wait(deviceId, { signal:controller.signal, profileId:profile.profileId });
     if (!res.destroyed) res.json(result);
   });
 

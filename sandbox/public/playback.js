@@ -14,6 +14,7 @@ export async function backendPlayback(item, signal, onEmotion = () => {}) {
   if (signal.aborted) return;
   onEmotion({ requested: response.headers.get('X-Speech-Emotion-Requested') || item.emotion,
     applied: response.headers.get('X-Speech-Emotion-Applied') || 'neutral',
+    profileId: response.headers.get('X-Speech-Profile'), speaker: response.headers.get('X-Speech-Speaker'),
     control: response.headers.get('X-Speech-Control') || 'neutral' });
   const url = URL.createObjectURL(await response.blob());
   try {
