@@ -722,3 +722,20 @@ describe('挑战与席位的边界', () => {
     }
   });
 });
+
+describe('接受意图缺编号不可退回创建',()=>{
+ it('已有单人局、等待房间或空身份都原样保留，错误口令不调用模型',async()=>{
+  let calls=0;const {service,rooms}=setup({router:{async resolve(){calls++;return {kind:'open-room'};}}});
+  await service.say(HOST,'开房');await service.say(GUEST,'开始');
+  for(const key of [HOST,GUEST,OTHER])for(const text of ['加入挑战','加入双人挑战','接受挑战编号123','加入房间12345']){
+   const before=service.snapshot(key),size=rooms.size;const r=await service.say(key,text);
+   assert.equal(r.reply?.reason,'room_bad');assert.equal(rooms.size,size);assert.deepEqual(service.snapshot(key),before);
+  }
+  assert.equal(calls,0);
+ });
+ it('有效加入别名进入已有挑战而不新建，失败编号保留原房',async()=>{
+  const {service,rooms}=setup();const a=await service.say(HOST,'开房');await service.say(GUEST,'开房');
+  const original=service.snapshot(GUEST);await service.say(GUEST,'加入挑战9999');assert.deepEqual(service.snapshot(GUEST),original);
+  const r=await service.say(GUEST,'加入挑战'+a.reply!.room);assert.equal(r.reply?.room,a.reply!.room);assert.equal(rooms.size,1);assert.ok(r.reply?.events?.some(e=>e.t==='join'));
+ });
+});

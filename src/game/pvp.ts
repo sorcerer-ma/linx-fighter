@@ -27,6 +27,11 @@ export function wantsOpenRoom(text: string): boolean {
   return /(发起挑战|挑战你|联机|双人|开个?房|开房|建个?房|创建房|一起打|组队)/.test(text);
 }
 
+/** Explicit acceptance intent must not fall through to generic creation/model routing. */
+export function wantsJoinRoom(text: string): boolean {
+  return /(?:接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)|进房)/.test(text);
+}
+
 /**
  * 从玩家原话里抽挑战编号：主路径是「接受挑战，编号1234」，
  * 旧说法「加入房间1234」「进房1234」继续兼容；普通数字不当编号。

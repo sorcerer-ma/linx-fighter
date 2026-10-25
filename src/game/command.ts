@@ -1,6 +1,6 @@
 import { matchAction, matchActionIds } from './actions.js';
 import { looksLikeAssistantEcho } from './crosstalk.js';
-import { roomCodeFromPhrase, wantsOpenRoom } from './pvp.js';
+import { roomCodeFromPhrase, wantsJoinRoom, wantsOpenRoom } from './pvp.js';
 import type { ActionId } from './types.js';
 
 /** 去空白与标点、英文转小写：关键词匹配只看字面，标点与大小写不参与判断 */
@@ -139,7 +139,7 @@ const NEGATE_FALSE_POSITIVES = ['特别', '区别', '告别', '别的', '分别'
  * 动词与 pvp.ts 里的开房口令保持一致，改口令时两边一起看。
  */
 const CHALLENGE_NEGATION =
-  /(?:不要|不用|不想|不打算|甭|算了|不|别)(?:再|去|要|想|用)?(?:发起挑战|接受挑战|挑战你|挑战|联机|开房|开个?房|建个?房|创建房|组队|一起打)/;
+  /(?:不要|不用|不想|不打算|甭|算了|不|别)(?:再|去|要|想|用)?(?:发起挑战|接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)|进房|挑战你|挑战|联机|开房|开个?房|建个?房|创建房|组队|一起打)/;
 
 function includesAny(text: string, rules: string[]): boolean {
   return rules.some((rule) => text.includes(rule));
@@ -224,6 +224,13 @@ export function readCommand(raw: string): Command {
 
   // 问玩法在歧义判定之前：「普攻和强攻怎么用」提到两招是在问区别，不是要同时出两招
   if (text && includesAny(text, HELP_RULES)) return { kind: 'help' };
+
+  // Acceptance without a valid code is a recoverable join error, never a new room.
+  if (wantsJoinRoom(text)) {
+    if (block === 'negated') return { kind: 'refused', why: 'negated' };
+    if (block === 'query') return { kind: 'route', question: true };
+    return { kind: 'join-room', code: '' };
+  }
 
   // 语音链路常把整句话塞进参数，「发起挑战 / 联机」这类说法在这里兜底
   if (opens) return { kind: 'open-room' };

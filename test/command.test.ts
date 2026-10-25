@@ -61,8 +61,8 @@ describe('一句话读成命令', () => {
     // 旧口令留作输入兼容，不再作为引导文案
     assert.deepEqual(readCommand('加入房间1234'), { kind: 'join-room', code: '1234' });
     assert.deepEqual(readCommand('进房一二三四'), { kind: 'join-room', code: '1234' });
-    // 没有编号、只有编号或只有数字，都不算接受挑战
-    assert.notEqual(readCommand('接受挑战').kind, 'join-room');
+    // 接受意图缺编号仍留在加入路径，不能转为创建。裸编号仍不执行。
+    assert.deepEqual(readCommand('接受挑战'), {kind:'join-room',code:''});
     assert.notEqual(readCommand('编号1234').kind, 'join-room');
     assert.notEqual(readCommand('今天1234').kind, 'join-room');
   });
@@ -332,4 +332,13 @@ it('强化攻击确定性匹配强攻，普通攻击和否定查询保持原语�
  for(const text of ['普通攻击','攻击']){const c=readCommand(text);assert.equal(c.kind,'turn');assert.equal(c.kind==='turn'?c.action:null,'light');}
  assert.equal(readCommand('不要强化攻击').kind,'refused');
  assert.notEqual(readCommand('强化攻击会怎样？').kind,'turn');
+});
+
+it('加入意图缺少或错误编号不创建，否定和查询仍不执行',()=>{
+ for(const text of ['加入挑战','接受挑战','加入双人挑战','加入房间12345','接受挑战编号123','进房'])assert.deepEqual(readCommand(text),{kind:'join-room',code:''},text);
+ for(const text of ['加入挑战1234','加入双人挑战一二三四'])assert.deepEqual(readCommand(text),{kind:'join-room',code:'1234'},text);
+ for(const text of ['不要加入挑战','不加入双人挑战','别进房'])assert.equal(readCommand(text).kind,'refused',text);
+ assert.deepEqual(readCommand('怎么加入挑战？'),{kind:'route',question:true});
+ assert.equal(readCommand('双人怎么玩').kind,'help');
+ assert.equal(readCommand('共鸣对决，发起挑战').kind,'open-room');
 });
