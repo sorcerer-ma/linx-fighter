@@ -36,7 +36,7 @@ function assertSilent(text: string, hint: string): void {
 
 describe('说话人校验与轮次归属', () => {
   it('名单外的人说招式、查战况都不回应', async () => {
-    const { service } = setup(['主人', '张朔铭']);
+    const { service } = setup(['阿澈', '阿岚']);
 
     assertSilent((await service.say(HOST, '普攻', { speaker: '陌生人' })).text, '名单外的人说招');
     assertSilent(service.status(HOST, { speaker: '陌生人' }).text, '名单外的人查战况');
@@ -45,13 +45,13 @@ describe('说话人校验与轮次归属', () => {
   });
 
   it('没拿到名字（声纹没识别）也不回应', async () => {
-    const { service } = setup(['主人', '张朔铭']);
+    const { service } = setup(['阿澈', '阿岚']);
     assertSilent((await service.say(HOST, '普攻')).text, '没名字');
   });
 
   it('名单外的设备调用挂起等对手时也不回应，不会把请求占住', async () => {
-    const { service } = setup(['主人']);
-    await service.say(HOST, '开始游戏', { speaker: '主人' });
+    const { service } = setup(['阿澈']);
+    await service.say(HOST, '开始游戏', { speaker: '阿澈' });
 
     const startedAt = Date.now();
     const result = await service.wait(HOST, { timeoutMs: 5000, speaker: '陌生人' });
@@ -68,43 +68,43 @@ describe('说话人校验与轮次归属', () => {
   });
 
   it('单人局：开局的人认领座位，另一个人说话不回应', async () => {
-    const { service } = setup(['主人', '张朔铭']);
-    await service.start(HOST, { speaker: '主人' });
+    const { service } = setup(['阿澈', '阿岚']);
+    await service.start(HOST, { speaker: '阿澈' });
 
-    const mine = await service.say(HOST, '普攻', { speaker: '主人' });
+    const mine = await service.say(HOST, '普攻', { speaker: '阿澈' });
     assert.doesNotMatch(mine.text, /^$/);
     assert.notEqual(mine.text, SILENT, '本人出手要正常播报');
 
-    assertSilent((await service.say(HOST, '大招', { speaker: '张朔铭' })).text, '别人替我说招');
+    assertSilent((await service.say(HOST, '大招', { speaker: '阿岚' })).text, '别人替我说招');
   });
 
   it('双人房：轮到你才回应，另一边的声音一并不理', async () => {
-    const { service } = setup(['主人', '张朔铭']);
-    await service.start(HOST, { mode: 'pvp', speaker: '主人' });
-    const code = service.status(HOST, { speaker: '主人' }).text.match(/房间(\d{4})/)![1]!;
-    await service.start(GUEST, { room: code, speaker: '张朔铭' });
+    const { service } = setup(['阿澈', '阿岚']);
+    await service.start(HOST, { mode: 'pvp', speaker: '阿澈' });
+    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/房间(\d{4})/)![1]!;
+    await service.start(GUEST, { room: code, speaker: '阿岚' });
 
     // 房主先手：先由房主出招，出完之后轮到加入者应对
-    const first = await service.say(HOST, '普攻', { speaker: '主人' });
+    const first = await service.say(HOST, '普攻', { speaker: '阿澈' });
     assert.notEqual(first.text, SILENT, '房主出招要正常播报');
 
-    // 这一手还在等加入者应对时，主人替对方应对要被挡掉
-    assertSilent((await service.say(HOST, '格挡', { speaker: '张朔铭' })).text, '串到房主设备上');
+    // 这一手还在等加入者应对时，阿澈替对方应对要被挡掉
+    assertSilent((await service.say(HOST, '格挡', { speaker: '阿岚' })).text, '串到房主设备上');
 
     // 加入者用自己的座位应对则放行
-    const response = await service.say(GUEST, '格挡', { speaker: '张朔铭' });
+    const response = await service.say(GUEST, '格挡', { speaker: '阿岚' });
     assert.notEqual(response.text, SILENT, '加入者应对要正常播报');
   });
 
   it('别人在对方回合插话，本机完全不回应', async () => {
-    const { service } = setup(['主人', '张朔铭']);
-    await service.start(HOST, { mode: 'pvp', speaker: '主人' });
-    const code = service.status(HOST, { speaker: '主人' }).text.match(/房间(\d{4})/)![1]!;
-    await service.start(GUEST, { room: code, speaker: '张朔铭' });
+    const { service } = setup(['阿澈', '阿岚']);
+    await service.start(HOST, { mode: 'pvp', speaker: '阿澈' });
+    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/房间(\d{4})/)![1]!;
+    await service.start(GUEST, { room: code, speaker: '阿岚' });
 
     // 开局轮到房主：加入者这边说什么都不能有反应
-    assertSilent((await service.say(GUEST, '普攻', { speaker: '张朔铭' })).text, '没轮到还出手');
-    const mine = await service.say(HOST, '普攻', { speaker: '主人' });
+    assertSilent((await service.say(GUEST, '普攻', { speaker: '阿岚' })).text, '没轮到还出手');
+    const mine = await service.say(HOST, '普攻', { speaker: '阿澈' });
     assert.notEqual(mine.text, SILENT, '轮到自己要说得出话');
   });
 });
