@@ -1,5 +1,5 @@
-import { actionLabel, activeActionLabels, responseActionLabels } from './actions.js';
-import { ATTACKS, RESPONSES } from './rules.js';
+import { actionLabel } from './actions.js';
+import { ATTACKS, RESPONSES, availableActiveActions, availableResponseActions } from './rules.js';
 import type { BattleState } from './state.js';
 import {
   isAttackMove,
@@ -33,6 +33,23 @@ const ATTACK_NAME: Record<AttackMove, string> = {
 /** 视角里的自称：自己永远是「我」，另一方叫「对手」 */
 function sideName(side: Side): string {
   return side === 'player' ? '我' : '对手';
+}
+
+/** 把中文选项串成口语列表：普攻、强攻或蓄力 */
+function optionText(labels: string[]): string {
+  if (labels.length === 0) return '';
+  if (labels.length === 1) return labels[0] ?? '';
+  return `${labels.slice(0, -1).join('、')}或${labels[labels.length - 1] ?? ''}`;
+}
+
+/** 当前能量真正能出的主动招式，避免把大招列进做不了的提示 */
+function activeOptions(fighter: { ap: number; maxAp: number; ultLeft: number }): string {
+  return optionText(availableActiveActions(fighter).map(actionLabel));
+}
+
+/** 当前能量真正能做的应对，没能量时只剩承受 */
+function responseOptions(fighter: { ap: number }): string {
+  return optionText(availableResponseActions(fighter).map(actionLabel));
 }
 
 /** 大招次数的口语说法 */
@@ -208,7 +225,7 @@ export function narrateOpening(battle: Battle): string {
       ? ownPendingSentence(battle.pending.move)
       : pendingSentence(battle.pending.move, battle.pending.actor)
     : battle.active === 'player'
-      ? '该我出招，说普攻、强攻、大招或蓄力，听你的'
+      ? `该我出招，说${activeOptions(battle.player)}，听你的`
       : turnHint(battle);
   return joinLines([narrateBattleStart(battle), next]);
 }
@@ -327,12 +344,14 @@ export function narrateUnknownAction(battle: Battle | null): string {
     return narrateOtherDeviceTurn();
   }
   if (battle?.pending) {
-    return `没听清这一手，我还没应对。可以说${responseActionLabels().join('、')}。`;
+    return `没听清这一手，我还没应对。可以说${responseOptions(battle.player)}。`;
   }
   if (battle && battle.active !== 'player') {
     return '还没轮到我出招，等对手先动。';
   }
-  return `没听清这一手，我还没出招。可以说${activeActionLabels().join('、')}。`;
+  return battle
+    ? `没听清这一手，我还没出招。可以说${activeOptions(battle.player)}。`
+    : '没听清这一手，直接说招式就行。';
 }
 
 /** 招式要的能量：播报里要给具体数字，玩家才知道差多少 */
@@ -351,8 +370,8 @@ export function narrateRejection(battle: Battle, rejection: TurnRejection): stri
       // 双人联机里这句多半来自对方设备：只回最短事实，别把长提示再送进对方麦克风
       return battle.mode === 'pvp' ? narrateOtherDeviceWaiting() : '我已经出招了，这一手等对手应对。';
     case 'wrong-stage':
-      if (battle.pending) return '对手这一手还没结算，我只能格挡、闪避或承受。';
-      if (battle.active === 'player') return '该我出招了，可以说普攻、强攻、大招或蓄力。';
+      if (battle.pending) return `对手这一手还没结算，我只能${responseOptions(battle.player)}。`;
+      if (battle.active === 'player') return `该我出招了，可以说${activeOptions(battle.player)}。`;
       return battle.mode === 'pvp' ? narrateOtherDeviceTurn() : '还没轮到我出招，等对手先动。';
     case 'insufficient-ap': {
       const label = actionLabel(rejection.action);
@@ -388,8 +407,8 @@ export function narrateNoBattle(): string {
 /** 玩法说明 */
 export function narrateHelp(): string {
   return joinLines([
-    '轮到我主动时，说普攻、强攻、大招或蓄力；对手出招后，我按你的话格挡、闪避或承受',
-    '念唤出指令也能出招，说「开始游戏」开局、说「战况如何」查状态',
+    '轮到我主动时，看能量出普攻、强攻或大招，不够就先蓄力；对手出招后，我按你的话格挡、闪避或承受',
+    `大招要${ATTACKS.ult.apCost}点能量、每局一次；念唤出指令也能出招，说「开始游戏」或「战况如何」`,
   ]);
 }
 
@@ -437,7 +456,7 @@ export function narratePushIdle(state: BattleState, urgent: boolean): string {
   }
   return urgent
     ? joinLines(['还没听到你的指令，我随时能出手', '直接说招式就行'])
-    : joinLines(['轮到你出招了，我等着你', '可以说普攻、强攻、大招或蓄力']);
+    : joinLines(['轮到你出招了，我等着你', `可以说${activeOptions(state.you)}`]);
 }
 
 /** 玩家已经出手、等对手应对：不催玩家，只陪着等 */
@@ -448,4 +467,12 @@ export function narratePushWaitOpponent(): string {
 /** 房间还没等到人：把房间号再报一遍 */
 export function narratePushWaitGuest(code: string): string {
   return joinLines([narrateWaitingRoom(code)]);
+}
+
+/** 能量刚够大招：主动提醒一次；现在不能出招时说清要等轮到自己 */
+export function narratePushUltReady(state: BattleState): string {
+  if (state.pending || state.active !== 'player') {
+    return '能量够了，大招已经就绪，等轮到你，可以说大招。';
+  }
+  return '能量够了，大招已经就绪，可以说大招了。';
 }

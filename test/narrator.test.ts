@@ -15,6 +15,7 @@ import {
   narratePushIdle,
   narratePushOpponentJoined,
   narratePushOpponentMove,
+  narratePushUltReady,
   narratePushWaitGuest,
   narratePushWaitOpponent,
   narrateRejection,
@@ -63,8 +64,13 @@ describe('开局与状态播报', () => {
   it('开局补一句下一手该谁，恰好两句', () => {
     const playerFirst = narrateOpening(battle());
     assert.match(playerFirst, /该我出招/);
-    assert.match(playerFirst, /说普攻、强攻、大招或蓄力/);
+    assert.match(playerFirst, /说普攻、强攻或蓄力/);
+    assert.doesNotMatch(playerFirst, /大招/);
     assertSpeakable(playerFirst);
+
+    const ready = battle();
+    ready.player.ap = 4;
+    assert.match(narrateOpening(ready), /说普攻、强攻、大招或蓄力/);
 
     const enemyFirst = battle('enemy');
     enemyFirst.pending = { actor: 'enemy', move: 'heavy', damage: 5 };
@@ -355,6 +361,7 @@ describe('提示与房间播报', () => {
     const active = narrateUnknownAction(state);
     assert.match(active, /没听清这一手/);
     assert.match(active, /普攻/);
+    assert.doesNotMatch(active, /大招/);
     assertSpeakable(active);
 
     state.pending = { actor: 'enemy', move: 'light', damage: 3 };
@@ -381,6 +388,7 @@ describe('提示与房间播报', () => {
   it('六种不合法原因都有玩家能听懂的解释', () => {
     const state = battle();
     assert.match(narrateRejection(state, { reason: 'wrong-stage', action: 'light' }), /该我出招了/);
+    assert.doesNotMatch(narrateRejection(state, { reason: 'wrong-stage', action: 'light' }), /大招/);
     const enemyTurn = battle();
     enemyTurn.active = 'enemy';
     assert.match(narrateRejection(enemyTurn, { reason: 'wrong-stage', action: 'light' }), /等对手先动/);
@@ -496,7 +504,8 @@ describe('主动推送', () => {
   it('玩家回合先轻催一次，再重催一次', () => {
     const first = narratePushIdle(state(), false);
     assert.match(first, /轮到你出招了/);
-    assert.match(first, /可以说普攻、强攻、大招或蓄力/);
+    assert.match(first, /可以说普攻、强攻或蓄力/);
+    assert.doesNotMatch(first, /大招/);
     assertSpeakable(first);
 
     const urgent = narratePushIdle(state(), true);
@@ -528,5 +537,21 @@ describe('主动推送', () => {
     const waitGuest = narratePushWaitGuest('1234');
     assert.match(waitGuest, /房间1234还等着另一位玩家加入/);
     assertSpeakable(waitGuest);
+  });
+
+  it('能量刚够大招时主动提醒，现在不能出招就说清要等', () => {
+    const ready = state();
+    ready.you.ap = 4;
+    const active = narratePushUltReady(ready);
+    assert.match(active, /大招已经就绪/);
+    assert.match(active, /可以说大招/);
+    assertSpeakable(active);
+
+    const waiting = state('enemy');
+    waiting.you.ap = 4;
+    const respond = narratePushUltReady(waiting);
+    assert.match(respond, /等轮到你/);
+    assert.match(respond, /可以说大招/);
+    assertSpeakable(respond);
   });
 });

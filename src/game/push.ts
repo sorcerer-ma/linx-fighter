@@ -2,9 +2,11 @@ import {
   narratePushIdle,
   narratePushOpponentJoined,
   narratePushOpponentMove,
+  narratePushUltReady,
   narratePushWaitGuest,
   narratePushWaitOpponent,
 } from './narrator.js';
+import { isUltimateReady } from './rules.js';
 import type { BattleState } from './state.js';
 
 /**
@@ -30,6 +32,7 @@ export const PUSH_GUEST_WAIT_MS = 30_000;
 export type PushKind =
   | 'opponent-move'
   | 'opponent-joined'
+  | 'ult-ready'
   | 'idle-turn'
   | 'idle-respond'
   | 'wait-opponent'
@@ -73,7 +76,11 @@ function signature(battle: BattleState): string {
     pending,
     battle.history.length,
     battle.you.hp,
+    battle.you.ap,
+    battle.you.ultLeft,
     battle.opponent.hp,
+    battle.opponent.ap,
+    battle.opponent.ultLeft,
   ].join('|');
 }
 
@@ -137,6 +144,18 @@ export function createPushEngine(options: PushEngineOptions = {}): PushEngine {
           tone: 'alert',
           at,
         });
+      }
+
+      // 能量刚够大招：这是资源变化，不依赖玩家先开口；对手动作更急时先让给对手动作
+      if (
+        changed &&
+        messages.length === 0 &&
+        previous !== null &&
+        battle.phase === 'battle' &&
+        isUltimateReady(battle.you) &&
+        !isUltimateReady(previous.you)
+      ) {
+        messages.push({ kind: 'ult-ready', text: narratePushUltReady(battle), tone: 'info', at });
       }
 
       // 空闲提醒只在战斗进行中；终局结果已经由玩家那次行动的回复播过，不重复

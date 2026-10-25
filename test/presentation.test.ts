@@ -19,7 +19,17 @@ it('真实结算生成双方归属、数值、下一步，不解析播报',async
 it('未知异常不声称未执行；明确拒绝是not-applied；未入房不造对手事实',()=>{
  assert.equal(presentation('error',null).certainty,'unknown');assert.equal(presentation('rejected',null,{rejection:'wrong-stage'}).certainty,'not-applied');
  const b=createBattle({now:1,seed:1,mode:'pvp',firstMover:'player'});
- const waiting=presentation('status',b,{waiting:true});assert.equal(waiting.facts.next,'wait-join');assert.equal(waiting.facts.opponent,undefined);
+ const waiting=presentation('status',b,{waiting:true});
+ assert.equal(waiting.facts.next,'wait-join');assert.equal(waiting.facts.opponent,undefined);
+});
+
+it('presentation 显式给出大招就绪事实，不用能量数值推断',()=>{
+ const b=createBattle({now:1,seed:1,mode:'solo',firstMover:'player'});
+ assert.equal(presentation('status',b).facts.you?.ultimateReady,false);
+ b.player.ap=4;
+ assert.equal(presentation('status',b).facts.you?.ultimateReady,true);
+ b.player.ultLeft=0;
+ assert.equal(presentation('status',b).facts.you?.ultimateReady,false);
 });
 
 

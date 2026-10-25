@@ -213,4 +213,62 @@ describe('主动推送引擎', () => {
     const own = engine.observe(view({ pending: PENDING_PLAYER, updatedAt: 1_000 }));
     assert.deepEqual(own, []);
   });
+
+  it('能量刚够大招时推一次，同一就绪状态不重复', () => {
+    let now = 0;
+    const base = view({ you: { ...view().you, ap: 3 } });
+    const engine = createPushEngine({ now: () => now });
+    engine.observe(base);
+
+    now = 1_000;
+    const ready = engine.observe(view({ you: { ...base.you, ap: 4 }, updatedAt: 1_000 }));
+    assert.equal(ready.length, 1);
+    assert.equal(ready[0]?.kind, 'ult-ready');
+    assert.equal(ready[0]?.tone, 'info');
+    assert.match(ready[0]?.text ?? '', /大招已经就绪/);
+
+    now = 2_000;
+    assert.deepEqual(engine.observe(view({ you: { ...base.you, ap: 4 }, updatedAt: 1_000 })), []);
+  });
+
+  it('只靠能量变化也能识别就绪，不依赖局面时间戳', () => {
+    let now = 0;
+    const base = view({ you: { ...view().you, ap: 3 }, updatedAt: 0 });
+    const engine = createPushEngine({ now: () => now });
+    engine.observe(base);
+
+    now = 1_000;
+    const ready = engine.observe(view({ you: { ...base.you, ap: 4 }, updatedAt: 0 }));
+    assert.equal(ready.length, 1);
+    assert.equal(ready[0]?.kind, 'ult-ready');
+  });
+
+  it('大招已用完或本来就够时，不提示就绪', () => {
+    let now = 0;
+    const used = view({ you: { ...view().you, ap: 3, ultLeft: 0 } });
+    const engine = createPushEngine({ now: () => now });
+    engine.observe(used);
+    now = 1_000;
+    assert.deepEqual(engine.observe(view({ you: { ...used.you, ap: 4 }, updatedAt: 1_000 })), []);
+
+    const already = createPushEngine({ now: () => now });
+    const full = view({ you: { ...view().you, ap: 4 } });
+    already.observe(full);
+    now = 2_000;
+    assert.deepEqual(already.observe(view({ you: { ...full.you, ap: 5 }, updatedAt: 2_000 })), []);
+  });
+
+  it('同一帧对手出招与大招就绪同时发生，先报更急的对手动作', () => {
+    let now = 0;
+    const base = view({ you: { ...view().you, ap: 3 } });
+    const engine = createPushEngine({ now: () => now });
+    engine.observe(base);
+
+    now = 1_000;
+    const both = engine.observe(
+      view({ you: { ...base.you, ap: 4 }, pending: PENDING_ENEMY, updatedAt: 1_000 }),
+    );
+    assert.equal(both.length, 1);
+    assert.equal(both[0]?.kind, 'opponent-move');
+  });
 });

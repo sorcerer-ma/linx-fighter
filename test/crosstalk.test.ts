@@ -18,6 +18,7 @@ import {
   narratePushIdle,
   narratePushOpponentJoined,
   narratePushOpponentMove,
+  narratePushUltReady,
   narratePushWaitGuest,
   narratePushWaitOpponent,
   narrateRejection,
@@ -103,6 +104,13 @@ function realBroadcasts(): string[] {
   pushPoor.pending = { actor: 'enemy', move: 'heavy', damage: 5 };
   pushPoor.player.ap = 0;
   const pushPoorView = battleState(pushPoor, { room: '1234', side: 'player' });
+  const pushReady = battle('player', 'pvp');
+  pushReady.player.ap = 4;
+  const pushReadyView = battleState(pushReady, { room: '1234', side: 'player' });
+  const pushReadyPending = battle('player', 'pvp');
+  pushReadyPending.player.ap = 4;
+  pushReadyPending.pending = { actor: 'enemy', move: 'heavy', damage: 5 };
+  const pushReadyPendingView = battleState(pushReadyPending, { room: '1234', side: 'player' });
 
   return [
     narrateBattleStart(idle),
@@ -159,6 +167,8 @@ function realBroadcasts(): string[] {
     narratePushOpponentJoined(pushIdle),
     narratePushOpponentMove('heavy', 2),
     narratePushOpponentMove('heavy', 0),
+    narratePushUltReady(pushReadyView),
+    narratePushUltReady(pushReadyPendingView),
     narratePushIdle(pushIdle, false),
     narratePushIdle(pushIdle, true),
     narratePushIdle(pushPendingView, false),

@@ -175,7 +175,7 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 本分支保留五工具、可朗读 text 和兼容的 structuredContent.presentation；平台／沙箱 Agent 每条原话固定调用一次 game_say，理解和执行由服务端负责。沙箱已有整句表达与有限事实检查，失败采用工具原文，不再次执行游戏；这不是 v2 JSON 事实协议。
 
-沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
+沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。提示词用 `presentation.facts.you.ultimateReady` 判断大招是否可表达；平台侧提示词需要手动同步这一字段，不能只按能量数值推断。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
 
 表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；旧平台是否消费 presentation 仍需验证，不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
 
