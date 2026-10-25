@@ -51,7 +51,7 @@
 - **没有对局也能直接开口**：首句「普攻」自动开局，降低演示与试玩门槛。
 - **对局按「设备 + 智能体」归属**：断线重连、多轮对话不丢对局；不同设备天然隔离。
 - **两套传输并存**：Streamable HTTP（`POST /mcp`，平台实测走这条）与 SSE（`GET /mcp` 或 `/sse` + `POST /mcp/message`）；`DELETE /mcp` 直接 200，避免客户端收尾时报错。
-- **为「听」而写的播报**：文案口语化、单次两句内，不用 Markdown、列表或 emoji——当前 `content[].text` 是可朗读文本；v2 时该字段承载 JSON，必须经过 Agent 表达，禁止直接送入 TTS。单人局每回合都报一次自己的生命值与能量（「我14点生命值、1点能量，对手强攻还没结算」），双人局不报——保持简短，双方数值从战况查询里看。
+- **为「听」而写的播报**：文案口语化、单次两句内，不用 Markdown、列表或 emoji——当前 `content[].text` 承载 v2 JSON，必须经过 Agent 表达，禁止直接送入 TTS。单人局每回合都报一次自己的生命值与能量（「我14点生命值、1点能量，对手强攻还没结算」），双人局不报——保持简短，双方数值从战况查询里看。
 - **可替换的存储**：内存 + TTL，接口保持 `get/set/delete/sweep`，需要多实例时换 Redis 实现即可。
 
 ## 快速开始
@@ -75,7 +75,7 @@ pnpm smoke      # 真实调用链自检：initialize → tools/list → 开局 /
 ```bash
 pnpm typecheck     # 唯一的静态门禁（没有 lint）
 pnpm test          # 单元测试 + MCP 协议端到端
-pnpm coverage      # 覆盖率并校验阈值（行 95% / 分支 90% / 函数 95%）
+pnpm coverage      # 覆盖率并校验阈值（行 95% / 分支 95% / 函数 95%）
 pnpm coverage:lcov # 生成 coverage/lcov.info，供 Codecov 上传
 pnpm validate      # 规则对拍：8 种策略 × 组合 2000 局，共 256,000 局
 pnpm build         # 编译到 dist/
@@ -216,7 +216,7 @@ flowchart TB
 3. `GameService.say()` 先用 `readCommand` 把原话读成一条命令：房间管理、玩法、战况直接回，招式进对局流水线（认不出时再问命令路由模型）；
 4. 这一手交给所在的桌子结算：单人局用自己的对局键、双人局用挑战编号取事务锁，换回自己的视角再进引擎；模型返回后确认还是同一局、同一座位才写回；
 5. 规则层 `resolveTurn` 推进一个阶段并返回新状态与事件；认不出招式时**不推进回合**，只提示当前可用的说法；
-6. 编排从真实事件生成 JSON，遗漏事件按身份／局号一次消费；Agent 依据事实表达，TTS 只播放最终 reply；
+6. 编排从真实事件生成 JSON，遗漏事件按身份／局号一次消费；Agent 依据事实表达，TTS 按顺序播放最终 speech.segments（旧端保留拼接 reply）；
 7. 即时话术播放完成后，按 need 等待一次；取消、超时不推进游戏。旁路：页面用 `EventSource` 订阅 `GET /events` 拿只读局面，脚本用 `GET /state` 拿同一份快照——两者都不参与判断。
 
 ### 对局状态机
@@ -314,7 +314,7 @@ flowchart TB
 
 [![codecov](https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg)](https://codecov.io/gh/sorcerer-ma/linx-fighter)
 
-`node:test` + 内置覆盖率，不引入额外测试框架。用例数与行/分支/函数覆盖率以 `pnpm coverage` 的最新输出为准；CI 与本地都会校验阈值（行 95% / 分支 90% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
+`node:test` + 内置覆盖率，不引入额外测试框架。用例数与行/分支/函数覆盖率以 `pnpm coverage` 的最新输出为准；CI 与本地都会校验阈值（行 95% / 分支 95% / 函数 95%），低于阈值直接失败。CI 用 `pnpm coverage:lcov` 生成 lcov 并上传 Codecov（公开仓库无需 token；私有仓库在仓库 secrets 配 `CODECOV_TOKEN`）。
 
 | 测试 | 覆盖内容 |
 | --- | --- |
@@ -386,7 +386,7 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 
 | 项目 | 目前只验证到 |
 | --- | --- |
-| 唤醒、ASR、TTS | 沙箱页面用浏览器语音替身走通；真机的唤醒距离、识别率与嘈杂环境下的播报效果未知 |
+| 唤醒、ASR、TTS | 沙箱默认浏览器语音，已接入可选流式云 ASR、情绪 TTS 和三套绑定人设；最终整合版仍待真实语音与听感验收，真机效果未知 |
 | 设备侧动作（`structuredContent.funcs` 的 `linx_play` / `linx_stop` / `change_role`） | 只按平台文档确认了下发格式；服务端目前不返回这类结构，设备是否真的执行未验证 |
 | 平台智能体提示词 | 文档里的模板与本地模拟可用；真机上长时间对话是否稳定未验证 |
 
@@ -532,3 +532,7 @@ tests/simulation/     Python 参考模拟与原始结果（区别于 test/ 的�
 `game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。等待服务端最多30秒、客户端留35秒，取消静默且不消费事实。
 
 手机页面保留七类主动提醒：对手出招、对手接受挑战、大招资源就绪、主动／响应空闲、等待对手、等待接受挑战。SSE push是带身份／对局／一次性ID的信号，不是直接可播台词；沙箱向固定游戏服务取得当下事实，再交真实Agent表达与统一播放队列。入房／出招与wait_event消费去重，旧局、失效或取消信号不播，不重做游戏动作。忙碌、真实说话、输入或隐藏时让路；语音效果仍需平台与真人试听验收。
+
+### 沙箱语音与演示人设
+
+默认保留浏览器语音，显式配置后可启用豆包流式 ASR／TTS 或固定本机音频桥接。部分识别只展示，最终识别去重提交；所有音频段实际结束后才等待对手，失败不会重做游戏操作。知性灿灿、擎苍、天才童声三套 profile 将音色与伙伴风格绑定，个体名字独立；切换取消旧请求与播放，不重置对局。配置和验收边界见[沙箱说明](docs/testing/sandbox.md#直接云语音配置)。
