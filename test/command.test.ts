@@ -18,6 +18,8 @@ describe('一句话读成命令', () => {
     for (const text of [
       '回能量', '回点能量', '回满能量', '补能量', '补点能量', '补满能量',
       '攒能量', '攒点能量', '攒满能量', '存能量', '蓄能量', '聚能量', '我回点能量',
+      // 带「大招」二字的长词留在本地：删了会被「大招」的包含匹配抢走
+      '憋大招', '攒大招', '留大招', '存大招', '我在憋大招', '先憋大招',
     ]) {
       const command = readCommand(text);
       assert.equal(command.kind, 'turn', `「${text}」应读成 turn`);
@@ -65,12 +67,19 @@ describe('一句话读成命令', () => {
     assert.notEqual(readCommand('今天1234').kind, 'join-room');
   });
 
-  it('招式读成 turn，同音误识别与唤出指令都算', () => {
-    for (const text of ['攻击', '普攻', '公鸡', '强攻', '格挡', '闪避']) {
+  it('招式读成 turn，拼音规则接不住的误识别与唤出指令都算', () => {
+    for (const text of ['攻击', '普攻', '大着', '强攻', '格挡', '闪避']) {
       expectKind(text, 'turn');
     }
     assert.deepEqual(readCommand('共鸣斩破军'), { kind: 'turn', action: 'light', chant: '共鸣斩破军' });
     assert.deepEqual(readCommand('天倾共此声'), { kind: 'turn', action: 'ult', chant: '天倾共此声' });
+  });
+
+  it('本地只认高频说法，语义口语交给模型', () => {
+    // 这些说法原本靠长别名表覆盖，现在收敛掉，改由命令路由按阶段判断
+    for (const text of ['猛攻', '抡他', '生吃这一下', '防一下', '躲一下']) {
+      expectKind(text, 'route');
+    }
   });
 
   it('认不出来的句子交给模型路由', () => {
@@ -126,6 +135,22 @@ describe('不该出手的表达', () => {
     }
   });
 
+  it('收窄掉的语义口语与 ASR 误写照样参与歧义判定', () => {
+    // 这些说法本地不再直接执行，但一句话点到两招仍要让玩家重说，
+    // 否则规则会替他挑剩下那一招打出去
+    for (const text of ['猛攻还是普攻', '公鸡还是强攻', '重机还是大招', '成受还是格挡']) {
+      assert.deepEqual(readCommand(text), { kind: 'refused', why: 'ambiguous' }, `「${text}」没说清要出哪一招`);
+    }
+    // 「回能量」不在招式表里，也是蓄力：和另一招并提同样要重说
+    for (const text of ['回能量还是强攻', '攒能量还是强攻', '回满能量还是放大招']) {
+      assert.deepEqual(readCommand(text), { kind: 'refused', why: 'ambiguous' }, `「${text}」没说清要出哪一招`);
+    }
+    // 只点到一种就照常交给模型，不因为「提及」词表变宽就拦下来
+    for (const text of ['猛攻', '公鸡', '蓄势待发']) {
+      assert.equal(readCommand(text).kind, 'route', `「${text}」应交给模型路由`);
+    }
+  });
+
   it('正常出招不拦截', () => {
     // 「特别」里的「别」不是否定，带形容词的出招照样生效
     for (const text of ['攻击', '共鸣斩破军', '我要强攻他', '特别强的攻击']) {
@@ -178,6 +203,28 @@ describe('不该出手的表达', () => {
     ]) {
       assert.deepEqual(readCommand(text), { kind: 'refused', why: 'ambiguous' }, `「${text}」应拦住两招并存`);
     }
+  });
+
+  it('对手在蓄力不等于本机蓄力', () => {
+    // 「对手回能量」是在描述对手，剥掉对手子句后本机没有出招，也就不能白涨能量
+    for (const text of ['对手回能量，我先等等', '对手攒点能量，我先看看', '对手补能量，我先不动']) {
+      assert.equal(readCommand(text).kind, 'status', `「${text}」只是描述对手，不能当成我蓄力`);
+    }
+    // 自己那半句照常执行：剥掉对手子句不影响本机的这一手
+    for (const [text, action] of [
+      ['对手回能量，我强攻', 'heavy'],
+      ['对手回能量，我也回能量', 'charge'],
+      ['对手攒能量，我先格挡', 'guard'],
+      ['对手攒点能量，我回能量', 'charge'],
+    ] as const) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应照常出招`);
+      if (command.kind === 'turn') assert.equal(command.action, action, `「${text}」读成了 ${command.action}`);
+    }
+    // 对手子句里带招式、自己那半句也带招式：歧义判定只看留下的部分
+    assert.deepEqual(readCommand('对手先蓄力，我回能量还是强攻'), { kind: 'refused', why: 'ambiguous' });
+    // 没有标点的对手子句不剥：这句话到底谁出招没说清，宁可让玩家重说也别替他打出去
+    assert.deepEqual(readCommand('对手回能量还是强攻'), { kind: 'refused', why: 'ambiguous' });
   });
 
   it('问号在去掉标点之前就要认出来', () => {

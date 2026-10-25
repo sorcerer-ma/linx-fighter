@@ -692,7 +692,7 @@ export class GameService {
     const routed: RoutedHand = { table, battleId: table.battle()?.id ?? null };
     const stage = routeStage(table.view(sessionKey), question);
     // 端侧同音纠错排在模型前面：规则认不出时它只要几毫秒，
-    // 用不着为一个「轻机」等一次模型往返。
+    // 用不着为一个「公鸡」等一次模型往返。
     // 只在轮到自己出招的两个阶段猜：问句问的是意思，等待阶段那句话多半不是本机说的。
     const spokenStage = spokenStageOf(stage);
     const spoken = !spokenStage || !this.fuzzy ? null : this.fuzzy(raw, spokenStage);

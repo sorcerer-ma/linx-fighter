@@ -328,8 +328,13 @@ describe('统一入口与局面快照', () => {
     assert.equal(hit.battle?.history.length, 1);
     assert.match(hit.text, /普攻/);
 
+    // 「傻逼」是平台吞掉「闪避」鼻音后的误转写：识别层要接住，不能被当脏话拒绝
+    const dodge = await service.say(KEY, '傻逼');
+    assert.equal(dodge.battle?.history[1]?.response, 'dodge');
+    assert.match(dodge.text, /躲开|闪避/);
+
     const miss = await service.say(KEY, '今天天气不错');
-    assert.equal(miss.battle?.history.length, 1);
+    assert.equal(miss.battle?.history.length, 2);
     assert.match(miss.text, /没听清/);
   });
 
@@ -546,6 +551,28 @@ describe('异步与状态的边界', () => {
     assert.equal(store.get(KEY), armed);
     assert.equal(armed.player.ap, 5);
     assert.equal(armed.player.ultLeft, 1);
+  });
+
+  it('收窄词表后的口语不替玩家出招', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+    assert.equal(before.player.ap, 3);
+
+    // 这些口语本地不再直接执行，但句子里点到两招时仍要拦住：能量与战报都不动
+    for (const text of ['猛攻还是普攻', '公鸡还是强攻', '回能量还是强攻']) {
+      const result = await service.say(KEY, text);
+      assert.match(result.text, /两种招式/, `「${text}」应让玩家重说`);
+      assert.equal(store.get(KEY), before, `「${text}」不该动对局`);
+    }
+
+    // 「憋大招」是攒能量：能量加一点，一局一次的大招留着
+    const charged = await service.say(KEY, '憋大招');
+    assert.equal(charged.battle?.history.length, 1);
+    assert.equal(charged.battle?.history[0]?.action, 'charge');
+    assert.equal(charged.battle?.player.ap, 4);
+    assert.equal(charged.battle?.player.ultLeft, 1);
   });
 
   it('没有对局时，否定句不会顺手开一局', async () => {
