@@ -99,13 +99,13 @@ function textOf(result: any): string {
 }
 
 describe('MCP 协议链路', () => {
-  it('tools/list 暴露五个游戏工具', async () => {
+  it('tools/list 暴露六个游戏工具（含挂起等对手）', async () => {
     const client = await connect(DEVICE_A, 'list-session');
     const response = await client.request('tools/list');
     assert.equal(response.error, undefined);
 
     const names = (response.result?.tools ?? []).map((tool: { name: string }) => tool.name).sort();
-    assert.deepEqual(names, ['game_action', 'game_help', 'game_say', 'game_start', 'game_status']);
+    assert.deepEqual(names, ['game_action', 'game_help', 'game_say', 'game_start', 'game_status', 'wait_event']);
 
     for (const tool of response.result.tools) {
       assert.ok(tool.description.length > 0, `${tool.name} 应有描述，平台模型靠它决定何时调用`);

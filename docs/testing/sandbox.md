@@ -195,6 +195,33 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 - 连接建立立刻推一次当前局面，之后只在局面变化时推；每 15 秒发一行注释 `: ping` 保活。
 - 没有对局时 `battle: null`。
 - `revision` 每条连接内自增，页面据此丢弃乱序。
+- 同一条连接上还有 `push` 事件，见下节；不认识该事件的旧客户端忽略即可。
+
+### 主动推送（event: push）
+
+服务端会在局面变化或玩家空闲一段时间后主动推一条提醒，不需要页面先发问。连接建立后的第一帧只建立基线，不补推连接前的旧事件；重连后的空闲计时从新连接算起，不会立刻催上一局留下的空闲。
+
+```
+event: push
+data: {"type":"push","device":"web-p1","agent":"linx-sandbox","kind":"opponent-move","text":"对手强攻还没结算，我该格挡、闪避，还是承受？","tone":"alert","at":1761284004000}
+```
+
+| `kind` | 触发时机 | `tone` |
+| --- | --- | --- |
+| `opponent-joined` | 双人房对手加入，附开局事实 | `info` |
+| `opponent-move` | 对手锁定招式，等你应对 | `alert` |
+| `ult-ready` | 能量刚够大招且本局还没用过，推一次；现在不能出招时说清等轮到自己 | `info` |
+| `idle-turn` | 轮到你出招，空闲 15 秒先轻催，40 秒再重催一次 | `wait` |
+| `idle-respond` | 对手招式还等着你定，空闲 40 秒补一次 | `wait` |
+| `wait-opponent` | 轮到你等对手，30 秒提醒一次 | `wait` |
+| `wait-guest` | 房间一直没人加入，30 秒提醒一次 | `wait` |
+
+- 同一个局面只催到规定次数；终局不推，避免和玩家那次行动的回复重复。
+- 大招就绪只认服务端 `presentation.facts.you.ultimateReady`：能量不足、本局次数用完或当前不能出招时，不会说“可以用大招”；就绪推送每次就绪只发一次。
+- `text` 是伙伴第一人称的短句，最多两句、约 60 字；页面可直接显示，也可以交给 TTS。
+- 空闲基准取「局面最后变化、连接建立、本次变化」三者较晚者；玩家行动结算后局面变化，计时重新开始。
+- 页面收到 `push` 会写进对话记录并朗读；正在朗读时只留最新一条排队，玩家正在说话、打字或页面隐藏时丢弃，不抢麦。麦克风只是开着待机不算「在说话」，朗读会短暂暂停收音再恢复。排队与丢弃逻辑在 `sandbox/public/push.js`。
+- `/api/events` 代理原样透传 `push`，不需要额外配置。
 
 `battle` 快照（已按当前玩家视角镜像，`player` 永远是你自己；`waiting` 只在双人房里对手还没加入时为 `true`）：
 
@@ -279,7 +306,7 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 
 单源提示词为 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md)，`startSandbox` 在服务端启动时读取一次。`sandbox/config.ts` 的 `agent` 组读取 `SANDBOX_AGENT_MODEL`、`SANDBOX_AGENT_BASE_URL`、`SANDBOX_AGENT_API_KEY`，不继承游戏服务模型或密钥；不自动读取.env，模型名和服务商没有默认值。提示词路径按项目位置解析，不随启动工作目录改变。缺失或空提示词报错。
 
-`SandboxAgent`每条原话只调用一次game_say，由服务端理解与执行。工具文本/isError及sourceReply保留，reply是页面实际展示和朗读的文字。MCP新增兼容字段structuredContent.presentation（version=1）：kind、certainty、facts和renderings。facts包括真实双方资源、轮次阶段、裁决events、下一步与明确拒绝原因；来自ServiceResult、Battle和引擎事件，不解析播报。等待朋友加入时不伪造对手资源；异常确定性为unknown，不能说未执行。
+`SandboxAgent`每条原话只调用一次game_say，由服务端理解与执行。工具文本/isError及sourceReply保留，reply是页面实际展示和朗读的文字。MCP新增兼容字段structuredContent.presentation（version=1）：kind、certainty、facts和renderings。facts包括真实双方资源（本方含 `ultimateReady`）、轮次阶段、裁决events、下一步与明确拒绝原因；来自ServiceResult、Battle和引擎事件，不解析播报。等待朋友加入时不伪造对手资源；异常确定性为unknown，不能说未执行。
 
 战况与已提交的行动结果提供由同一事实生成的完整句子候选；补账、唤出词与必要前缀完整保留。已确认开局（含发起挑战等待／接受挑战）、战况、明确重说与拒绝均可整句人设表达；重说和拒绝标为not-applied，不得说已经出手。未覆盖的帮助、闲聊、归属静默和结果未知异常仍使用原文。服务端默认text保持兼容；异常文案改为结果未确认、先核实战况，避免泛化“没生效，再说一次”。
 

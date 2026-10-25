@@ -1,5 +1,6 @@
 import { createConversation } from './conversation.js';
 import { createListeningSession } from './listening.js';
+import { createPushSpeaker } from './push.js';
 import { companionView, newSettlement, renderCompanion, opponentDetails } from './companion.js';
 
 /*
@@ -10,6 +11,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
  *  2. 输入：唯一路径 POST /api/say，body { deviceId, text }。
  *  3. 局面：GET /api/config 拿 eventsUrl → EventSource 监听 state 事件，revision 单调丢弃。
  *  4. 语音：浏览器 SpeechRecognition 识别（实时填输入框、结束即发送），speechSynthesis 朗读 reply。
+ *  5. 主动推送：服务端在 /events 上推 push 事件，伙伴在对手出招、进房或玩家发呆时先开口。
  *
  * 身份只写 sessionStorage：localStorage 会让所有标签页变成同一个人。
  */
@@ -75,6 +77,21 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var settlementTimer = null;
   var previousBattle = null;
   var listening = false;
+  // 识别器活跃不等于玩家在说话：只有 interim 收到字时才让推送让路
+  var hearing = false;
+  var hearingTimer = null;
+
+  // 服务端主动推送：页面忙、玩家在说话或正在朗读时都不抢麦
+  var pushSpeaker = createPushSpeaker({
+    speak: function (text) { speak(text); },
+    busy: function () { return busy; },
+    speaking: function () { return activeUtterance !== null; },
+    hearing: function () { return hearing; },
+    composerOpen: function () { return !el.composer.hidden; },
+    hidden: function () { return document.hidden; },
+    // 每条 State 事件 revision 都会变；排队提醒靠它判断是否已过期
+    version: function () { return state.revision; }
+  });
 
   /* ---------------- 身份 ---------------- */
 
@@ -199,12 +216,14 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       // revision 每条连接内自增，重连后必须从头接受
       state.revision = -2;
       previousBattle = null;
+      pushSpeaker.clear();
       setConn('connected');
     };
     source.onerror = function () {
       setConn(source && source.readyState === 2 ? 'offline' : 'connecting');
     };
     source.addEventListener('state', onStateEvent);
+    source.addEventListener('push', onPushEvent);
   }
 
   function onStateEvent(event) {
@@ -222,12 +241,29 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     applyBattle(payload.battle);
   }
 
+  // 服务端主动推送：先写进对话，再按页面当前状态决定是否开口
+  function onPushEvent(event) {
+    var payload;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (err) {
+      return;
+    }
+    if (!payload || typeof payload.text !== 'string') return;
+    var text = payload.text.trim();
+    if (!text) return;
+    pushReply(text, payload.tone === 'alert' ? 'warn' : 'normal', 'partner');
+    pushSpeaker.receive(text);
+  }
+
   /* ---------------- 发送 ---------------- */
 
   function say(text) {
     var value = String(text == null ? '' : text).trim();
     if (!value || busy) return;
     busy = true;
+    // 玩家已经提交新行动，之前排队等朗读的提醒不再属于当前局面
+    pushSpeaker.clear();
     conversation.append('player', value);
     el.transcript.textContent = '玩家 · 已发送：' + value;
     el.micStatus.textContent = '等待伙伴回复';
@@ -293,6 +329,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   /* ---------------- 渲染 ---------------- */
 
   function applyBattle(battle) {
+    // 局面变了，排队中的提醒说的是上一手，不能再补播
+    pushSpeaker.clear();
     const event = newSettlement(previousBattle, battle);
     previousBattle = battle;
     state.battle = battle;
@@ -369,6 +407,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       ttsTimer = null;
       activeUtterance = null;
       el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
+      // 正在朗读时到达的推送，接在这一句后面说；它自己的 finish 会再恢复聆听
+      if (pushSpeaker.flush()) return;
       if (!busy && el.composer.hidden && listener) listener.resume();
     }
     utter.onend = utter.onerror = finish;
@@ -404,10 +444,33 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     return SpeechRecognitionCtor ? '页面不是 HTTPS，点键盘输入' : '此浏览器不支持语音，点键盘输入';
   }
 
+  // 识别器停在两次收音之间时也要清掉「正在说话」，免得推送一直被挡
+  function markQuiet() {
+    clearTimeout(hearingTimer);
+    hearingTimer = null;
+    hearing = false;
+  }
+
+  // 只有 interim 真的带字才算玩家在说话；字停 800ms 就视为这句结束
+  function markHearing(text, final) {
+    clearTimeout(hearingTimer);
+    hearingTimer = null;
+    if (final || !String(text == null ? '' : text).trim()) {
+      hearing = false;
+      return;
+    }
+    hearing = true;
+    hearingTimer = setTimeout(function () {
+      hearing = false;
+      hearingTimer = null;
+    }, 800);
+  }
+
   var listener = createListeningSession({
     Recognition: SpeechRecognitionCtor,
     onState: function (session) {
       listening = session.active;
+      if (!session.active) markQuiet();
       el.mic.dataset.listening = session.active ? 'true' : 'false';
       el.mic.setAttribute('aria-pressed', String(session.enabled));
       el.mic.setAttribute('aria-label', session.enabled ? '停止持续聆听' : '开启持续聆听');
@@ -415,10 +478,15 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       render();
     },
     onText: function (text, final) {
+      markHearing(text, final);
       el.transcript.textContent = (final ? '玩家 · 已识别：' : '玩家 · 识别中：') + text;
     },
-    onFinal: function (text) { say(text); },
+    onFinal: function (text) {
+      markQuiet();
+      say(text);
+    },
     onError: function (code) {
+      markQuiet();
       pushReply(code === 'not-allowed' || code === 'service-not-allowed'
         ? '麦克风权限未允许，聆听已停止。请允许权限后重新开启。'
         : '语音识别已中断，聆听已停止。请检查麦克风后重新开启。', 'warn');
@@ -473,12 +541,13 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     if (document.hidden) {
       stopSpeaking();
       stopListening();
+      pushSpeaker.clear();
       settlement = null;
       clearTimeout(settlementTimer);
       render();
     }
   });
-  window.addEventListener('pagehide', function () { stopListening(); stopSpeaking(); });
+  window.addEventListener('pagehide', function () { stopListening(); stopSpeaking(); pushSpeaker.clear(); });
 
   // iOS 键盘弹出不会缩小布局视口：用 visualViewport 的差值把底部输入区顶到键盘上方
   function watchKeyboard() {

@@ -7,6 +7,7 @@ import { extractAdminToken, isAdminAllowed } from '../admin/access.js';
 import { buildAdminOverview } from '../admin/overview.js';
 import { ADMIN_PAGE_HTML, adminDeniedPage } from '../admin/page.js';
 import { createRateLimiter } from '../admin/ratelimit.js';
+import { createPushEngine } from '../game/push.js';
 import type { GameService } from '../game/service.js';
 import type { BattleState } from '../game/state.js';
 import type { Logger } from '../log.js';
@@ -189,22 +190,46 @@ export function createApp(deps: AppDependencies): express.Express {
 
     let revision = 0;
     let lastFingerprint = '';
+    // 每条连接各有一个推送引擎：重连后从当前局面重新起算，不补发上次的提醒
+    const companion = createPushEngine();
     // 只在快照变化时推，避免每 400ms 一次空转把手机流量打满
     const push = (force: boolean): void => {
       const snap = service.snapshot(battleKey(ctx));
       const battle = snap?.state ?? null;
+      // 空闲计时也要每轮走一次，所以先 observe，再决定要不要推 state
+      const messages = companion.observe(battle);
       const fingerprint = JSON.stringify(battle);
-      if (!force && fingerprint === lastFingerprint) return;
-      lastFingerprint = fingerprint;
-      revision += 1;
-      const payload = {
-        type: 'state',
-        device: ctx.deviceId,
-        agent: ctx.agentId,
-        revision,
-        battle,
-      };
-      res.write(`event: state\ndata: ${JSON.stringify(payload)}\n\n`);
+      const changed = fingerprint !== lastFingerprint;
+      if (force || changed) {
+        lastFingerprint = fingerprint;
+        revision += 1;
+        const payload = {
+          type: 'state',
+          device: ctx.deviceId,
+          agent: ctx.agentId,
+          revision,
+          battle,
+        };
+        res.write(`event: state\ndata: ${JSON.stringify(payload)}\n\n`);
+      }
+      // 先让页面拿到新局面，再让伙伴开口；未知事件类型的老客户端会直接忽略
+      for (const message of messages) {
+        const payload = {
+          type: 'push',
+          device: ctx.deviceId,
+          agent: ctx.agentId,
+          kind: message.kind,
+          text: message.text,
+          tone: message.tone,
+          at: message.at,
+        };
+        res.write(`event: push\ndata: ${JSON.stringify(payload)}\n\n`);
+        logger.debug('主动推送', {
+          deviceId: ctx.deviceId,
+          agentId: ctx.agentId,
+          kind: message.kind,
+        });
+      }
     };
 
     push(true);
@@ -268,7 +293,7 @@ export function createApp(deps: AppDependencies): express.Express {
     const session: McpSession = { transport, ctx };
 
     const server = createMcpServer();
-    registerGameTools(server, { service, logger, ctx });
+    registerGameTools(server, { service, logger, ctx, waitTimeoutMs: config.waitEventTimeoutMs });
 
     sessions.set(sessionId, session);
     logger.info('SSE 连接建立', { sessionId, deviceId: ctx.deviceId, agentId: ctx.agentId });
@@ -318,7 +343,7 @@ export function createApp(deps: AppDependencies): express.Express {
     });
 
     const server = createMcpServer();
-    registerGameTools(server, { service, logger, ctx });
+    registerGameTools(server, { service, logger, ctx, waitTimeoutMs: config.waitEventTimeoutMs });
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

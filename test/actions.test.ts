@@ -22,7 +22,7 @@ describe('招式识别', () => {
     assert.equal(parseAction('格挡'), 'guard');
     assert.equal(parseAction('闪避'), 'dodge');
     assert.equal(parseAction('硬抗'), 'take');
-    assert.equal(parseAction('attack'), 'light');
+    assert.equal(parseAction('light'), 'light');
     assert.equal(parseAction('  HEAVY  '), 'heavy');
     assert.equal(parseAction('攻击。'), 'light');
   });
@@ -32,21 +32,40 @@ describe('招式识别', () => {
     assert.equal(parseAction('先调息片刻'), 'charge');
     assert.equal(parseAction('向右闪避！'), 'dodge');
     assert.equal(parseAction('我选择格挡'), 'guard');
-    assert.equal(parseAction('生吃这一下'), 'take');
+    assert.equal(parseAction('硬抗这一下'), 'take');
   });
 
-  it('容忍 ASR 同音/近音误识别', () => {
-    // 平台侧 ASR 会把「攻击」转成「公鸡」这类同音字，只能在我们这层兜住
-    assert.equal(parseAction('公鸡'), 'light');
-    assert.equal(parseAction('我要公鸡你'), 'light');
-    assert.equal(parseAction('工击'), 'light');
-    assert.equal(parseAction('墙攻'), 'heavy');
-    assert.equal(parseAction('大召'), 'ult');
-    assert.equal(parseAction('回七'), 'charge');
-    assert.equal(parseAction('多开'), 'dodge');
-    assert.equal(parseAction('防疫'), 'dodge');
-    assert.equal(parseAction('哥挡'), 'guard');
-    assert.equal(parseAction('成受'), 'take');
+  it('精确层只兜拼音规则接不住的误识别', () => {
+    // 同音、近音、吞韵尾的错字交给 asr.ts，对应断言在 test/asr.test.ts；
+    // 这里只留语义级误听和音节表尚未收录的字。
+    assert.equal(parseAction('大着'), 'ult');
+    assert.equal(parseAction('可党'), 'guard');
+    assert.equal(parseAction('狠抗'), 'take');
+    assert.equal(parseAction('硬坑'), 'take');
+    assert.equal(parseAction('硬航'), 'take');
+    assert.equal(parseAction('长寿'), 'take');
+  });
+
+  it('收窄后的口语只判提及，不直接执行', () => {
+    // 执行层只留高频说法，这些口语交给模型路由；但它们仍算「点到了这一招」
+    for (const text of ['猛攻', '重机', '大召', '哥挡', '成受', '公鸡', '蓄势待发']) {
+      assert.equal(parseAction(text), null, `「${text}」不该被本地直接执行`);
+    }
+    for (const [text, ids] of [
+      ['猛攻还是普攻', ['heavy', 'light']],
+      ['公鸡还是强攻', ['heavy', 'light']],
+      ['回能量还是强攻', ['charge', 'heavy']],
+      ['蓄势待发还是硬扛', ['charge', 'take']],
+    ] as const) {
+      assert.deepEqual([...matchActionIds(text)].sort(), [...ids].sort(), `「${text}」点到了两种招式`);
+    }
+  });
+
+  it('带「大招」的蓄力说法仍读成蓄力，不落进大招', () => {
+    // 这两个字一删，「憋大招」会被包含匹配的「大招」抢走，打掉一局一次的大招
+    for (const text of ['憋大招', '攒大招', '留大招', '存大招']) {
+      assert.equal(parseAction(text), 'charge', `「${text}」是攒能量，不是放大招`);
+    }
   });
 
   it('念出唤出指令也能出招，并带回原文', () => {
@@ -67,8 +86,8 @@ describe('招式识别', () => {
     }
   });
 
-  it('单字别名只在精确匹配生效，不误判日常对话', () => {
-    assert.equal(parseAction('躲'), 'dodge');
+  it('单字只保留最高频的「打」，其余短句交给命令路由', () => {
+    assert.equal(parseAction('躲'), null);
     assert.equal(parseAction('打'), 'light');
     assert.equal(parseAction('打开菜单'), null);
     assert.equal(parseAction('讲个笑话'), null);
@@ -100,7 +119,7 @@ describe('一句话里的招式集合', () => {
   it('单招式只返回一个 id', () => {
     assert.deepEqual(matchActionIds('攻击'), ['light']);
     assert.deepEqual(matchActionIds('大招'), ['ult']);
-    assert.deepEqual(matchActionIds('我要公鸡你'), ['light']);
+    assert.deepEqual(matchActionIds('我要攻击你'), ['light']);
     assert.deepEqual(matchActionIds('  HEAVY  '), ['heavy']);
     assert.deepEqual(matchActionIds('攻击。'), ['light']);
   });
@@ -124,9 +143,9 @@ describe('一句话里的招式集合', () => {
     assert.deepEqual(matchActionIds('打开菜单'), []);
   });
 
-  it('单字别名只在整句精确匹配时生效', () => {
+  it('单字只保留「打」，其余短句不再靠别名兜底', () => {
     assert.deepEqual(matchActionIds('打'), ['light']);
-    assert.deepEqual(matchActionIds('躲'), ['dodge']);
+    assert.deepEqual(matchActionIds('躲'), []);
     // 「打开菜单」里的「打」不是出招，也不能被当成第二种招式
     assert.deepEqual(matchActionIds('打开菜单'), []);
     assert.deepEqual(matchActionIds('打开大招'), ['ult']);
@@ -145,7 +164,7 @@ describe('一句话里的招式集合', () => {
   });
 
   it('matchAction 仍是单招式结果，且落在 matchActionIds 里', () => {
-    for (const text of ['大招还是强攻', '攻击或者闪避', '全力攻击', '我要公鸡你']) {
+    for (const text of ['大招还是强攻', '攻击或者闪避', '全力攻击', '我要攻击你']) {
       const single = matchAction(text);
       assert.ok(single, `「${text}」应有 matchAction 结果`);
       assert.ok(matchActionIds(text).includes(single.id), `「${text}」的 matchAction 应是命中招式之一`);

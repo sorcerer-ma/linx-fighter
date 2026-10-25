@@ -11,10 +11,11 @@
 | `game_action` | 「强攻」「躲开」「共鸣斩破军」 | `action`（招式 ID 或玩家原话）、`speaker`? | 主动：`light`/`heavy`/`ult`/`charge`；应对：`guard`/`dodge`/`take`；不合法不推进 |
 | `game_status` | 「战况」「我还剩多少生命值」 | `speaker`? | 双方生命值、能量、大招次数、回合与当前该谁动 |
 | `game_help` | 「怎么玩」「你能做什么」 | `speaker`? | 玩法与可用说法 |
+| `wait_event` | 等对手时由 Agent 调用，没有玩家原话 | 无 | 把这次请求挂在服务端，等对手应招、对手进房时唤醒；轮到自己出招、单人局、无进行中对局或超时/取消时立刻返回 |
 
-- 平台固定只调用 `game_say`，原话一字不改；其余四个工具是已有接入的兼容能力。一次结果未知后不能自动换工具重试。
+- 平台固定只调用 `game_say`，原话一字不改；其余五个工具是已有接入的兼容能力，其中 `wait_event` 只负责挂起等对手，不判断玩法。
 - 所有工具都可带 `speaker`（不超过 20 字）。平台声纹命中时会填，只用于日志与称呼，不参与招式裁决和对局归属。
-- v2 目标清单只有 `game_say` 与 `wait_event`；后者尚未注册，不能按两工具验收当前服务。
+- `wait_event` 是第六个工具，但 v2 的两工具目标（`game_say` + `wait_event`、JSON 事实）仍未实现，不能按目标协议验收当前服务。挂起时长由 `WAIT_EVENT_TIMEOUT_MS` 控制，默认 30000 毫秒，夹在 1000～120000；唤醒、超时与平台取消都按同一返回外形给文本，挂起期间不占对局事务。
 
 ## HTTP 入口
 
@@ -26,7 +27,7 @@
 | `DELETE /mcp` | 结束 MCP 会话 |
 | `GET /health` | 存活探针 |
 | `GET /state` | 当前视角的局面快照，供调试与状态流复用，不推进对局 |
-| `GET /events` | SSE 状态流，局面变化时推送，页面与手机只读消费 |
+| `GET /events` | SSE 状态流：`state` 局面变化推送，`push` 主动提醒（对手进房/锁定招式、大招就绪、空闲催办），页面与手机只读消费 |
 | `GET /admin` | 只读后台监控页；配置 `ADMIN_TOKEN` 后需要口令 |
 | `GET /admin/api/rooms` | 监控页数据：房间为主，单人局单列 |
 | `GET`/`POST /debug/*` | `state`、`start`、`action`、`status` 四个调试端点；由 `ENABLE_DEBUG_ENDPOINTS` 控制，生产环境关闭 |

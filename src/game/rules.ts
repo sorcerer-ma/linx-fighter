@@ -5,7 +5,7 @@
  * 每个取值和调整理由都要同步写进 docs/game/game-design.md，避免数值散落。
  */
 
-import type { AttackMove, ResponseMove } from './types.js';
+import type { ActiveActionId, AttackMove, ResponseMove } from './types.js';
 
 /** 对局规则常量 */
 export const RULES = {
@@ -64,6 +64,30 @@ export const CRIT_BONUS = 2;
 
 /** 蓄力一次回复的能量（受 maxAp 限制） */
 export const CHARGE_AP = 1;
+
+/** 当前资源是否够发大招：本局还有次数，且能量达到大招消耗 */
+export function isUltimateReady(fighter: { ap: number; ultLeft: number }): boolean {
+  return fighter.ultLeft > 0 && fighter.ap >= ATTACKS.ult.apCost;
+}
+
+/** 当前能量下主动阶段实际可选的招式；满能量时不能再蓄力 */
+export function availableActiveActions(
+  fighter: { ap: number; maxAp: number; ultLeft: number },
+): ActiveActionId[] {
+  const actions: ActiveActionId[] = [];
+  if (fighter.ap >= ATTACKS.light.apCost) actions.push('light');
+  if (fighter.ap >= ATTACKS.heavy.apCost) actions.push('heavy');
+  if (isUltimateReady(fighter)) actions.push('ult');
+  if (fighter.ap < fighter.maxAp) actions.push('charge');
+  return actions;
+}
+
+/** 当前能量下应对阶段实际可选的应对；承受永远可选 */
+export function availableResponseActions(fighter: { ap: number }): ResponseMove[] {
+  return (Object.keys(RESPONSES) as ResponseMove[]).filter(
+    (action) => action === 'take' || fighter.ap >= RESPONSES[action].apCost,
+  );
+}
 
 /**
  * 当轮伤害加成：第 1、2 轮为 0，第 3 轮起每轮 +2。

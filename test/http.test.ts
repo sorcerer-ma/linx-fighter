@@ -272,6 +272,84 @@ describe('HTTP 外壳', () => {
       controller.abort();
     }
   });
+
+  it('GET /events 在对手进房时主动推 push', async () => {
+    const opened = await fetch(`${baseUrl}/debug/start?device=push-host&agent=push-agent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'pvp' }),
+    });
+    const openedBody = (await opened.json()) as { text: string };
+    const code = openedBody.text.match(/编号(\d{4})/)![1]!;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(`${baseUrl}/events?device=push-host&agent=push-agent`, {
+        signal: controller.signal,
+      });
+      assert.ok(response.body, '状态流应有响应体');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const nextFrame = async (): Promise<string> => {
+        for (;;) {
+          const end = buffer.indexOf('\n\n');
+          if (end >= 0) {
+            const frame = buffer.slice(0, end);
+            buffer = buffer.slice(end + 2);
+            return frame;
+          }
+          const chunk = await reader.read();
+          if (chunk.done) throw new Error('SSE 提前结束');
+          buffer += decoder.decode(chunk.value, { stream: true });
+        }
+      };
+
+      // 先收下首帧，确认房主已进入「等加入」状态，再让对手进房
+      const first = await nextFrame();
+      assert.match(first, /^event: state/);
+
+      const joined = await fetch(`${baseUrl}/debug/start?device=push-guest&agent=push-agent`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ room: code }),
+      });
+      assert.equal(joined.status, 200);
+
+      const frames: string[] = [];
+      while (frames.length < 10) {
+        const frame = await nextFrame();
+        frames.push(frame);
+        if (frame.startsWith('event: push')) break;
+      }
+      await reader.cancel();
+
+      const push = frames.find((frame) => frame.startsWith('event: push'));
+      assert.ok(push, `应收到 push，实际帧：${frames.join(' | ')}`);
+      const dataLine = push.split('\n').find((line) => line.startsWith('data: '));
+      assert.ok(dataLine, 'push 应有 data 行');
+      const payload = JSON.parse(dataLine.slice('data: '.length)) as {
+        type: string;
+        device: string;
+        agent: string;
+        kind: string;
+        tone: string;
+        text: string;
+      };
+      assert.equal(payload.type, 'push');
+      assert.equal(payload.device, 'push-host');
+      assert.equal(payload.agent, 'push-agent');
+      assert.equal(payload.kind, 'opponent-joined');
+      assert.equal(payload.tone, 'info');
+      assert.match(payload.text, /对手来了/);
+      assert.match(payload.text, /对决开始/);
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  });
 });
 
 describe('原始报文日志', () => {

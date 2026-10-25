@@ -4,10 +4,12 @@ import { createBattle } from '../src/game/engine.js';
 import type { Command } from '../src/game/command.js';
 import type { CommandRouter, RouterStage } from '../src/game/router.js';
 import { pvpBattleKey } from '../src/game/pvp.js';
+import { narrateEnded, narrateNoBattle, narrateWaitRespond, narrateWaitTimeout, narrateWaitTurn } from '../src/game/narrator.js';
 import { GameService, type GameServiceDeps } from '../src/game/service.js';
 import type { BattleAI } from '../src/game/types.js';
 import { createLogger } from '../src/log.js';
 import { BattleStore } from '../src/store/battles.js';
+import { EchoStore } from '../src/store/echoes.js';
 import { RoomStore } from '../src/store/rooms.js';
 
 const KEY = 'device-a#agent-1';
@@ -328,8 +330,13 @@ describe('统一入口与局面快照', () => {
     assert.equal(hit.battle?.history.length, 1);
     assert.match(hit.text, /普攻/);
 
+    // 「傻逼」是平台吞掉「闪避」鼻音后的误转写：识别层要接住，不能被当脏话拒绝
+    const dodge = await service.say(KEY, '傻逼');
+    assert.equal(dodge.battle?.history[1]?.response, 'dodge');
+    assert.match(dodge.text, /躲开|闪避/);
+
     const miss = await service.say(KEY, '今天天气不错');
-    assert.equal(miss.battle?.history.length, 1);
+    assert.equal(miss.battle?.history.length, 2);
     assert.match(miss.text, /没听清/);
   });
 
@@ -546,6 +553,28 @@ describe('异步与状态的边界', () => {
     assert.equal(store.get(KEY), armed);
     assert.equal(armed.player.ap, 5);
     assert.equal(armed.player.ultLeft, 1);
+  });
+
+  it('收窄词表后的口语不替玩家出招', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+    const before = store.get(KEY);
+    assert.ok(before);
+    assert.equal(before.player.ap, 3);
+
+    // 这些口语本地不再直接执行，但句子里点到两招时仍要拦住：能量与战报都不动
+    for (const text of ['猛攻还是普攻', '公鸡还是强攻', '回能量还是强攻']) {
+      const result = await service.say(KEY, text);
+      assert.match(result.text, /两种招式/, `「${text}」应让玩家重说`);
+      assert.equal(store.get(KEY), before, `「${text}」不该动对局`);
+    }
+
+    // 「憋大招」是攒能量：能量加一点，一局一次的大招留着
+    const charged = await service.say(KEY, '憋大招');
+    assert.equal(charged.battle?.history.length, 1);
+    assert.equal(charged.battle?.history[0]?.action, 'charge');
+    assert.equal(charged.battle?.player.ap, 4);
+    assert.equal(charged.battle?.player.ultLeft, 1);
   });
 
   it('没有对局时，否定句不会顺手开一局', async () => {
@@ -924,5 +953,221 @@ describe('打完一局之后', () => {
     assert.match(result.text, /我赢了/);
     assert.match(result.text, /开始游戏/);
     assert.ok(store.get(KEY) === ended);
+  });
+});
+
+describe('挂起等对手', () => {
+  const HOST = 'device-h#agent-1';
+  const GUEST = 'device-g#agent-2';
+
+  /** 等一个本该立刻返回的结果：超时就说明挂住了，直接判失败，别把用例拖住 */
+  function immediate<T>(promise: Promise<T>, ms = 200): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`应该在 ${ms}ms 内返回，实际挂住了`)), ms);
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  }
+
+  /** 开一间双人房，返回播报里的四位房间号 */
+  async function openRoom(service: GameService): Promise<string> {
+    const opened = await service.say(HOST, '开房间');
+    const code = /编号(\d{4})/.exec(opened.text)?.[1];
+    assert.ok(code, `应播报四位房间号：${opened.text}`);
+    return code;
+  }
+
+  it('房主出完招挂起，访客应招后带着这一手的结算醒来', async () => {
+    const echo = new EchoStore();
+    const { service } = setup({ echo });
+    const code = await openRoom(service);
+    await service.say(GUEST, `加入房间${code}`);
+    await service.say(HOST, '强攻');
+
+    const pending = service.wait(HOST, { timeoutMs: 1000 });
+    // 请求已经挂在这一局上，等访客应招
+    assert.equal(echo.waitingOn(HOST), true);
+    assert.equal(echo.waiting, 1);
+
+    const response = await service.say(GUEST, '格挡');
+    assert.match(response.text, /格挡/);
+
+    const woken = await immediate(pending);
+    assert.match(woken.text, /我强攻，对手格挡，掉3点生命值，剩15/);
+    // 挂起等来的结果当场就念，不能带补账前缀
+    assert.doesNotMatch(woken.text, /刚才那一手/);
+    assert.equal(woken.battle?.pending, null);
+    assert.equal(woken.battle?.history.length, 1);
+    assert.equal(echo.waiting, 0);
+
+    // 这一手已经念过，下次开口不再补一遍
+    const later = await service.say(HOST, '战况如何');
+    assert.doesNotMatch(later.text, /刚才那一手/);
+  });
+
+  it('访客应招把生命值打完时，被唤醒的房主要听到这一手和胜负', async () => {
+    const echo = new EchoStore();
+    const { service, store } = setup({ echo });
+    const code = await openRoom(service);
+    await service.say(GUEST, `加入房间${code}`);
+    await service.say(HOST, '强攻');
+
+    // 把访客生命值压到这一手必倒：接下来由真实应招触发终局，房主正挂着等结果
+    const battle = store.get(pvpBattleKey(code));
+    assert.ok(battle);
+    store.set(pvpBattleKey(code), { ...battle, enemy: { ...battle.enemy, hp: 3 } });
+
+    const pending = service.wait(HOST, { timeoutMs: 1000 });
+    assert.equal(echo.waitingOn(HOST), true);
+
+    const response = await service.say(GUEST, '格挡');
+    assert.match(response.text, /格挡/);
+
+    const woken = await immediate(pending);
+    // 既有这一手的结算，也有结束语：只念过程等于让模型自己推胜负
+    assert.match(woken.text, /掉\d+点生命值/);
+    assert.match(woken.text, /我赢了，击倒对手啦/);
+    assert.match(woken.text, /说「开始游戏」可以再来一局/);
+    assert.equal(woken.battle?.phase, 'victory');
+    assert.equal(echo.waiting, 0);
+  });
+
+  it('房主开房后挂起，访客进房间后醒来先说人到了再报开局', async () => {
+    const echo = new EchoStore();
+    const { service } = setup({ echo });
+    const code = await openRoom(service);
+
+    const pending = service.wait(HOST, { timeoutMs: 1000 });
+    assert.equal(echo.waitingOn(HOST), true);
+
+    await service.start(GUEST, { room: code });
+
+    const woken = await immediate(pending);
+    assert.match(woken.text, /^对手进房间了。/);
+    assert.match(woken.text, /对决开始/);
+    assert.equal(echo.waiting, 0);
+    assert.equal(woken.battle?.mode, 'pvp');
+  });
+
+  it('等满时长说一句对手还没出手，补账仍留在队列里', async () => {
+    const { service } = setup();
+    const code = await openRoom(service);
+    await service.say(GUEST, `加入房间${code}`);
+    await service.say(HOST, '强攻');
+
+    const timedOut = await service.wait(HOST, { timeoutMs: 20 });
+    assert.equal(timedOut.text, narrateWaitTimeout('opponent'));
+
+    // 超时不算失败：访客应完的这一手还要留着，等房主下次开口补上
+    await service.say(GUEST, '格挡');
+    const catchUp = await service.say(HOST, '战况如何');
+    assert.match(catchUp.text, /^刚才那一手。/);
+    assert.match(catchUp.text, /我强攻，对手格挡，掉3点生命值，剩15/);
+  });
+
+  it('房间里没人进来时超时，说的是对手还没进房间', async () => {
+    const { service } = setup();
+    await openRoom(service);
+
+    const timedOut = await service.wait(HOST, { timeoutMs: 20 });
+    assert.equal(timedOut.text, narrateWaitTimeout('guest'));
+  });
+
+  it('轮到自己出招时不挂起，直接提醒出招', async () => {
+    const { service } = setup();
+    await service.start(HOST);
+
+    const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
+    assert.equal(result.text, narrateWaitTurn());
+    assert.equal(result.battle?.round, 1);
+  });
+
+  it('对手已经出招等应招时不挂起，直接提醒应招', async () => {
+    const { service } = setup();
+    await service.start(HOST);
+    // 单人局：我出招后对手这一手已经锁定，该我应招，没有可等的东西
+    await service.say(HOST, '普攻');
+
+    const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
+    assert.equal(result.text, narrateWaitRespond());
+    assert.equal(result.battle?.pending?.actor, 'enemy');
+  });
+
+  it('没有对局时不挂起，回一句没有对局', async () => {
+    const { service } = setup();
+
+    const result = await immediate(service.wait('device-x#agent-9', { timeoutMs: 5000 }));
+    assert.equal(result.text, narrateNoBattle());
+    assert.equal(result.battle, null);
+  });
+
+  it('对局已经结束时不挂起，播结束语', async () => {
+    const { service, store } = setup();
+    const started = await service.start(HOST);
+    assert.ok(started.battle);
+    store.set(HOST, { ...started.battle, phase: 'victory' });
+    const ended = store.get(HOST);
+    assert.ok(ended);
+
+    const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
+    assert.equal(result.text, narrateEnded(ended));
+    assert.match(result.text, /我赢了/);
+  });
+
+  it('传进来的 signal 已经取消时立刻返回，不占着请求', async () => {
+    const { service } = setup();
+    const code = await openRoom(service);
+    await service.say(GUEST, `加入房间${code}`);
+    await service.say(HOST, '强攻');
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await immediate(service.wait(HOST, { timeoutMs: 5000, signal: controller.signal }));
+    // 平台已经断开：这一手没有结果，回一句收尾文案，别静默
+    assert.equal(result.text, narrateWaitTimeout('opponent'));
+  });
+
+  it('对局已经结束、队列里还攒着结算时，先把补账念掉再播结束语', async () => {
+    const echo = new EchoStore();
+    const { service, store } = setup({ echo });
+    const started = await service.start(HOST);
+    assert.ok(started.battle);
+    // 队列里还留着上一手的结算：这一句不能只播结束语，把结算一起带出来
+    echo.push(HOST, '对手强攻，我格挡，掉3点生命值，剩15。');
+    store.set(HOST, { ...started.battle, phase: 'defeat' });
+    const ended = store.get(HOST);
+    assert.ok(ended);
+
+    const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
+    assert.match(result.text, /刚才那一手/);
+    assert.match(result.text, /我格挡/);
+    assert.ok(result.text.endsWith(narrateEnded(ended)), result.text);
+    assert.equal(echo.size, 0);
+  });
+
+  it('对手先行动时立刻返回，也要先念已排队的补账', async () => {
+    const { service } = setup();
+    const code = await openRoom(service);
+    await service.say(GUEST, `加入房间${code}`);
+    // 房主强攻、访客格挡：这一手结算完，补账记在房主这边
+    await service.say(HOST, '强攻');
+    await service.say(GUEST, '格挡');
+    // 访客再出招，轮到房主应招：不会挂起，但也不能把上一手的播报跳过去
+    await service.say(GUEST, '普攻');
+
+    const result = await immediate(service.wait(HOST, { timeoutMs: 5000 }));
+    assert.match(result.text, /刚才那一手/);
+    assert.match(result.text, /我强攻，对手格挡/);
+    assert.match(result.text, /格挡、闪避还是承受/);
+    assert.equal(result.battle?.pending?.actor, 'enemy');
   });
 });
