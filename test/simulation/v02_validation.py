@@ -1,4 +1,4 @@
-exec(open('tests/simulation/pace_tuning.py').read().split('configs=')[0])
+exec(open('test/simulation/pace_tuning.py').read().split('configs=')[0])
 oldchoose=choose
 POL=['light','heavy','reserve','rush','wait_empty','finish','prepared','adaptive_finish']
 def choose(p,hp,enemy,ap,eap,left):
@@ -16,7 +16,7 @@ def defense(hp,ap,move,save):
  return r
 # Inject counters, with otherwise identical simulation rules.
 import inspect
-source=open('tests/simulation/pace_tuning.py').read().split('def run(')[1].split('configs=')[0]
+source=open('test/simulation/pace_tuning.py').read().split('def run(')[1].split('configs=')[0]
 source='def run('+source
 source=source.replace('b=1-a;rd=turn//2+1;','global current_round\n  b=1-a;rd=turn//2+1;current_round=rd;')
 exec(source)
@@ -34,5 +34,5 @@ for save in [False,True]:
  allrounds+=rounds
 out['overall']={'games':len(allrounds),'target':sum(3<=n<=5 for n in allrounds)/len(allrounds),'early':sum(n<3 for n in allrounds)/len(allrounds),'late':sum(n>5 for n in allrounds)/len(allrounds),'mean':statistics.mean(allrounds),'p90':sorted(allrounds)[int(.9*len(allrounds))],'p95':sorted(allrounds)[int(.95*len(allrounds))]}
 out['responses']={str(rd):{r:sum(v for (n,m,k),v in stats.items() if n==rd and k==r) for r in ['guard','dodge','take']} for rd in range(1,9)}
-Path('tests/simulation/v02_validation_results.json').write_text(json.dumps(out,indent=2))
+Path('test/simulation/v02_validation_results.json').write_text(json.dumps(out,indent=2))
 print(json.dumps({k:v if k=='overall' or k=='responses' else {a:b for a,b in v.items() if a!='matrix'} for k,v in out.items()},indent=2))

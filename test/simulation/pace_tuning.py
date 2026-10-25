@@ -1,4 +1,4 @@
-exec(open('tests/simulation/limited_ults.py').read().split('out={}')[0])
+exec(open('test/simulation/limited_ults.py').read().split('out={}')[0])
 import math
 BASE=ATT.copy()
 def run(ps,h,comp,ramp,start,save):
@@ -34,4 +34,4 @@ for h,c,r,s in configs:
     if x==y:mirror[x+str(save)]=[round(mw/300,3),round(statistics.mean(ls),2)]
  z={'cfg':[h,c,r,s],'first':win/len(lens),'target':sum(3<=n<=5 for n in lens)/len(lens),'early':sum(n<3 for n in lens)/len(lens),'late':sum(n>5 for n in lens)/len(lens),'mean':statistics.mean(lens),'p90':sorted(lens)[int(.9*len(lens))],'mirrors':mirror,'scores':{p:a/b for p,(a,b) in scores.items()}}
  res.append(z);print(json.dumps({k:v for k,v in z.items() if k not in ['mirrors','scores']}),flush=True)
-Path('tests/simulation/pace_tuning_results.json').write_text(json.dumps(res,indent=2))
+Path('test/simulation/pace_tuning_results.json').write_text(json.dumps(res,indent=2))

@@ -72,7 +72,7 @@ sandbox/
   server.ts           本地假平台、页面接口与状态流代理
   platform/agent.ts   Agent 转发与表达模式
   public/             沙箱页面（无前端框架）
-test/                 35+ 个测试文件与 fixtures/，详见测试文档
+test/                 35+ 个测试文件、fixtures/ 与 simulation/（v0.2 历史 Python 仿真），详见测试文档
 scripts/              demo、smoke、validate（CPython 同款 MT19937 对拍）
 docs/                 产品、玩法、工程、测试与参考文档
 deploy/               演示环境 systemd 与 nginx 配置

@@ -57,4 +57,4 @@ for save in [False,True]:
   r['balanced_scores']={x:sum((r['matrix'][x+','+y]+1-r['matrix'][y+','+x])/2 for y in POL if y!=x)/(len(POL)-1) for x in POL}
   out[key]=r
   print(key,json.dumps({'scores':r['balanced_scores'],'mirrors':r['mirrors']}),flush=True)
-Path('tests/simulation/limited_ults_results.json').write_text(json.dumps(out,indent=2))
+Path('test/simulation/limited_ults_results.json').write_text(json.dumps(out,indent=2))

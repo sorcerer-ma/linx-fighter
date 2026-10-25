@@ -7,6 +7,6 @@
 | [机制与数值设计](mechanics-and-balance.md) | 早期 v0.2 候选规则、数值依据和未决问题 |
 | [测试验证](test-validation.md) | 256,000 局模拟结果、已知局限与面对面试玩计划 |
 
-当前规则见[玩法机制](../../game/game-design.md)，产品目标与验收见[产品设计](../../product/product-design.md)。模拟脚本与原始结果仍位于仓库根目录的 `tests/simulation/`，归档报告中的命令均从仓库根目录执行。
+当前规则见[玩法机制](../../game/game-design.md)，产品目标与验收见[产品设计](../../product/product-design.md)。模拟脚本与原始结果仍位于仓库根目录的 `test/simulation/`，归档报告中的命令均从仓库根目录执行。
 
 本次仅调整文件位置、链接和归档说明，保留原有参数、结果与验证限制。数值对拍一致不等于公平性、真人体验或灵矽硬件验收通过。
