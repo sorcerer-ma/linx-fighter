@@ -53,7 +53,7 @@ export const ADMIN_PAGE_HTML = `<!doctype html>
 </header>
 <div class="error" id="error" hidden></div>
 <main class="rooms" id="rooms"><p class="empty-state">正在加载…</p></main>
-<footer>只读页面：生命值、能量与胜负都由服务端裁定，这里只能围观，不能出招。每 3 秒自动刷新。未配置 ADMIN_TOKEN 时本页公开可见，房间号也会一起公开——知道房间号的人可能抢先加入、占掉对手位。</footer>
+<footer>只读页面：生命值、能量与胜负都由服务端裁定，这里只能围观，不能出招。每 3 秒自动刷新。未配置 ADMIN_TOKEN 时本页公开可见，挑战编号也会一起公开——知道编号的人可能抢先接受、占掉对手位。</footer>
 <script>
 (function () {
   'use strict';
@@ -116,9 +116,9 @@ export const ADMIN_PAGE_HTML = `<!doctype html>
     var playing = room.phase === 'battle';
     var html = '<section class="card' + (playing ? '' : ' ended') + '">';
     html += '<div class="row">';
-    html += '<span class="title">' + (room.kind === 'room' ? '房间 ' + esc(room.code) : '单人练习') + '</span>';
-    html += '<span class="badge">' + (room.mode === 'pvp' ? '双人对战' : '对手是 AI') + '</span>';
-    if (room.waiting) html += '<span class="badge waiting">等对手加入</span>';
+    html += '<span class="title">' + (room.kind === 'room' ? '挑战 ' + esc(room.code) : '单人练习') + '</span>';
+    html += '<span class="badge">' + (room.mode === 'pvp' ? '双人挑战' : '对手是 AI') + '</span>';
+    if (room.waiting) html += '<span class="badge waiting">等对方接受</span>';
     if (playing) html += '<span class="badge live">第 ' + esc(room.round) + ' 轮</span>';
     if (!playing) html += '<span class="badge ended">已分胜负</span>';
     html += '</div>';
@@ -130,7 +130,7 @@ export const ADMIN_PAGE_HTML = `<!doctype html>
       html += seatHtml(seat, isActive, hint);
     }
     if (room.waiting) {
-      html += '<div class="pending">房子已开，等对手用房间号加入；加入前不会自动补 AI。</div>';
+      html += '<div class="pending">挑战已发起，等对方凭编号接受；接受前不会自动补 AI。</div>';
     } else if (room.pending) {
       html += '<div class="pending">' + esc(room.pending.actorName) + ' 的「' + esc(room.pending.moveLabel) + '」已锁定：伤害 ' + esc(room.pending.damage) + '，等对方应对。</div>';
     }
@@ -144,7 +144,7 @@ export const ADMIN_PAGE_HTML = `<!doctype html>
 
   function render(data) {
     var list = data.rooms || [];
-    var meta = '房间 ' + data.roomCount + ' · 单人 ' + data.soloCount;
+    var meta = '挑战 ' + data.roomCount + ' · 单人 ' + data.soloCount;
     if (data.staleRooms) meta += ' · 对局已过期 ' + data.staleRooms;
     meta += ' · 生成于 ' + timeText(data.generatedAt);
     metaEl.textContent = meta;

@@ -99,7 +99,7 @@ describe('HTTP 外壳', () => {
     assert.equal(body.error, 'internal_error');
   });
 
-  it('调试接口能开双人房并凭房间号加入', async () => {
+  it('调试接口能发起双人挑战并凭编号接受', async () => {
     const opened = await fetch(`${baseUrl}/debug/start`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -108,16 +108,16 @@ describe('HTTP 外壳', () => {
     const openedBody = (await opened.json()) as { ok: boolean; text: string; battle: { code?: string; mode: string } };
     assert.equal(openedBody.ok, true);
     assert.equal(openedBody.battle.mode, 'pvp');
-    const code = openedBody.text.match(/房间(\d{4})/)![1]!;
+    const code = openedBody.text.match(/编号(\d{4})/)![1]!;
 
-    // 换一台设备加入，避免房主自己进自己的房
+    // 换一台设备接受，避免发起者自己进自己的挑战
     const joined = await fetch(`${baseUrl}/debug/start?device=debug-2`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ room: code }),
     });
     const joinedBody = (await joined.json()) as { ok: boolean; text: string };
-    assert.match(joinedBody.text, /进了房间/);
+    assert.match(joinedBody.text, /接下了编号/);
   });
 
   it('关闭调试开关后不注册调试路由', async () => {

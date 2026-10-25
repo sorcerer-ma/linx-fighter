@@ -9,8 +9,8 @@ it('不默认选择模型；单源提示词读取，未配置保留明确直连'
  assert.ok(createSandboxAgent({...config.agent,model:'test',baseUrl:'http://example.invalid',apiKey:'fake'}) instanceof SandboxAgent);
  assert.throws(()=>createSandboxAgent({...config.agent,promptPath:'/no-such-agent-prompt'}));
 });
-it('每条原话包括查询、开房都只执行一次game_say且不改原文',async()=>{
- for(const text of ['  强攻！  ','战况如何','开房间','加入房间1234','不要大招']){
+it('每条原话包括查询、发起挑战都只执行一次game_say且不改原文',async()=>{
+ for(const text of ['  强攻！  ','战况如何','共鸣对决，发起挑战','接受挑战，编号1234','不要大招']){
   const calls:unknown[]=[];
   const agent=new SandboxAgent('test');
   const result=await agent.run(text,{async callTool(name,args){calls.push({name,args});return {text:'对手受伤，我剩3点能量。',isError:false}}});
