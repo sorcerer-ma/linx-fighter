@@ -14,7 +14,7 @@
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
-    "coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/index.ts' --test-coverage-lines=95 --test-coverage-branches=90 --test-coverage-functions=95 test/*.test.ts",
+    "coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/index.ts' --test-coverage-lines=95 --test-coverage-branches=95 --test-coverage-functions=95 test/*.test.ts",
     "demo": "tsx scripts/demo.ts",
     "smoke": "tsx scripts/smoke.ts",
     "coverage:lcov": "node -e \"require('node:fs').mkdirSync('coverage',{recursive:true})\" && node --import tsx --test --experimental-test-coverage --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/index.ts' --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test/*.test.ts",
