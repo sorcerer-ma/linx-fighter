@@ -242,3 +242,11 @@ describe('命令之间的优先级', () => {
     }
   });
 });
+
+
+it('强化攻击确定性匹配强攻，普通攻击和否定查询保持原语义',()=>{
+ for(const text of ['强化攻击','我要强化攻击','强攻']){const c=readCommand(text);assert.equal(c.kind,'turn');assert.equal(c.kind==='turn'?c.action:null,'heavy');}
+ for(const text of ['普通攻击','攻击']){const c=readCommand(text);assert.equal(c.kind,'turn');assert.equal(c.kind==='turn'?c.action:null,'light');}
+ assert.equal(readCommand('不要强化攻击').kind,'refused');
+ assert.notEqual(readCommand('强化攻击会怎样？').kind,'turn');
+});

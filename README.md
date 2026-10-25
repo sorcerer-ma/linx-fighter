@@ -14,7 +14,7 @@
 
 双人局的补账播报：A 出招后，B 的应对在 B 自己的回合结算，A 当场听不到这一手的结果。当前没有 `wait_event`，也没有无请求主动播报通道，服务端等 A 下一次行动或查询战况时补上——播报最前面会多一句「刚才那一手。我强攻，对手格挡，掉3点生命值，剩15。」，再播当前这一回合。补过一次不重复，换局即清。这是给没有屏幕的终端准备的：客户端带 `X-Linx-Display: screen`（沙箱页面就是这样）就不念补账，自己去画局面。
 
-已合并 [MCP v2 事实协议](docs/engineering/mcp-protocol.md)，**尚未实现**：目标是服务端返回事实、Agent 演绎，再播放最终话术。下述工具与链路描述当前 main；两工具、JSON 事实与 `wait_event` 均不能当作已运行能力。切换依赖、PR #16 待合并成果及验收见 [迁移实施说明](docs/engineering/mcp-v2-migration.md)。
+已合并 [MCP v2 事实协议](docs/engineering/mcp-protocol.md)，**尚未实现**：目标是服务端返回事实、Agent 演绎，再播放最终话术。下述工具与链路描述当前 main；两工具、JSON 事实与 `wait_event` 均不能当作已运行能力。当前文本兼容沙箱与目标协议的切换依赖及验收见 [迁移实施说明](docs/engineering/mcp-v2-migration.md)。
 
 ## 产品定位与体验目标
 
@@ -262,7 +262,7 @@ flowchart TB
 
 灵犀硬件只是载体，真正对外的是这套 MCP 服务。任何新载体只需要回答两个问题：**怎么把玩家的话送进来**（调 `game_say`）、**怎么把结果呈现出去**（念出来，或画出来）。请求头 `X-Linx-Display` 就是载体能力的声明：`voice` 保留补账播报，`screen` 关掉、由客户端自己画局面。
 
-`sandbox/` 是这台「替身设备」：页面把原话交给沙箱，沙箱像平台一样只发 HTTP 调 `game_say`，不 import 服务端内部函数。所以多窗口对战、手机访问、Agent 用脚本自己打完整局，走的都是真实链路。详见 [docs/testing/sandbox.md](docs/testing/sandbox.md)。
+`sandbox/` 是这台「替身设备」：页面把原话交给沙箱，沙箱像平台一样只发 HTTP 调 `game_say`，不 import 服务端内部函数。所以多窗口对战、手机访问、Agent 用脚本自己打完整局，走的都是真实链路。详见 [docs/testing/sandbox.md](docs/testing/sandbox.md)。 配置沙箱表达模型后，开局、战况、回合结果、需重说和明确拒绝可按共享战斗伙伴人设整句表达；事实未知或表达校验失败时回工具原文，不重复执行游戏。转发日志通过 `rewriteStatus` 和受控 `expressionError` 区分实际改写与回退，不记录原话和回复片段。
 
 ### 扩展点
 

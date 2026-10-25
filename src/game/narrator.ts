@@ -98,10 +98,12 @@ function ownPendingSentence(move: AttackMove): string {
 }
 
 /** 一次攻击结算后的句子 */
-function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>): string {
+function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>, expressive = false): string {
   const attacker = sideName(event.side);
   const target = sideName(otherSide(event.side));
-  const verb = ATTACK_NAME[event.move];
+  const verb = (expressive ? '使出' : '') + ATTACK_NAME[event.move];
+  const loss = expressive ? '损失' : '掉';
+  const left = expressive ? '还剩' : '剩';
   if (event.dodged) {
     // 闪避成功是防守方的感受，站在被躲的一边只听结果
     return event.side === 'player' ? `我${verb}，对手闪开了` : `对手${verb}，我躲开啦！`;
@@ -110,14 +112,14 @@ function attackSentence(event: Extract<BattleEvent, { type: 'attack' }>): string
   const crit = event.crit ? '暴击' : '';
   const hpLeft = Math.max(0, event.targetHp);
   if (event.response === 'guard') {
-    return `${attacker}${verb}${crit}，${target}格挡，掉${event.damage}点生命值，剩${hpLeft}`;
+    return `${attacker}${verb}${crit}，${target}格挡，${loss}${event.damage}点生命值，${left}${hpLeft}`;
   }
   if (event.response === 'dodge') {
     // 闪避失败吃的是全额伤害，不能写成「擦中」
-    return `${attacker}${verb}${crit}，${target}没躲开，掉${event.damage}点生命值，剩${hpLeft}`;
+    return `${attacker}${verb}${crit}，${target}没躲开，${loss}${event.damage}点生命值，${left}${hpLeft}`;
   }
   const take = event.forced ? `${target}没能量，只能硬扛` : `${target}承受`;
-  return `${attacker}${verb}${crit}，${take}，掉${event.damage}点生命值，剩${hpLeft}`;
+  return `${attacker}${verb}${crit}，${take}，${loss}${event.damage}点生命值，${left}${hpLeft}`;
 }
 
 /** 终局一句 */
@@ -140,7 +142,7 @@ function turnHint(battle: Battle): string {
  * 单人局没有屏幕看血条：每回合都把这边的生命值与能量顺口报出来，
  * 玩家不用为了看状态专门问一次「战况」。
  */
-export function narrateTurn(battle: Battle, events: BattleEvent[], options: { hint?: boolean } = {}): string {
+export function narrateTurn(battle: Battle, events: BattleEvent[], options: { hint?: boolean; expressive?: boolean } = {}): string {
   const lines: string[] = [];
   let rampNoticed = false;
   let locked = false;
@@ -150,7 +152,7 @@ export function narrateTurn(battle: Battle, events: BattleEvent[], options: { hi
     if (event.type === 'charge') {
       lines.push(chargeSentence(event.ap, event.side));
     } else if (event.type === 'attack') {
-      lines.push(attackSentence(event));
+      lines.push(attackSentence(event, options.expressive));
     } else if (event.type === 'pending') {
       locked = true;
       lines.push(pendingSentence(event.move, event.side));
@@ -179,6 +181,7 @@ export function narrateTurn(battle: Battle, events: BattleEvent[], options: { hi
       const merged = `${second.replace(/[。．.!！?？]+$/g, '')}，${hint}`;
       // 两句都放不下时保留结算事实，宁可少一句提示
       if (merged.length <= 60) shown[1] = merged;
+      else if (options.expressive) return narrateTurn(battle,events,{...options,expressive:false});
     }
   } else if (soloState && options.hint !== false) {
     // 该我应对时状态并进问句，避免多出一句：「我9点生命值、2点能量，对手强攻还没结算…」
@@ -220,9 +223,9 @@ export function narrateChant(chant: string): string {
 }
 
 /** 战况播报：轮次、双方生命值与能量、大招次数，再提示下一步 */
-export function narrateStatus(battle: Battle, options: { waiting?: boolean } = {}): string {
+export function narrateStatus(battle: Battle, options: { waiting?: boolean; expressive?: boolean } = {}): string {
   if (battle.phase !== 'battle') return narrateEnded(battle);
-  const lines = [`第${battle.round}轮，${fighterLine(battle)}，${ultLine(battle)}`];
+  const lines = [`${options.expressive ? '现在是第' : '第'}${battle.round}轮，${fighterLine(battle)}，${ultLine(battle)}`];
   if (battle.pending) {
     // 战况只有两句预算：我方已出手时用单句说法
     lines.push(

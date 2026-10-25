@@ -3,18 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#080b12" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f0f2e9" />
     <title>共鸣 · 闻声对决</title>
     <!-- 内联 SVG 图标，页面完全离线可用 -->
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23080b12'/%3E%3Cg stroke='%235aa9ff' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M9 13v6'/%3E%3Cpath d='M13 9v14'/%3E%3Cpath d='M17 11v10'/%3E%3Cpath d='M21 14v4'/%3E%3C/g%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/companion.css" />
   </head>
   <body>
-    <div class="app">
+    <div class="app state-idle" id="app">
       <!-- 顶栏：轮次 + 连接状态点（点不带文字，含义放在 title/aria-label） -->
       <header class="top">
         <span class="round" id="round" hidden>第 1 轮</span>
@@ -29,124 +29,100 @@
       </header>
 
       <main class="main">
+        <p class="connection" id="agent-mode">原话直连 · 人设改写未启用</p>
         <!-- 局面整体（双方 + 状态）作为一块垂直居中，播报贴在底部控制栏上方 -->
-        <div class="board">
-          <!-- 双方局面：名字 / 生命值条 / 能量点 / 大招状态 -->
-          <div class="players" id="players" hidden>
-            <section class="player" data-side="you" aria-label="你的局面">
-              <div class="prow">
-                <span class="pname" id="you-name">你</span>
-                <span class="hp-num" id="you-hp-num">0/0</span>
-              </div>
-              <div
-                class="hp-bar"
-                id="you-hp-bar"
-                role="progressbar"
-                aria-label="你的生命值"
-                aria-valuemin="0"
-                aria-valuemax="0"
-                aria-valuenow="0"
-              >
-                <i class="hp-fill" id="you-hp-fill"></i>
-              </div>
-              <div class="pmeta">
-                <span class="dots" id="you-dots" role="img" aria-label="能量 0/5"></span>
-                <span class="ult" id="you-ult">大招可用</span>
-              </div>
-            </section>
+<section class="stage" aria-label="同一伙伴设备的两个视图">
+<div class="view-label"><span>对手看到的正面</span></div>
+<div class="front-wrap"><div class="floor"></div><div class="hardware front" aria-label="本方硬件正面概念外观"><span class="corner"></span><div class="top-led"></div><div class="screen">
+<div class="ultimate" id="ultimate" role="img" aria-label="大招未就绪" data-availability="insufficient"><svg viewBox="0 0 32 36" aria-hidden="true"><circle class="ult-ring" cx="16" cy="23" r="10"/><circle class="ult-core" cx="16" cy="23" r="6"/><path class="ult-flare" d="M10 15C5 9 10 6 13 3c-1 6 4 8 5 2 8 5 10 12 4 14-2-5-8-6-12-4Z"/><path class="ult-slash" d="m7 32 18-18"/></svg></div><div class="portrait"><svg class="aura" viewBox="0 0 200 140" aria-hidden="true"><defs><linearGradient id="charged-energy" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#efa64f" stop-opacity=".12"/><stop offset=".55" stop-color="#f5c56e" stop-opacity=".26"/><stop offset="1" stop-color="#ffe4a7" stop-opacity=".42"/></linearGradient><linearGradient id="charged-stream" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffd899" stop-opacity=".03"/><stop offset="1" stop-color="#ffe4a7" stop-opacity=".22"/></linearGradient></defs><path class="flame-sheet" d="M18 128C7 109 35 89 31 68c14 6 12 25 22 36C66 83 59 56 69 38q3-5 6-4t0 7C68 61 86 73 91 90C104 72 89 42 105 23q4-7 7-2t0 8C108 50 128 70 123 93C137 79 136 67 146 54q4-6 7-1C154 74 176 99 184 128Z" fill="url(#charged-energy)"/><path class="flame-stream flame-left" d="M45 128c-9-16 12-29 10-55 19 20 8 33 23 45 4-8 1-18 7-25 13 14 6 28 7 35Z" fill="url(#charged-stream)"/><path class="flame-stream flame-right" d="M107 128c-5-17 18-34 11-59 21 16 15 37 23 44 8-8 5-18 8-24 15 19 9 31 13 39Z" fill="url(#charged-stream)"/></svg><svg class="buddy" viewBox="22 5 156 120" role="img" aria-label="伙伴表情，固定五官锚点"><defs><g id="face-art">
+<g class="face-anchors" aria-hidden="true" fill="transparent" pointer-events="none"><rect data-anchor="left-eye" x="51" y="37" width="28" height="36"/><rect data-anchor="right-eye" x="121" y="37" width="28" height="36"/><rect data-anchor="mouth" x="78" y="66" width="44" height="42"/></g>
+<g class="eyes-open" style="display:var(--face-eyes-open,inline)" fill="#d9f8b7" stroke="none"><ellipse class="eye-body" data-center="65 55" data-size="24 32" cx="65" cy="55" rx="12" ry="16"/><ellipse class="eye-body" data-center="135 55" data-size="24 32" cx="135" cy="55" rx="12" ry="16"/></g>
+<g class="eyes-happy" style="display:var(--face-eyes-happy,none)" fill="none" stroke="#d9f8b7" stroke-width="6" stroke-linecap="round"><path d="M53 57q12-28 24 0M123 57q12-28 24 0"/></g>
+<g class="eyes-impact" style="display:var(--face-eyes-impact,none)" fill="none" stroke="#d9f8b7" stroke-width="6" stroke-linecap="round"><path d="m55 43 20 24m0-24-20 24m70-24 20 24m0-24-20 24"/></g>
+<g class="eyes-low" style="display:var(--face-eyes-low,none)" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"><path d="M53 52q12 13 24 0M123 52q12 13 24 0M55 64h20M125 64h20"/></g>
+<g class="brow-ready" style="display:var(--face-brow-ready,none)" fill="none" stroke="#d9f8b7" stroke-width="4" stroke-linecap="round"><path d="m51 28 28 7m42 0 28-7"/></g>
+<g class="brow-listen" style="display:var(--face-brow-listen,none)" fill="none" stroke="#d9f8b7" stroke-width="4" stroke-linecap="round"><path d="M51 30q14-10 28-3M121 27q14-7 28 3"/></g>
+<g class="brow-question" style="display:var(--face-brow-question,none)" fill="none" stroke="#d9f8b7" stroke-width="4" stroke-linecap="round"><path d="M51 29q14-9 28-1m42 7 28-6"/></g>
+<g class="mouth-anchor" transform="translate(100 87)">
+<path class="mouth-neutral" style="display:var(--face-mouth-neutral,inline)" d="M-18-5Q0 15 18-5" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"/>
+<path class="mouth-listen" style="display:var(--face-mouth-listen,none)" d="M-13 0H13" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"/>
+<g class="mouth-cheer" style="display:var(--face-mouth-cheer,none)"><path d="M-18-15Q0-9 18-15Q20 18 0 18T-18-15Z" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="mouth-shock" style="display:var(--face-mouth-shock,none)"><ellipse cx="0" cy="0" rx="11" ry="17" fill="#d9f8b7"/><ellipse cx="0" cy="0" rx="5" ry="10" fill="#644337"/></g>
+<path class="mouth-low" style="display:var(--face-mouth-low,none)" d="M-18 5Q0-15 18 5" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"/>
+<path class="mouth-question" style="display:var(--face-mouth-question,none)" d="M-13 2Q0-6 13 2" fill="none" stroke="#d9f8b7" stroke-width="5" stroke-linecap="round"/>
+</g>
+<g class="face-cheeks" fill="#e5be98" opacity=".75"><ellipse cx="41" cy="76" rx="10" ry="5"/><ellipse cx="159" cy="76" rx="10" ry="5"/></g>
+<g class="question-mark" style="display:var(--face-question-mark,none)" fill="none" stroke="#d9f8b7" stroke-width="4" stroke-linecap="round"><path d="M93 14c0-13 22-13 22-1 0 7-11 7-11 14"/><circle cx="104" cy="34" r="2" fill="#d9f8b7" stroke="none"/></g>
+<g class="impact-lines" style="display:var(--face-impact-lines,none)" fill="none" stroke="#ffdc89" stroke-width="4"><path d="m23 31-9-6 4 17-14-2 13 13M177 31l9-6-4 17 14-2-13 13"/></g>
+<g class="held-pose" style="display:var(--face-held-pose,none);opacity:var(--face-shield-opacity,1)"><path class="held-shield" style="stroke-dasharray:var(--face-shield-dash,none)" d="m110 44 38 14v24q0 17-38 34-38-17-38-34V58Z" fill="#b6d4db" stroke="#254d3c" stroke-width="4" stroke-linejoin="round"/><path d="m110 52 30 11v19q0 12-30 25Z" fill="#709ca8"/><path d="m80 64 30-12 30 12" fill="none" stroke="#eff6df" stroke-width="3" stroke-linejoin="round"/><ellipse cx="73" cy="83" rx="9" ry="11" fill="#d9f8b7" stroke="#254d3c" stroke-width="4"/><ellipse cx="147" cy="83" rx="9" ry="11" fill="#d9f8b7" stroke="#254d3c" stroke-width="4"/></g></g></defs><g class="primary-face"><use href="#face-art"/></g><g class="dodge-faces" aria-hidden="true"><use class="dodge-side" href="#face-art" transform="translate(-21 0)"/><use class="dodge-side" href="#face-art" transform="translate(21 0)"/><use class="dodge-moving" href="#face-art"/></g></svg><svg class="no-network" viewBox="0 0 120 100" role="img" aria-label="连接中断，战况待核实"><g fill="none" stroke="#d9f8b7" stroke-width="6" stroke-linecap="round"><path d="M15 32q45-38 90 0M31 49q29-23 58 0M47 65q13-10 26 0"/><path d="m25 11 72 77" stroke="#183f37" stroke-width="12"/><path d="m25 11 72 77" stroke="#d9f8b7"/></g><circle cx="60" cy="80" r="5" fill="#d9f8b7"/></svg></div>
+<div class="resources"><div class="resource life"><svg class="resource-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17 3 10C-2 4 6-1 10 5c4-6 12-1 7 5Z" fill="currentColor"/></svg><div class="track" role="img" aria-label="生命状态条"><div class="fill" id="hp-fill"></div></div></div><div class="resource energy"><div class="energy-bolts" id="energy-dots" role="img" aria-label="能量闪电"><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg><svg class="energy-point" viewBox="0 0 12 18" aria-hidden="true"><path d="m7 1-6 9h4l-1 7 7-10H7Z"/></svg></div></div></div></div><div class="speaker" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
+<div class="view-label"><span>主人看到的背面</span></div>
+<div class="back-line"><div class="hardware back" aria-label="同一硬件背面，仅外壳与指示灯，无屏幕"><div class="back-led"></div><svg class="back-emblem" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7q5-6 10 0M7 17q5 6 10 0M5 10v4M19 10v4" stroke="#547959" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div></div>
 
-            <section class="player" data-side="foe" aria-label="对手的局面">
-              <div class="prow">
-                <span class="pname" id="foe-name">对手</span>
-                <span class="hp-num" id="foe-hp-num">0/0</span>
-              </div>
-              <div
-                class="hp-bar"
-                id="foe-hp-bar"
-                role="progressbar"
-                aria-label="对手的生命值"
-                aria-valuemin="0"
-                aria-valuemax="0"
-                aria-valuenow="0"
-              >
-                <i class="hp-fill" id="foe-hp-fill"></i>
-              </div>
-              <div class="pmeta">
-                <span class="dots" id="foe-dots" role="img" aria-label="能量 0/5"></span>
-                <span class="ult" id="foe-ult">大招可用</span>
-              </div>
-            </section>
-          </div>
+</section>
 
           <!-- 中间状态区：该谁动 / 胜负 / 等待，外加对手已锁定的招式 -->
           <div class="status-wrap">
             <p class="status" id="status">还没有对局，说「开始」或「开房间」</p>
             <p class="alert" id="alert" hidden></p>
           </div>
-        </div>
 
-        <!-- 最近播报：最多两条小字，不做聊天记录 -->
-        <ul class="replies" id="replies" aria-live="polite" aria-label="最近播报"></ul>
+        <section class="speech-panel" aria-label="语音交流，设备外文字"><p id="transcript" class="transcript" aria-live="polite">玩家 · 尚未识别指令</p>
+        <div id="conversation-scroll" class="conversation-scroll" tabindex="0" role="region" aria-label="对话记录，可滚动">
+          <ul class="replies" id="replies" role="log" aria-live="polite" aria-relevant="additions" aria-label="玩家、伙伴与系统的对话记录"></ul>
+        </div>
+        <button id="conversation-latest" class="conversation-latest" type="button" aria-controls="conversation-scroll" hidden>回到最新</button></section>
       </main>
 
-      <!-- 文字输入：默认收起，点键盘键展开一行 -->
-      <form class="composer" id="composer" hidden>
-        <input
-          class="text"
-          id="text"
-          type="text"
-          maxlength="200"
-          autocomplete="off"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          enterkeyhint="send"
-          placeholder="说句话，比如「强攻」"
-          aria-label="输入一句话"
-        />
-        <button class="send" id="send" type="submit">发送</button>
-      </form>
+      <details class="opponent-debug"><summary>对手状态 · 只读调试</summary><p id="opponent-debug" aria-live="polite">尚无对局</p></details>
 
-      <!-- 底部控制：麦克风居中，右侧键盘与播报开关 -->
-      <div class="bar">
-        <button class="mic" id="mic" type="button" aria-label="按住或点击说话" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4Z" />
-            <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
-            <path d="M12 17v3" />
-          </svg>
-        </button>
-        <div class="bar-tools">
-          <button class="tool" id="kb" type="button" aria-label="文字输入" aria-expanded="false">
+      <!-- 输入区常驻视口底部：手机上滚动或对话变长后麦克风依然点得到，键盘展开时也在同一条底栏 -->
+      <footer class="dock">
+        <!-- 文字输入：默认收起，点键盘键展开一行；语音不可用时的降级入口 -->
+        <form class="composer" id="composer" hidden>
+          <input
+            class="text"
+            id="text"
+            type="text"
+            maxlength="200"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            enterkeyhint="send"
+            placeholder="说句话，比如「强攻」"
+            aria-label="输入一句话"
+          />
+          <button class="send" id="send" type="submit">发送</button>
+        </form>
+
+        <!-- 语音开房与加入沿用原话入口，主界面只留必要启麦控件与文字降级 -->
+        <div class="bar">
+          <button class="mic" id="mic" type="button" aria-label="开启持续聆听" aria-pressed="false">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
-              <path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M8 14h8" />
+              <path d="M12 4a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0v-5A2.5 2.5 0 0 1 12 4Z" />
+              <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
+              <path d="M12 17v3" />
             </svg>
           </button>
+          <span id="mic-status" role="status">点击开启持续聆听</span>
           <button
-            class="tool"
-            id="sound"
+            class="keyboard"
+            id="keyboard"
             type="button"
-            data-on="true"
-            aria-label="语音播报开"
-            aria-pressed="true"
+            aria-label="用键盘输入"
+            aria-controls="composer"
+            aria-expanded="false"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M4 9.5h3L12 5v14L7 14.5H4Z" />
-              <g class="wave">
-                <path d="M15.5 9a4.2 4.2 0 0 1 0 6" />
-                <path d="M18 6.8a7.5 7.5 0 0 1 0 10.4" />
-              </g>
-              <g class="cross">
-                <path d="M16 9.5 21 14.5" />
-                <path d="M21 9.5 16 14.5" />
-              </g>
+              <rect x="2.5" y="6.5" width="19" height="11" rx="3" />
+              <path d="M6.5 10.5h.01M10 10.5h.01M13.5 10.5h.01M17 10.5h.01M7 14h10" />
             </svg>
           </button>
         </div>
-      </div>
+      </footer>
     </div>
 
-    <script src="/app.js"></script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

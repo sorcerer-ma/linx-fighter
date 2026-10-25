@@ -1,3 +1,7 @@
+import { createConversation } from './conversation.js';
+import { createListeningSession } from './listening.js';
+import { companionView, newSettlement, renderCompanion, opponentDetails } from './companion.js';
+
 /*
  * 共鸣 · 闻声对决 —— 沙箱页面脚本（极简游戏画面版）
  *
@@ -15,10 +19,13 @@
   var PLAYER_RE = /^[A-Za-z0-9_-]{1,16}$/;
   var DEVICE_RE = /^web-[A-Za-z0-9_-]{1,16}$/;
   var STORE_PLAYER = 'linx.sandbox.playerId';
-  var STORE_TTS = 'linx.sandbox.tts';
-  var MIC_NO_HTTPS = '当前页面不是 HTTPS，浏览器不给麦克风，用文字输入继续';
-  var REPLY_LIMIT = 2; // 播报只留最近两条，不做聊天记录
+  var MIC_NO_HTTPS = '当前页面不是 HTTPS，浏览器不给麦克风，点右侧键盘输入继续';
+  var MIC_NO_API = '这个浏览器没有网页语音识别（iPhone 上的 Safari 和 Chrome 都这样），点右侧键盘输入继续';
   var TTS_RATE = 1.05;
+  // 朗读在 iOS 上可能一直不回调 onend，超时后自己收尾，否则聆听会一直停着
+  var TTS_TIMEOUT = 20000;
+  // /api/say 长时间无响应时主动断开，避免按钮一直等
+  var SAY_TIMEOUT = 25000;
 
   // 连接状态点：灰=连接中、绿=已连接、红=断开（点本身不显示文字）
   var CONN_LABEL = { connecting: '连接中', connected: '已连接', offline: '断开' };
@@ -34,28 +41,18 @@
   var el = {
     round: $('round'),
     dot: $('dot'),
-    players: $('players'),
     status: $('status'),
     alert: $('alert'),
     replies: $('replies'),
+    conversationScroll: $('conversation-scroll'),
     composer: $('composer'),
     text: $('text'),
     send: $('send'),
     mic: $('mic'),
-    kb: $('kb'),
-    sound: $('sound'),
-    youName: $('you-name'),
-    youHpNum: $('you-hp-num'),
-    youHpBar: $('you-hp-bar'),
-    youHpFill: $('you-hp-fill'),
-    youDots: $('you-dots'),
-    youUlt: $('you-ult'),
-    foeName: $('foe-name'),
-    foeHpNum: $('foe-hp-num'),
-    foeHpBar: $('foe-hp-bar'),
-    foeHpFill: $('foe-hp-fill'),
-    foeDots: $('foe-dots'),
-    foeUlt: $('foe-ult')
+    keyboard: $('keyboard'),
+    transcript: $('transcript'),
+    micStatus: $('mic-status')
+
   };
 
   /* ---------------- 状态 ---------------- */
@@ -68,12 +65,16 @@
   var config = null;
   var source = null;
   var busy = false; // 正在等 /api/say
-  var replies = []; // [{ text, tone }]，最多 REPLY_LIMIT 条
-  var lastReply = '';
-  var ttsOn = readFlag(STORE_TTS, true);
-  var rec = null; // 正在进行的识别
-  var recText = '';
-  var recFailed = false;
+  var conversation = createConversation(el.conversationScroll, el.replies, $('conversation-latest'));
+
+  var activeUtterance = null;
+  var ttsTimer = null;
+  var connected = false;
+  var unconfirmed = false;
+  var settlement = null;
+  var settlementTimer = null;
+  var previousBattle = null;
+  var listening = false;
 
   /* ---------------- 身份 ---------------- */
 
@@ -126,38 +127,27 @@
     }
   }
 
-  function readFlag(key, fallback) {
-    var raw = readSession(key);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-    return fallback;
-  }
-
   /* ---------------- 播报区 ---------------- */
 
-  function pushReply(text, tone) {
-    var value = String(text == null ? '' : text).trim();
-    if (!value) return;
-    replies.push({ text: value, tone: tone || 'normal' });
-    if (replies.length > REPLY_LIMIT) replies = replies.slice(replies.length - REPLY_LIMIT);
-    lastReply = value;
-    renderReplies();
+  function pushReply(text, tone, role = 'system') {
+    conversation.append(role, text, tone);
+    revealLatest();
   }
 
-  function renderReplies() {
-    var nodes = replies.map(function (item, index) {
-      var li = document.createElement('li');
-      li.textContent = item.text;
-      li.dataset.tone = item.tone;
-      li.dataset.fresh = index === replies.length - 1 ? 'true' : 'false';
-      return li;
-    });
-    el.replies.replaceChildren.apply(el.replies, nodes);
+  // 底栏常驻会盖住页面下半截：新消息到达后把它顶到低栏上方，不用再手动往下滚
+  function revealLatest() {
+    var dock = document.querySelector('.dock');
+    if (!dock) return;
+    var covered = el.conversationScroll.getBoundingClientRect().bottom - dock.getBoundingClientRect().top + 8;
+    if (covered > 0) window.scrollBy(0, covered);
   }
 
   /* ---------------- 连接状态 ---------------- */
 
   function setConn(kind) {
+    connected = kind === 'connected';
+    if (!connected) { settlement = null; clearTimeout(settlementTimer); }
+    render();
     el.dot.dataset.state = kind;
     var label = CONN_LABEL[kind] || CONN_LABEL.connecting;
     el.dot.setAttribute('title', label);
@@ -174,6 +164,7 @@
       })
       .then(function (data) {
         config = data;
+        $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 事实约束人设表达' : '原话直连 · 人设改写未启用';
         connectStream(data);
       })
       .catch(function () {
@@ -207,6 +198,7 @@
     source.onopen = function () {
       // revision 每条连接内自增，重连后必须从头接受
       state.revision = -2;
+      previousBattle = null;
       setConn('connected');
     };
     source.onerror = function () {
@@ -226,6 +218,7 @@
       if (payload.revision <= state.revision) return; // 丢弃乱序/重复
       state.revision = payload.revision;
     }
+    unconfirmed = false;
     applyBattle(payload.battle);
   }
 
@@ -235,12 +228,19 @@
     var value = String(text == null ? '' : text).trim();
     if (!value || busy) return;
     busy = true;
-    el.mic.disabled = true;
+    conversation.append('player', value);
+    el.transcript.textContent = '玩家 · 已发送：' + value;
+    el.micStatus.textContent = '等待伙伴回复';
+    listener.pause();
     closeComposer();
+    render();
+    var abort = typeof AbortController === 'function' ? new AbortController() : null;
+    var abortTimer = abort ? setTimeout(function () { abort.abort(); }, SAY_TIMEOUT) : null;
     fetch('/api/say', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ deviceId: deviceId, text: value })
+      body: JSON.stringify({ deviceId: deviceId, text: value }),
+      signal: abort ? abort.signal : undefined
     })
       .then(function (res) {
         return res.json().catch(function () {
@@ -249,81 +249,86 @@
       })
       .then(function (data) {
         if (!data) throw new Error('bad response');
+        unconfirmed = data.ok === false;
         if (data.state) applyBattle(data.state.battle === undefined ? null : data.state.battle);
-        pushReply(data.reply, data.ok === false ? 'warn' : 'normal');
+        const systemReply = data.ok === false || data.isError === true;
+        pushReply(data.reply, systemReply ? 'warn' : 'normal', systemReply ? 'system' : 'partner');
         speak(data.reply);
       })
       .catch(function () {
-        pushReply('连不上沙箱，确认 pnpm sandbox 在跑。', 'warn');
+        unconfirmed = true;
+        pushReply('连接出了问题，刚才的结果未确认。恢复后先询问战况。', 'warn');
       })
       .then(function () {
+        clearTimeout(abortTimer);
         busy = false;
-        el.mic.disabled = false;
+        // 文字输入还开着就别抢麦：键盘声会被当成指令
+        if (!activeUtterance && el.composer.hidden) listener.resume();
+        render();
       });
   }
 
   /* ---------------- 输入行 ---------------- */
 
+  // 文字输入是语音的降级入口：展开时先停识别，免得把键盘声当指令
   function openComposer(focus) {
+    el.keyboard.setAttribute('aria-expanded', 'true');
+    if (listener && listener.enabled) listener.pause();
     if (!el.composer.hidden) {
       if (focus) el.text.focus();
       return;
     }
     el.composer.hidden = false;
-    el.kb.setAttribute('aria-expanded', 'true');
     if (focus) el.text.focus();
   }
 
   function closeComposer() {
     if (el.composer.hidden) return;
     el.composer.hidden = true;
-    el.kb.setAttribute('aria-expanded', 'false');
+    el.keyboard.setAttribute('aria-expanded', 'false');
     el.text.value = '';
-  }
-
-  function toggleComposer() {
-    if (el.composer.hidden) openComposer(true);
-    else closeComposer();
+    if (listener && !busy && !activeUtterance) listener.resume();
   }
 
   /* ---------------- 渲染 ---------------- */
 
   function applyBattle(battle) {
-    state.battle = battle || null;
+    const event = newSettlement(previousBattle, battle);
+    previousBattle = battle;
+    state.battle = battle;
+    if (event) {
+      settlement = event;
+      clearTimeout(settlementTimer);
+      settlementTimer = setTimeout(() => { settlement = null; render(); }, 1100);
+    } else if (!battle) {
+      settlement = null;
+      clearTimeout(settlementTimer);
+    }
     render();
   }
 
   function render() {
-    var battle = state.battle;
-    var has = !!battle;
-
-    if (has) {
-      el.round.hidden = false;
-      el.round.textContent = '第 ' + battle.round + ' 轮';
-    } else {
-      el.round.hidden = true;
-    }
-
-    el.players.hidden = !has;
-    if (has) {
-      renderPlayer('you', battle.you, battle.round, battle.history);
-      renderPlayer('foe', battle.opponent, battle.round, battle.history);
-    }
-
-    var status = describeStatus(battle);
+    const battle = state.battle;
+    const view = companionView(battle, connected && !unconfirmed, settlement, listening);
+    // Microphone state stays independent; settled victory/defeat has visual priority.
+    if (busy) view.ultimate = 'unknown';
+    renderCompanion($('app'), battle, view);
+    $('opponent-debug').textContent = opponentDetails(battle, connected && !unconfirmed);
+    el.round.hidden = !battle;
+    if (battle) el.round.textContent = '第 ' + battle.round + ' 轮';
+    const status = describeStatus(battle);
     el.status.textContent = status.text;
     el.status.dataset.tone = status.tone || 'normal';
-
-    var alert = describeAlert(battle);
+    const alert = describeAlert(battle);
     el.alert.hidden = !alert;
-    el.alert.textContent = alert || '';
+    el.alert.textContent = alert;
   }
 
   function describeStatus(battle) {
     if (!battle) return { text: '还没有对局，说「开始」或「开房间」', tone: 'idle' };
     if (battle.waiting) return { text: '等对手加入', tone: 'wait' };
-    if (battle.phase === 'victory') return { text: '你赢了', tone: 'win' };
-    if (battle.phase === 'defeat') return { text: '你输了', tone: 'lose' };
+    if (battle.phase === 'victory') return { text: '伙伴赢了', tone: 'win' };
+    if (battle.phase === 'defeat') return { text: '伙伴被击倒了', tone: 'lose' };
     var pending = battle.pending;
     if (pending && pending.actor === 'enemy') return { text: '等你应对', tone: 'alert' };
     if (pending && pending.actor === 'player') return { text: '等对手应招', tone: 'wait' };
@@ -341,53 +346,6 @@
     return text;
   }
 
-  function renderPlayer(key, side, round, history) {
-    var data = side || {};
-    var name = data.name || (key === 'you' ? '你' : '对手');
-    var hp = numberOr(data.hp, 0);
-    var maxHp = Math.max(1, numberOr(data.maxHp, 1));
-    var ap = numberOr(data.ap, 0);
-    var maxAp = Math.max(1, numberOr(data.maxAp, 5));
-    var ultLeft = numberOr(data.ultLeft, 0);
-
-    var nameEl = key === 'you' ? el.youName : el.foeName;
-    var numEl = key === 'you' ? el.youHpNum : el.foeHpNum;
-    var barEl = key === 'you' ? el.youHpBar : el.foeHpBar;
-    var fillEl = key === 'you' ? el.youHpFill : el.foeHpFill;
-    var dotsEl = key === 'you' ? el.youDots : el.foeDots;
-    var ultEl = key === 'you' ? el.youUlt : el.foeUlt;
-
-    nameEl.textContent = name;
-    numEl.textContent = hp + '/' + maxHp;
-    var pct = Math.max(0, Math.min(100, Math.round((hp / maxHp) * 100)));
-    fillEl.style.width = pct + '%';
-    fillEl.dataset.low = pct <= 30 ? 'true' : 'false';
-    barEl.setAttribute('aria-valuemax', String(maxHp));
-    barEl.setAttribute('aria-valuenow', String(hp));
-
-    // 能量：一共 5 个点，亮起来的是当前能量
-    if (dotsEl.childElementCount !== maxAp) {
-      var dots = [];
-      for (var i = 0; i < maxAp; i++) {
-        var dot = document.createElement('i');
-        dots.push(dot);
-      }
-      dotsEl.replaceChildren.apply(dotsEl, dots);
-    }
-    for (var j = 0; j < dotsEl.children.length; j++) {
-      dotsEl.children[j].dataset.on = j < ap ? 'true' : 'false';
-    }
-    dotsEl.setAttribute('aria-label', '能量 ' + ap + '/' + maxAp);
-
-    var ready = ultLeft > 0;
-    ultEl.textContent = ready ? '大招可用' : '大招已用';
-    ultEl.dataset.used = ready ? 'false' : 'true';
-  }
-
-  function numberOr(value, fallback) {
-    return typeof value === 'number' && isFinite(value) ? value : fallback;
-  }
-
   /* ---------------- 播报（TTS） ---------------- */
 
   function canSpeak() {
@@ -395,192 +353,102 @@
   }
 
   function speak(text) {
-    if (!ttsOn || !canSpeak()) return;
-    var value = String(text == null ? '' : text).trim();
-    if (!value) return;
-    try {
-      window.speechSynthesis.cancel(); // 每次新回复前打断上一条
-      var utter = new window.SpeechSynthesisUtterance(value);
-      utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
-      utter.rate = TTS_RATE;
-      window.speechSynthesis.speak(utter);
-    } catch (err) {
-      /* TTS 不可用时静默降级 */
+    if (!canSpeak() || !text.trim()) return;
+    stopSpeaking();
+    listener.pause();
+    var utter = new window.SpeechSynthesisUtterance(text);
+    activeUtterance = utter;
+    utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
+    utter.rate = TTS_RATE;
+    utter.onstart = function () {
+      if (activeUtterance === utter) el.replies.setAttribute('aria-label', '对话记录，伙伴正在朗读');
+    };
+    function finish() {
+      if (activeUtterance !== utter) return;
+      clearTimeout(ttsTimer);
+      ttsTimer = null;
+      activeUtterance = null;
+      el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
+      if (!busy && el.composer.hidden && listener) listener.resume();
     }
+    utter.onend = utter.onerror = finish;
+    // 有些浏览器（尤其 iOS）不会回调 onend：超时直接收尾并打断朗读
+    clearTimeout(ttsTimer);
+    ttsTimer = setTimeout(function () {
+      try { window.speechSynthesis.cancel(); } catch (err) { /* 忽略 */ }
+      finish();
+    }, TTS_TIMEOUT);
+    try { window.speechSynthesis.speak(utter); }
+    catch { finish(); }
   }
 
   function stopSpeaking() {
-    if (!canSpeak()) return;
-    try {
-      window.speechSynthesis.cancel();
-    } catch (err) {
-      /* 忽略 */
+    clearTimeout(ttsTimer);
+    ttsTimer = null;
+    activeUtterance = null;
+    el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
+    if (canSpeak()) window.speechSynthesis.cancel();
+  }
+
+  /* ---------------- 持续聆听 ---------------- */
+
+  // 语音不可用时，底栏提示直接指向键盘入口，免得演示者以为按钮坏了
+  function speechReady() {
+    return Boolean(SpeechRecognitionCtor) && window.isSecureContext !== false;
+  }
+
+  function micPrompt(session) {
+    if (session.active) return '正在聆听，点击停止';
+    if (session.enabled) return session.paused ? '聆听已开启，等待伙伴回复' : '聆听已开启，正在接续收音';
+    if (speechReady()) return '点击开启持续聆听';
+    return SpeechRecognitionCtor ? '页面不是 HTTPS，点键盘输入' : '此浏览器不支持语音，点键盘输入';
+  }
+
+  var listener = createListeningSession({
+    Recognition: SpeechRecognitionCtor,
+    onState: function (session) {
+      listening = session.active;
+      el.mic.dataset.listening = session.active ? 'true' : 'false';
+      el.mic.setAttribute('aria-pressed', String(session.enabled));
+      el.mic.setAttribute('aria-label', session.enabled ? '停止持续聆听' : '开启持续聆听');
+      el.micStatus.textContent = micPrompt(session);
+      render();
+    },
+    onText: function (text, final) {
+      el.transcript.textContent = (final ? '玩家 · 已识别：' : '玩家 · 识别中：') + text;
+    },
+    onFinal: function (text) { say(text); },
+    onError: function (code) {
+      pushReply(code === 'not-allowed' || code === 'service-not-allowed'
+        ? '麦克风权限未允许，聆听已停止。请允许权限后重新开启。'
+        : '语音识别已中断，聆听已停止。请检查麦克风后重新开启。', 'warn');
+      openComposer(false);
     }
-  }
+  });
 
-  function renderSound() {
-    el.sound.dataset.on = ttsOn ? 'true' : 'false';
-    el.sound.setAttribute('aria-pressed', ttsOn ? 'true' : 'false');
-    el.sound.setAttribute('aria-label', ttsOn ? '语音播报开' : '语音播报关');
-  }
-
-  /* ---------------- 语音识别 ---------------- */
-
-  function micAvailable() {
-    return !!SpeechRecognitionCtor && window.isSecureContext !== false;
-  }
-
-  function setListening(on) {
-    el.mic.dataset.listening = on ? 'true' : 'false';
-    el.mic.setAttribute('aria-pressed', on ? 'true' : 'false');
-    el.mic.setAttribute('aria-label', on ? '正在聆听，再点一下停止' : '按住或点击说话');
-  }
-
-  function startListening() {
-    if (busy) return;
-    if (!micAvailable()) {
-      // 内网 HTTP 页面拿不到麦克风：麦克风留着，点到就在播报区说清楚
-      pushReply(MIC_NO_HTTPS, 'warn');
-      return;
-    }
-    stopListening(); // 上一轮没结束就重开
-    recText = '';
-    recFailed = false;
-    var instance;
-    try {
-      instance = new SpeechRecognitionCtor();
-    } catch (err) {
-      pushReply(MIC_NO_HTTPS, 'warn');
-      return;
-    }
-    instance.lang = 'zh-CN';
-    instance.interimResults = true;
-    instance.continuous = false;
-    instance.maxAlternatives = 1;
-
-    instance.onresult = function (event) {
-      var text = '';
-      for (var i = 0; i < event.results.length; i++) {
-        text += event.results[i][0].transcript;
-      }
-      recText = text.replace(/\s+/g, ' ').trim();
-      setInputText(recText); // 边说边填进输入框
-    };
-    instance.onerror = function (event) {
-      recFailed = true;
-      var code = event && event.error;
-      if (code === 'not-allowed' || code === 'service-not-allowed') {
-        pushReply(MIC_NO_HTTPS, 'warn');
-      } else if (code !== 'no-speech' && code !== 'aborted') {
-        pushReply('没听清，再说一次。', 'warn');
-      }
-    };
-    instance.onend = function () {
-      if (rec === instance) rec = null;
-      setListening(false);
-      var text = recText.trim();
-      recText = '';
-      if (text) {
-        var failed = recFailed;
-        recFailed = false;
-        if (!failed && !busy) {
-          el.text.value = '';
-          say(text); // 说完即发送，无需再按一次
-        }
-      }
-    };
-
-    rec = instance;
-    try {
-      instance.start();
-    } catch (err) {
-      rec = null;
-      setListening(false);
-      pushReply('麦克风没启动起来，用文字输入继续。', 'warn');
-      return;
-    }
-    openComposer(false);
-    setListening(true);
-  }
-
-  function stopListening() {
-    var instance = rec;
-    if (!instance) return;
-    rec = null; // 先摘掉引用，避免 onend 里重复处理
-    try {
-      instance.abort();
-    } catch (err) {
-      /* 忽略 */
-    }
-    setListening(false);
-  }
-
+  function stopListening() { listener.stop(); }
   function toggleListening() {
-    if (rec) stopListening();
-    else startListening();
+    if (listener.enabled) { listener.stop(); return; }
+    if (!speechReady()) {
+      pushReply(SpeechRecognitionCtor ? MIC_NO_HTTPS : MIC_NO_API, 'warn');
+      openComposer(true);
+      return;
+    }
+    listener.start();
+    if (busy || activeUtterance) listener.pause();
   }
 
-  function setInputText(text) {
-    el.text.value = text;
+  // 底栏键盘键：开合文字输入行，语音不可用时也能走同一条原话入口
+  function toggleComposer() {
+    if (el.composer.hidden) openComposer(true);
+    else closeComposer();
   }
 
   /* ---------------- 事件绑定 ---------------- */
 
-  // 麦克风：按住说话（松手停）、轻点开始/再点停止都支持
-  (function bindMic() {
-    var holdTimer = null;
-    var held = false;
-
-    el.mic.addEventListener('pointerdown', function (event) {
-      if (event.button !== undefined && event.button !== 0) return;
-      event.preventDefault();
-      if (rec) {
-        stopListening();
-        return;
-      }
-      startListening();
-      held = false;
-      if (holdTimer) clearTimeout(holdTimer);
-      holdTimer = setTimeout(function () {
-        held = true; // 按住超过 450ms 算「按住说话」，松手就停
-      }, 450);
-    });
-
-    el.mic.addEventListener('pointerup', function () {
-      if (holdTimer) {
-        clearTimeout(holdTimer);
-        holdTimer = null;
-      }
-      if (held && rec) stopListening();
-      held = false;
-    });
-
-    el.mic.addEventListener('pointercancel', function () {
-      if (holdTimer) {
-        clearTimeout(holdTimer);
-        holdTimer = null;
-      }
-      held = false;
-      stopListening();
-    });
-
-    // 键盘（Enter/Space）触发的 click 没有 pointerdown，单独补一条
-    el.mic.addEventListener('click', function (event) {
-      if (event.detail === 0) toggleListening();
-    });
-  })();
-
-  el.kb.addEventListener('click', function () {
-    toggleComposer();
-  });
-
-  el.sound.addEventListener('click', function () {
-    ttsOn = !ttsOn;
-    writeSession(STORE_TTS, ttsOn ? '1' : '0');
-    renderSound();
-    if (!ttsOn) stopSpeaking();
-    else if (lastReply) speak(lastReply);
-  });
+  el.mic.addEventListener('click', toggleListening);
+  el.mic.addEventListener('pointercancel', stopListening);
+  el.keyboard.addEventListener('click', toggleComposer);
 
   el.composer.addEventListener('submit', function (event) {
     event.preventDefault();
@@ -605,13 +473,30 @@
     if (document.hidden) {
       stopSpeaking();
       stopListening();
+      settlement = null;
+      clearTimeout(settlementTimer);
+      render();
     }
   });
-  window.addEventListener('pagehide', stopSpeaking);
+  window.addEventListener('pagehide', function () { stopListening(); stopSpeaking(); });
+
+  // iOS 键盘弹出不会缩小布局视口：用 visualViewport 的差值把底部输入区顶到键盘上方
+  function watchKeyboard() {
+    var view = window.visualViewport;
+    if (!view) return;
+    function sync() {
+      var covered = Math.max(0, window.innerHeight - view.height - view.offsetTop);
+      document.documentElement.style.setProperty('--kb-offset', covered + 'px');
+    }
+    view.addEventListener('resize', sync);
+    view.addEventListener('scroll', sync);
+    sync();
+  }
 
   /* ---------------- 启动 ---------------- */
 
-  renderSound();
+  el.micStatus.textContent = micPrompt({ enabled: false, active: false, paused: false });
+  watchKeyboard();
   render();
   setConn('connecting');
   loadConfig();
