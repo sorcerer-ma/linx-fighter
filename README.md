@@ -14,6 +14,7 @@
   <img alt="MCP" src="https://img.shields.io/badge/MCP-Streamable%20HTTP-4f46e5" />
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-%E2%89%A5%2020-3c873a" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178c6" />
+  <a href="https://codecov.io/gh/sorcerer-ma/linx-fighter"><img alt="Codecov" src="https://codecov.io/gh/sorcerer-ma/linx-fighter/graph/badge.svg" /></a>
 </p>
 
 <p align="center">

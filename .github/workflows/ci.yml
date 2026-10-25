@@ -30,13 +30,14 @@ jobs:
       # 与参考实现逐项对拍，数值/随机数/结算顺序漂移直接失败
       - run: pnpm validate
 
-      # 生成 lcov 供 Codecov 展示（公开仓库可不配 token；私有仓库配 CODECOV_TOKEN secret）
+      # 生成 lcov 供 Codecov 展示（私有仓库必须配 CODECOV_TOKEN secret）
       - run: pnpm coverage:lcov
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
       - run: pnpm build

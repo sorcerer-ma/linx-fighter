@@ -16,6 +16,8 @@
 
 CI 在 push 到 `main` 与 PR 时依次执行 typecheck → coverage → validate → coverage:lcov → build（[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)）。覆盖率低于阈值、数值对拍出现漂移都会直接失败，不靠人工看一眼报告。
 
+Codecov 上传使用仓库 Secret `CODECOV_TOKEN`（私有仓库必需，在 Codecov 仓库设置里获取 upload token）；缺失时上传会报 `Token required - not valid tokenless upload`，但 `fail_ci_if_error: false` 不会阻断构建。私有仓库的徽章还需要 Codecov 提供的 badge token，否则只显示 `unknown`。
+
 ## 测试矩阵
 
 | 范围 | 测试文件 | 覆盖重点 |
