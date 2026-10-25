@@ -1,4 +1,6 @@
-import type { SandboxAgent } from './agent.js';
+import { SandboxAgent } from './agent.js';
+import type { GameReply } from '../../src/game/protocol.js';
+import type { ReplyRejectionReason } from './reply-check.js';
 import { randomUUID } from 'node:crypto';
 import type { BattleState } from '../../src/game/state.js';
 import type { Logger } from '../../src/log.js';
@@ -33,6 +35,10 @@ export interface BattleSnapshot {
 
 export interface SayResult {
   ok: boolean;
+  protocol?: GameReply;
+  sourceBattleId?: string | null;
+  silent: boolean;
+  validationReason?: ReplyRejectionReason;
   reply: string;
   isError: boolean;
   tool: string;
@@ -52,54 +58,45 @@ export class SandboxClient {
 
   get agentMode(): 'relay' | 'compatibility' { return this.options.agent ? 'relay' : 'compatibility'; }
 
-  /** ASR text is forwarded unchanged; expression never executes another turn. */
-  async say(deviceId: string, text: string): Promise<SayResult> {
+  /** No protocol interpretation or tool selection occurs before game_say. */
+  async say(deviceId: string, text: string, options: { signal?: AbortSignal } = {}): Promise<SayResult> {
+    return this.invoke(deviceId, 'game_say', text, options);
+  }
+  async wait(deviceId: string, options: { signal?: AbortSignal } = {}): Promise<SayResult> {
+    return this.invoke(deviceId, 'wait_event', '', options);
+  }
+  private async invoke(deviceId: string, tool: 'game_say' | 'wait_event', text: string, options: { signal?: AbortSignal }): Promise<SayResult> {
     const sessionId = `s-${randomUUID().slice(0, 8)}`;
     const mcp = new LinxMcpClient({
-      upstream: this.options.upstream,
-      deviceId,
-      agentId: this.options.agentId,
-      sessionId,
-      timeoutMs: this.options.timeoutMs,
-      logger: this.options.logger,
-      display: this.options.display,
+      upstream: this.options.upstream, deviceId, agentId: this.options.agentId,
+      sessionId, timeoutMs: this.options.timeoutMs, logger: this.options.logger, display: this.options.display,
     });
-
-    const base = { tool: this.options.agent ? 'agent' : 'game_say', deviceId, agentId: this.options.agentId, sessionId };
+    const base = { tool, deviceId, agentId: this.options.agentId, sessionId };
     try {
-      await mcp.initialize();
-      const outcome = this.options.agent
-        ? await this.options.agent.run(text, mcp)
-        : await mcp.callTool('game_say',{text}).then(result=>({tool:'game_say',...result,sourceText:result.text,rewriteStatus:'original',expressionError:undefined}));
-      const { text: reply, isError } = outcome;
-      // 局面只是展示用：查不到不影响这一句播报
+      options.signal?.throwIfAborted();
+      await mcp.initialize(options);
+      const agent = this.options.agent ?? new SandboxAgent('');
+      const outcome = tool === 'wait_event' ? await agent.wait(mcp, options) : await agent.run(text, mcp, options);
       const state = await this.state(deviceId).catch(() => null);
+      const cancelled = options.signal?.aborted === true;
+      const stale = state !== null && outcome.battleId !== undefined && outcome.battleId !== (state.battle?.battleId ?? null);
       const trace = mcp.takeTrace();
+      const validationReason = 'validationReason' in outcome ? outcome.validationReason : undefined;
+      const rewriteStatus = cancelled ? 'cancelled' : stale ? 'stale' : outcome.rewriteStatus;
       this.options.logger.info('沙箱转发', {
-        deviceId,
-        requestId: sessionId,
-        rewriteStatus: outcome.rewriteStatus,
+        deviceId, requestId: sessionId, rewriteStatus, validationReason,
         expressionError: 'expressionError' in outcome ? outcome.expressionError : undefined,
-        isError,
-        round: state?.battle?.round ?? 0,
-        room: state?.room,
-        tool: outcome.tool,
-        ms: trace.ms,
+        isError: outcome.isError, round: state?.battle?.round ?? 0, room: state?.room, tool, ms: trace.ms,
       });
-      return { ok: true, reply, isError, ...base, tool:outcome.tool, sourceReply:outcome.sourceText, rewriteStatus:outcome.rewriteStatus, expressionError:'expressionError' in outcome && typeof outcome.expressionError === 'string' ? outcome.expressionError : undefined, state, trace };
-    } catch (error) {
-      const message = error instanceof UpstreamError ? error.message : error instanceof Error ? error.message : String(error);
-      const trace = mcp.takeTrace();
-      this.options.logger.warn('沙箱Agent或工具调用失败', { deviceId, error: message, ms: trace.ms });
-      return {
-        ok: false,
-        reply: this.options.agent ? 'Agent或工具调用失败，结果未确认，请先核实战况。' : `沙箱连不上游戏服务（${this.options.upstream}），先确认那边在跑。`,
-        isError: true,
-        ...base,
-        state: null,
-        trace,
-        error: this.options.agent ? 'agent_or_tool_failed' : 'upstream_unreachable',
-      };
+      return { ok: true, ...base, reply: stale || cancelled ? '' : outcome.text, protocol: outcome.reply,
+        sourceBattleId:outcome.battleId, silent:outcome.silent || stale || cancelled, validationReason,
+        isError: outcome.isError, sourceReply:outcome.sourceText, rewriteStatus,
+        expressionError:'expressionError' in outcome && typeof outcome.expressionError === 'string' ? outcome.expressionError : undefined, state, trace };
+    } catch {
+      const cancelled = options.signal?.aborted === true;
+      this.options.logger.warn('沙箱工具结果未确认', { deviceId, requestId:sessionId, tool, cancelled });
+      return { ok:false, ...base, silent:cancelled, reply:cancelled ? '' : '这一手结果未确认，我先核实局面。',
+        isError:true, state:null, trace:mcp.takeTrace(), error:cancelled ? 'cancelled' : 'upstream_unreachable' };
     }
   }
 

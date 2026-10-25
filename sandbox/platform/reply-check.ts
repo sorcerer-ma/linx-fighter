@@ -1,66 +1,110 @@
-import type { Presentation } from '../../src/game/presentation.js';
+import type { GameReply, ProtocolEvent } from '../../src/game/protocol.js';
 
-/** Deliberately limited checks, not a general natural-language proof. Ambiguous
- * number ownership is rejected; paraphrases that pass still need human QA. */
-function normalize(text:string):string {
-  const digits:Record<string,string>={一:'1',二:'2',两:'2',三:'3',四:'4',五:'5',六:'6',七:'7',八:'8',九:'9',零:'0'};
-  return text.replace(/[一二两三四五六七八九零](?=次|点|轮|回合)/g,n=>digits[n]!)
-    .replace(/我方/g,'我').replace(/对方|敌方|敌人/g,'对手');
+export type ReplyRejectionReason = 'empty' | 'format' | 'length' | 'number' | 'ownership' | 'winner' | 'stage' | 'certainty' | 'pending' | 'event_start' | 'event_room' | 'event_charge' | 'event_hit' | 'event_end' | 'event_timeout' | 'event_chant' | 'event_round' | 'text';
+const numeral: Record<string, number> = { 零:0, 一:1, 二:2, 两:2, 三:3, 四:4, 五:5, 六:6, 七:7, 八:8, 九:9 };
+function normalize(text: string, facts: GameReply): string {
+  const named = facts.foe?.name ? text.split(facts.foe.name).join('对手') : text;
+  return named.replace(/我方/g, '我').replace(/对方|敌方|敌人/g, '对手')
+    .replace(/[零一二两三四五六七八九十]+(?=点|次|轮|回合)/g, value => {
+      if (value.includes('十')) { const [tens, ones] = value.split('十'); return String((tens ? numeral[tens] ?? 0 : 1) * 10 + (ones ? numeral[ones] ?? 0 : 0)); }
+      return String(numeral[value] ?? value);
+    });
 }
-function numbers(text:string, details:Presentation):string[] {
-  let owner='?'; const values:string[]=[];
-  const name=details.facts.opponentName;
-  const normalized=normalize(name && name!=='对手' ? text.split(name).join('对手') : text)
-    // A request to repeat once is conversational wording, not a battle resource.
-    .replace(/再(?:说|告诉我|讲|重复)(?:1次|一遍)/g,'重说');
-  for(const match of normalized.matchAll(/对手|我|[。！？；]|\d+(?:\.\d+)?/g)) {
-    const token=match[0];
-    if(token==='我'||token==='对手')owner=token;
-    else if(/[。！？；]/.test(token))owner='?';
-    else {
-      const tail=normalized.slice(match.index!+token.length);
-      const before=normalized.slice(Math.max(0,match.index!-3),match.index);
-      values.push((/^(轮|回合)/.test(tail)||/房间$/.test(before)?'?':owner)+':'+token);
+function asserted(text: string, pattern: RegExp): boolean {
+  return pattern.test(text.replace(/(?:没能|没有|不能|未能|没|未|不)(?:命中|击中|打中|挡住|躲开|闪开|获胜|赢了|释放|生效)/g, ''));
+}
+function winner(text: string): 'you' | 'foe' | undefined {
+  if (/我(?:输了|败了|失败)|对手(?:赢了|获胜|胜利)|我被(?:击倒|打败)/.test(text)) return 'foe';
+  if (/我(?:赢了|赢啦|获胜|胜利)|我(?:把|将)?对手(?:击倒|打倒|击败)|我(?:击倒|打倒|击败)了?对手/.test(text)) return 'you';
+}
+function numbers(value: unknown, result = new Set<number>()): Set<number> {
+  if (typeof value === 'number') result.add(value);
+  else if (value && typeof value === 'object') for (const item of Object.values(value)) numbers(item, result);
+  return result;
+}
+function eventKept(event: ProtocolEvent, text: string): boolean {
+  const actor = event.t === 'hit' || event.t === 'charge' ? event.by === 'you' ? '我' : '对手' : '';
+  switch (event.t) {
+    case 'room': case 'join': return text.includes(event.code);
+    case 'start': return (text.includes('对手') || text.includes(event.foe)) && (event.first === 'you' ? /我.{0,8}(?:先|出手)|(?:先手|先攻).{0,4}我/.test(text) : /对手.{0,8}(?:先|出手)|(?:先手|先攻).{0,4}对手/.test(text));
+    case 'charge': return new RegExp(actor + '.{0,14}(?:蓄力|能量)').test(text) && text.includes(String(event.ap));
+    case 'hit': {
+      const defender = event.by === 'you' ? '对手' : '我';
+      if (!text.includes(String(event.dmg))) return false;
+      if (!new RegExp(actor + '.{0,12}(?:攻|打|击|冲击)|' + defender + '.{0,12}(?:挨|受|掉|伤|躲|闪|挡)').test(text)) return false;
+      if (event.crit && !/暴击/.test(text)) return false;
+      if (event.r === 'guard' && !/格挡|挡下|挡住|举盾/.test(text)) return false;
+      if (event.r === 'dodge' && event.miss && (!new RegExp(defender + '.{0,8}(?:躲开|闪开|避开)').test(text) || /没(?:能)?躲开|闪避失败/.test(text))) return false;
+      if (event.r === 'dodge' && !event.miss && !/没(?:能)?躲开|未躲开|闪避失败|躲晚/.test(text)) return false;
+      if (event.forced && !/没(?:有)?能量|能量(?:不够|耗尽)|只能硬/.test(text)) return false;
+      return true;
     }
+    case 'end': return winner(text) === event.win;
+    case 'timeout': return /等|还没|尚未/.test(text);
+    case 'chant': return text.includes(event.text);
+    case 'round': return event.bonus === 0 || /伤害|加成|更疼|更强/.test(text);
   }
-  return values.sort();
 }
-function winner(text:string,details:Presentation):string|null {
-  const name=details.facts.opponentName;
-  const t=normalize(name && name!=='对手' ? text.split(name).join('对手') : text);
-  if(/我(?:被击倒|输了|败了|失败)|对手(?:赢了|获胜|胜利)/.test(t))return 'opponent';
-  if(/我(?:赢了|赢啦|获胜|胜利)|对手被我击倒|我(?:把|将)对手(?:击倒|打倒|击败)|我(?:击倒|打倒|击败)了?对手/.test(t))return 'you';
-  return null;
+const eventReason: Record<ProtocolEvent['t'], ReplyRejectionReason> = {
+  start:'event_start', room:'event_room', join:'event_room', charge:'event_charge', hit:'event_hit', end:'event_end', timeout:'event_timeout', chant:'event_chant', round:'event_round',
+};
+
+/** Limited factual guard, not a proof of arbitrary natural-language semantics.
+ * Optional snapshot facts need not all be spoken. Stage invitations have no
+ * phrase whitelist: natural requests like “告诉我打哪招” remain free expression. */
+export function replyRejectionReason(candidate: string, facts: GameReply): ReplyRejectionReason | undefined {
+  if (facts.silent) return candidate === '' ? undefined : 'format';
+  if (!candidate.trim()) return 'empty';
+  if (candidate.length > Math.max(120, (facts.text?.length ?? 0) + 30)) return 'length';
+  if (/^[\s]*[{[]/.test(candidate)) return 'format';
+  const text = normalize(candidate, facts);
+  const allowed = numbers({ you:facts.you, foe:facts.foe, round:facts.round, pending:facts.pending, deny:facts.deny, events:facts.events });
+  if (facts.room) allowed.add(Number(facts.room));
+  for (const n of facts.text?.match(/\d+/g) ?? []) allowed.add(Number(n));
+  const factualText = text.replace(/再(?:告诉我|说|讲|重复)(?:1次|一遍)/g, '重说');
+  for (const match of factualText.matchAll(/\d+/g)) if (!allowed.has(Number(match[0]))) return 'number';
+  const expectedWinner = facts.phase === 'victory' ? 'you' : facts.phase === 'defeat' ? 'foe' : undefined;
+  if (expectedWinner ? winner(text) !== expectedWinner : winner(text) !== undefined) return 'winner';
+  // “我掉了3点生命值” is damage, not a claim about remaining hp.
+  for (const match of text.matchAll(/(我|对手)(?:现在|目前|还)?(?:有|剩|剩下|还有|还剩|还剩下)\s*(\d+)点?(生命值|能量)/g)) {
+    const unit = match[1] === '我' ? facts.you : facts.foe;
+    if (!unit || Number(match[2]) !== (match[3] === '能量' ? unit.ap : unit.hp)) return 'ownership';
+  }
+  for (const match of text.matchAll(/(我|对手)(\d+)点(生命值|能量)/g)) {
+    const unit = match[1] === '我' ? facts.you : facts.foe;
+    if (!unit || Number(match[2]) !== (match[3] === '能量' ? unit.ap : unit.hp)) return 'ownership';
+  }
+  const hits = (facts.events ?? []).filter((event): event is Extract<ProtocolEvent,{t:'hit'}> => event.t === 'hit');
+  if (!hits.some(event => event.crit) && /暴击/.test(text) && !/没有暴击|没暴击|不算暴击/.test(text)) return 'event_hit';
+  for (const match of text.matchAll(/(我|对手)(?:的)?(?:(普攻|普通攻击|强攻|强化攻击|大招|共鸣冲击))?(?:打中|击中|命中|攻击|打)(了)?(我|对手)/g)) {
+    const by = match[1] === '我' ? 'you' : 'foe';
+    const target = match[4] === '我' ? 'you' : 'foe';
+    const label = match[2];
+    const mv = label ? /普攻|普通攻击/.test(label) ? 'light' : /强攻|强化攻击/.test(label) ? 'heavy' : 'ult' : undefined;
+    if (by === target || !hits.some(event => event.by === by && (mv === undefined || event.mv === mv))) return 'ownership';
+  }
+  for (const match of text.matchAll(/(我|对手)(?:的)?(普攻|普通攻击|强攻|强化攻击|大招|共鸣冲击).{0,4}(?:打中|击中|命中|砸中|释放了)/g)) {
+    const by = match[1] === '我' ? 'you' : 'foe';
+    const mv = /普攻|普通攻击/.test(match[2]!) ? 'light' : /强攻|强化攻击/.test(match[2]!) ? 'heavy' : 'ult';
+    if (!hits.some(event => event.by === by && event.mv === mv) && !(facts.pending?.by === by && facts.pending.mv === mv && mv === 'ult' && !/命中|击中|打中|砸中/.test(match[0]))) return 'event_hit';
+  }
+  for (const match of text.matchAll(/(我|对手)(?:受了|受到|受伤|挨了|掉了?|损失了?)(\d+)点?(?:生命值|伤害)?/g)) {
+    const target = match[1] === '我' ? 'you' : 'foe';
+    if (!hits.some(event => event.by !== target && event.dmg === Number(match[2]))) return 'ownership';
+  }
+  if (facts.ok === false && asserted(text, /命中|击中|打中|释放了|出手了|生效了/)) return 'certainty';
+  if (facts.pending && !hits.length && asserted(text, /命中|击中|打中|击倒/)) return 'pending';
+  if (facts.need === 'wait_guest' && /开打|对决开始|轮到我|我该怎么做/.test(text)) return 'stage';
+  if (facts.need === 'wait_foe' && /轮到我|该我出招|我该怎么做/.test(text)) return 'stage';
+  if (facts.need === 'move' && /该对手出招|轮到对手出招|等对手(?:出招|应对|加入)/.test(text)) return 'stage';
+  if (facts.need === 'respond' && /该我出招|轮到我出招|等对手出招/.test(text)) return 'stage';
+  if (facts.need === 'none' && expectedWinner && /该我出招|轮到我|我该怎么做/.test(text)) return 'stage';
+  if (facts.reason === 'unknown' && /没生效|没打出去|再(?:说|来|试).*(?:招|攻击)/.test(text)) return 'certainty';
+  if (facts.reason === 'unclear' && !/没听清|没听懂|重说|再说|再告诉|没认出/.test(text)) return 'certainty';
+  for (const event of facts.events ?? []) if (!eventKept(event, text)) return eventReason[event.t];
+  if (facts.text) for (const value of facts.text.match(/\d+/g) ?? []) if (!text.includes(value)) return 'text';
+  return undefined;
 }
-export function checkReply(source:string,candidate:string,details:Presentation):boolean {
-  if(!candidate.trim()||candidate.length>Math.max(60,source.length+20))return false;
-  if(JSON.stringify(numbers(source,details))!==JSON.stringify(numbers(candidate,details)))return false;
-  if(details.kind==='retry' && details.facts.next!=='start' && !/没听清|没听懂|听不清|重说|再说|再告诉|没认出/.test(candidate))return false;
-  if(details.certainty==='not-applied'){
-    // An acknowledged rejection/retry must not turn into an executed action.
-    const success=/(?:命中|击中|打中|挡住|躲开|释放了|出手了|获胜|赢了)/;
-    const positive=(s:string)=>s.replace(/(?:没能|没有|不能|未能|没|未|不)(?:命中|击中|打中|挡住|躲开|释放了|出手了|获胜|赢了)/g,'');
-    if(!success.test(positive(source)) && success.test(positive(candidate)))return false;
-  }
-  const expected=details.facts.phase==='victory'?'you':details.facts.phase==='defeat'?'opponent':winner(source,details);
-  if(expected && winner(candidate,details)!==expected)return false;
-  if(details.facts.phase==='battle' && !winner(source,details) && winner(candidate,details))return false;
-  const attacks=details.facts.events.filter(e=>e.type==='attack');
-  if(attacks.length===1){
-    const event=attacks[0]!;
-    const defender=event.side==='player'?'对手':'我';
-    const t=normalize(candidate);
-    if(event.dodged && (!new RegExp(defender+'.{0,8}(躲开|闪开|避开)').test(t)||/没(?:能)?躲开|闪避失败/.test(t)))return false;
-    if(!event.dodged && event.response==='dodge' && !/没(?:能)?躲开|未躲开|闪避失败/.test(t))return false;
-    if(event.guarded && !/格挡|挡下|挡住|举盾/.test(t))return false;
-  }
-  const next=details.facts.next;
-  if(next==='ended' && /该我出招|轮到我|请指挥我|我该怎么做/.test(candidate))return false;
-  if(next==='wait-join' && /对决开始|开打|该我出招|轮到我|我该怎么做/.test(candidate))return false;
-  if(next==='start' && /(?:轮到|该)我(?:出招|格挡)|等对手(?:加入|应对)/.test(candidate))return false;
-  if(next==='act' && /该我出招|轮到我|请指挥我/.test(source) && !/该我|轮到我|指挥我|听你(?:的|指挥)|我(?:来|接着).*出招|我该怎么做|你(?:来)?(?:定|指挥|决定)/.test(candidate))return false;
-  if(['wait-opponent','wait-response'].includes(next) && /等对手/.test(source) && (!/等.*(?:对手|对方)/.test(candidate)||/该我出招|轮到我/.test(candidate)))return false;
-  if(next==='respond' && details.kind!=='retry' && /格挡|闪避|应对/.test(source) && !/格挡|闪避|应对|承受/.test(candidate))return false;
-  if(details.facts.events.some(e=>e.type==='pending') && !attacks.length && !/命中|击倒/.test(source) && /命中|击倒/.test(candidate))return false;
-  return true;
+export function checkReply(candidate: string, facts: GameReply): boolean {
+  return replyRejectionReason(candidate, facts) === undefined;
 }

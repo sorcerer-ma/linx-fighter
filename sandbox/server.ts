@@ -26,8 +26,7 @@ export interface SandboxDependencies {
 }
 
 const DEVICE_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
-/** 和 game_say 的入参上限保持一致，超长句子先截断，避免直接把协议错误丢给玩家 */
-const MAX_TEXT_LENGTH = 120;
+/** 超长原话交给 MCP 明确拒绝，绝不截断后执行。 */
 
 /** 生成一个窗口级的兜底身份；页面没带 player 参数时用 */
 function randomSuffix(): string {
@@ -96,13 +95,27 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
   // 唯一的输入入口：页面说了一句话
   app.post('/api/say', async (req, res) => {
     const body = (req.body ?? {}) as { deviceId?: unknown; text?: unknown };
-    const text = typeof body.text === 'string' ? body.text.trim().slice(0, MAX_TEXT_LENGTH) : '';
-    if (!text) {
+    const text = typeof body.text === 'string' ? body.text : '';
+    if (!text.trim()) {
       res.status(400).json({ ok: false, reply: '没有听到内容，请再说一次。', error: 'empty_text' });
       return;
     }
     const deviceId = normalizeDeviceId(body.deviceId) ?? `web-${randomSuffix()}`;
-    res.json(await client.say(deviceId, text));
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    const result = await client.say(deviceId, text, { signal:controller.signal });
+    if (!res.destroyed) res.json(result);
+  });
+
+  // Playback completes before the page requests this separate, cancellable wait.
+  app.post('/api/wait', async (req, res) => {
+    const body = (req.body ?? {}) as { deviceId?:unknown };
+    const deviceId = normalizeDeviceId(body.deviceId);
+    if (!deviceId) { res.status(400).json({ ok:false, error:'invalid_device' }); return; }
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    const result = await client.wait(deviceId, { signal:controller.signal });
+    if (!res.destroyed) res.json(result);
   });
 
   // 只读局面：CLI 与调试脚本用，页面正常情况下走状态流

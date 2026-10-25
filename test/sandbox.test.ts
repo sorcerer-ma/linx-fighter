@@ -169,7 +169,7 @@ describe('沙箱服务', () => {
       assert.equal(response.status, 200);
       assert.equal(body.ok, false);
       assert.equal(body.error, 'upstream_unreachable');
-      assert.match(body.reply, /连不上游戏服务/);
+      assert.match(body.reply, /结果未确认/);
     } finally {
       await new Promise<void>((resolve) => dead.close(() => resolve()));
     }
@@ -195,10 +195,10 @@ it('真实MCP开局与拒绝进入表达，日志只记录状态；表达失败�
  const logs:Array<{message:string;fields?:Record<string,unknown>}>=[];
  const logger={...createLogger('error'),info(message:string,fields?:Record<string,unknown>){logs.push({message,fields})}};
  let modelCalls=0;
- const agent=new SandboxAgent('伙伴',{async rewrite(_prompt,source,facts){modelCalls++;if(facts?.kind==='opening')return source.replace('对决开始','开打啦');throw new Error('unavailable with fake-secret');}});
+ const agent=new SandboxAgent('伙伴',{async express(_prompt,facts){modelCalls++;const start=facts.events?.find(e=>e.t==='start');if(start?.t==='start')return `${start.foe}来了，${start.first==='you'?'我先手，告诉我怎么出招':'对手先手，我等着接招'}！`;throw new Error('unavailable with fake-secret');}});
  const client=new SandboxClient({upstream:urlOf(gameServer),agentId:'feedback-agent',timeoutMs:3000,logger,agent});
  const opened=await client.say('feedback-private-device','开始');
- assert.equal(opened.rewriteStatus,'rewritten');assert.match(opened.reply,/开打啦/);
+ assert.equal(opened.rewriteStatus,'rewritten');assert.match(opened.reply,/来了/);
  const refused=await client.say('feedback-private-device','不要普攻');
  assert.equal(refused.rewriteStatus,'fallback-error');assert.equal(refused.reply,refused.sourceReply);
  assert.equal(modelCalls,2);
@@ -208,4 +208,28 @@ it('真实MCP开局与拒绝进入表达，日志只记录状态；表达失败�
  assert.equal(entries[1]?.fields?.expressionError,'表达模型不可用');
  for(const entry of entries){assert.ok(!('text' in entry.fields!));assert.ok(!('reply' in entry.fields!));assert.ok(typeof entry.fields?.requestId==='string');}
  assert.ok(!JSON.stringify(entries).includes('fake-secret'));
+});
+
+it('v2 超长输入不截断执行，原文空格保持',async()=>{
+ const tooLong=await say('overlong-v2','开始'+ '啊'.repeat(200));
+ assert.equal(tooLong.protocol.reason,'unclear');assert.equal(tooLong.protocol.ok,false);assert.equal(tooLong.state.battle,null);
+ const calls=tooLong.trace.requests.filter((r:any)=>r.method==='tools/call');assert.equal(calls[0].request.params.arguments.text.length,202);
+});
+it('等待经独立wait_event返回事实，不重做game_say',async()=>{
+ const client=new SandboxClient({upstream:urlOf(gameServer),agentId:'wait-agent',timeoutMs:3000,logger:createLogger('error')});
+ const host=await client.say('wait-host','开房间');assert.equal(host.protocol?.need,'wait_guest');
+ const waiting=client.wait('wait-host');await new Promise(resolve=>setTimeout(resolve,30));
+ const guest=await client.say('wait-guest','加入房间'+host.protocol?.room);assert.equal(guest.protocol?.phase,'battle');
+ const result=await waiting;assert.equal(result.protocol?.phase,'battle');assert.equal(result.tool,'wait_event');
+ const calls=result.trace.requests.filter(r=>r.method==='tools/call');assert.equal(calls.length,1);assert.equal(calls[0]?.tool,'wait_event');
+});
+it('表达过程中换局，旧话术被丢弃，不与新快照一起播出',async()=>{
+ let entered!:()=>void;const entry=new Promise<void>(resolve=>{entered=resolve;});
+ let release!:(text:string)=>void;const candidate=new Promise<string>(resolve=>{release=resolve;});
+ const agent=new SandboxAgent('伙伴',{async express(){entered();return candidate;}});
+ const options={upstream:urlOf(gameServer),agentId:'stale-agent',timeoutMs:3000,logger:createLogger('error')};
+ const client=new SandboxClient({...options,agent});const plain=new SandboxClient(options);
+ const old=client.say('stale-one','开始');await entry;const fresh=await plain.say('stale-one','重新开始');assert.ok(fresh.state?.battle);
+ release('教头来了，我先手，告诉我怎么出招！');
+ const result=await old;assert.equal(result.silent,true);assert.equal(result.reply,'');assert.equal(result.rewriteStatus,'stale');assert.notEqual(result.sourceBattleId,result.state?.battle?.battleId);
 });
