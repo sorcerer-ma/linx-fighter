@@ -1,3 +1,4 @@
+import { createSandboxAgent } from './platform/agent.js';
 import { createLogger } from '../src/log.js';
 import { loadSandboxConfig } from './config.js';
 import type { BattleState } from '../src/game/state.js';
@@ -182,17 +183,23 @@ async function playDuel(options: DuelOptions, round: number): Promise<DuelResult
     });
   };
 
-  const say = async (deviceId: string, text: string): Promise<string> => {
+  const say = async (deviceId: string, text: string) => {
     const result = await client.say(deviceId, text);
     if (!result.ok) throw new Error(`${deviceId} 调用失败：${result.reply}`);
     await capture(deviceId, text, result.reply);
-    return result.reply;
+    return result;
   };
 
   const opened = await say(host, '开房间');
-  const room = /房间(\d{4})/.exec(opened)?.[1];
-  if (!room) throw new Error(`开房失败，播报里没有房间号：${opened}`);
+  const room = opened.protocol?.room ?? opened.state?.room;
+  if (!room) throw new Error('开房结果没有权威房间号');
   await say(guest, `加入房间${room}`);
+  // 已有访客加入再消费等待，避免自对弈先阻塞等待自己尚未执行的动作。
+  if (opened.protocol?.need === 'wait_guest') {
+    const joined = await client.wait(host);
+    if (!joined.ok) throw new Error('等待加入结果未确认');
+    await capture(host, '（等待对手加入）', joined.reply);
+  }
 
   // 每局穿插一次「查战况」与一次 ASR 误识别，验证非招式语句不会推进回合
   await say(host, '战况如何');
@@ -264,6 +271,7 @@ async function main(): Promise<number> {
 
   const config = loadSandboxConfig();
   const client = new SandboxClient({
+    agent: createSandboxAgent(config.agent),
     upstream: config.upstream,
     agentId: config.agentId,
     timeoutMs: config.timeoutMs,

@@ -1,3 +1,4 @@
+import { createSandboxAgent } from './platform/agent.js';
 import { createLogger } from '../src/log.js';
 import { loadSandboxConfig } from './config.js';
 import { SandboxClient, type BattleSnapshot } from './platform/client.js';
@@ -11,6 +12,7 @@ const USAGE = `灵犀沙箱命令行
 
 用法：
   tsx sandbox/cli.ts say   [--device web-cli] "玩家原话"   把一句话交给服务端，打印播报与局面
+  tsx sandbox/cli.ts wait  [--device web-cli]              等待一次对手事件（先读完上一条回复）
   tsx sandbox/cli.ts state [--device web-cli]              打印当前局面 JSON
   tsx sandbox/cli.ts tools                                 打印服务端 MCP 工具
 
@@ -90,6 +92,7 @@ async function main(argv: string[]): Promise<number> {
   const logger = createLogger('error');
   const display = flags.voice === true ? 'voice' : config.display;
   const client = new SandboxClient({
+    agent: createSandboxAgent(config.agent),
     upstream: config.upstream,
     agentId: config.agentId,
     timeoutMs: config.timeoutMs,
@@ -99,21 +102,29 @@ async function main(argv: string[]): Promise<number> {
   const deviceId = flagText(flags, 'device') ?? 'web-cli';
   const asJson = flags.json === true;
 
-  if (command === 'say') {
+  if (command === 'say' || command === 'wait') {
     const text = flagText(flags, 'text') ?? positionals.join(' ').trim();
-    if (!text) {
+    if (command === 'say' && !text) {
       console.error('缺少要说的内容，例如：tsx sandbox/cli.ts say --device web-p1 "开房间"');
       return 1;
     }
 
-    const result = await client.say(deviceId, text);
+    const abort = new AbortController();
+    const cancel = () => abort.abort();
+    if (command === 'wait') process.once('SIGINT', cancel);
+    const result = await (command === 'wait'
+      ? client.wait(deviceId, { signal: abort.signal })
+      : client.say(deviceId, text)).finally(() => process.removeListener('SIGINT', cancel));
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
       return result.ok ? 0 : 1;
     }
 
-    console.log(`玩家 ${deviceId}：${text}`);
-    console.log(`播报：${result.reply}`);
+    if (command === 'say') console.log(`玩家 ${deviceId}：${text}`);
+    console.log(result.silent ? '（静默，不播报）' : `伙伴：${result.reply}`);
+    if (result.protocol?.need === 'wait_guest' || result.protocol?.need === 'wait_foe') {
+      console.log('（需要等待：读完本句后可运行 wait；每次输入最多等待一次）');
+    }
     if (display === 'voice') console.log('（模拟无屏硬件：补账播报开启）');
     console.log(`局面：${describeState(result.state)}`);
     if (!result.ok) console.error(`（上游：${config.upstream}）`);

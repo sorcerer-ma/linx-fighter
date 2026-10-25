@@ -75,6 +75,10 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var settlementTimer = null;
   var previousBattle = null;
   var listening = false;
+  var turnSequence = 0;
+  var waitAbort = null;
+  var finishPlayback = null;
+  var activeReplyBattleId = null;
 
   /* ---------------- 身份 ---------------- */
 
@@ -164,7 +168,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       })
       .then(function (data) {
         config = data;
-        $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 事实约束人设表达' : '原话直连 · 人设改写未启用';
+        $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 事实约束人设表达' : '事实兜底 · 人设表达未启用';
         connectStream(data);
       })
       .catch(function () {
@@ -218,15 +222,78 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       if (payload.revision <= state.revision) return; // 丢弃乱序/重复
       state.revision = payload.revision;
     }
+    const nextBattleId = payload.battle && payload.battle.battleId;
+    if ((waitAbort && state.battle && state.battle.battleId && nextBattleId !== state.battle.battleId) ||
+        (activeUtterance && activeReplyBattleId && nextBattleId !== activeReplyBattleId)) cancelTurn();
     unconfirmed = false;
     applyBattle(payload.battle);
   }
 
   /* ---------------- 发送 ---------------- */
 
-  function say(text) {
-    var value = String(text == null ? '' : text).trim();
-    if (!value || busy) return;
+  // 每条输入最多等待一次。新输入、停止或离开页面使旧响应失效。
+  function cancelTurn() {
+    turnSequence += 1;
+    if (waitAbort) waitAbort.abort();
+    waitAbort = null;
+    stopSpeaking();
+    activeReplyBattleId = null;
+    return turnSequence;
+  }
+
+  function wantsWait(data) {
+    return !data.silent && data.protocol &&
+      (data.protocol.need === 'wait_guest' || data.protocol.need === 'wait_foe');
+  }
+
+  function showOutcome(data, turn, revision) {
+    if (turn !== turnSequence || document.hidden) return Promise.resolve('cancelled');
+    const currentBattleId = state.battle && state.battle.battleId;
+    // 工具执行时的局号来自服务端元信息，不从玩家原话或伙伴台词猜测。
+    if (state.revision !== revision && data.sourceBattleId !== undefined &&
+        data.sourceBattleId !== (currentBattleId || null)) return Promise.resolve('cancelled');
+    unconfirmed = data.ok === false || (data.protocol && data.protocol.reason === 'unknown');
+    render();
+    if (data.state && state.revision === revision) {
+      applyBattle(data.state.battle === undefined ? null : data.state.battle);
+    }
+    if (data.silent) return Promise.resolve('silent');
+    if (typeof data.reply !== 'string' || !data.reply.trim()) return Promise.resolve('silent');
+    const systemReply = data.ok === false || data.isError === true;
+    pushReply(data.reply, systemReply ? 'warn' : 'normal', systemReply ? 'system' : 'partner');
+    activeReplyBattleId = data.sourceBattleId || null;
+    return speak(data.reply);
+  }
+
+  async function waitForOpponent(turn) {
+    if (turn !== turnSequence || document.hidden) return;
+    const abort = new AbortController();
+    waitAbort = abort;
+    const timeout = setTimeout(function () { abort.abort(); }, 40000);
+    const revision = state.revision;
+    try {
+      const res = await fetch('/api/wait', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId: deviceId }), signal: abort.signal
+      });
+      const data = await res.json();
+      if (abort.signal.aborted || turn !== turnSequence) return;
+      if (!res.ok || !data) throw new Error('bad wait response');
+      await showOutcome(data, turn, revision);
+    } catch (error) {
+      if (abort.signal.aborted || turn !== turnSequence) return;
+      pushReply('等待连接中断，未重复执行任何行动；可以询问战况。', 'warn');
+    } finally {
+      clearTimeout(timeout);
+      if (waitAbort === abort) waitAbort = null;
+    }
+  }
+
+  async function say(text) {
+    var value = String(text == null ? '' : text);
+    if (!value.trim() || busy) return;
+    const turn = cancelTurn();
+    const revision = state.revision;
     busy = true;
     conversation.append('player', value);
     el.transcript.textContent = '玩家 · 已发送：' + value;
@@ -234,44 +301,41 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     listener.pause();
     closeComposer();
     render();
-    var abort = typeof AbortController === 'function' ? new AbortController() : null;
-    var abortTimer = abort ? setTimeout(function () { abort.abort(); }, SAY_TIMEOUT) : null;
-    fetch('/api/say', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ deviceId: deviceId, text: value }),
-      signal: abort ? abort.signal : undefined
-    })
-      .then(function (res) {
-        return res.json().catch(function () {
-          return null;
-        });
-      })
-      .then(function (data) {
-        if (!data) throw new Error('bad response');
-        unconfirmed = data.ok === false;
-        if (data.state) applyBattle(data.state.battle === undefined ? null : data.state.battle);
-        const systemReply = data.ok === false || data.isError === true;
-        pushReply(data.reply, systemReply ? 'warn' : 'normal', systemReply ? 'system' : 'partner');
-        speak(data.reply);
-      })
-      .catch(function () {
+    const abort = new AbortController();
+    const abortTimer = setTimeout(function () { abort.abort(); }, SAY_TIMEOUT);
+    let data;
+    try {
+      const res = await fetch('/api/say', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId: deviceId, text: value }), signal: abort.signal
+      });
+      data = await res.json();
+      if (!res.ok || !data) throw new Error('bad response');
+    } catch (error) {
+      if (turn === turnSequence) {
         unconfirmed = true;
         pushReply('连接出了问题，刚才的结果未确认。恢复后先询问战况。', 'warn');
-      })
-      .then(function () {
-        clearTimeout(abortTimer);
-        busy = false;
-        // 文字输入还开着就别抢麦：键盘声会被当成指令
-        if (!activeUtterance && el.composer.hidden) listener.resume();
-        render();
-      });
+      }
+    } finally {
+      clearTimeout(abortTimer);
+      busy = false;
+      render();
+    }
+    if (data && turn === turnSequence) {
+      const playback = await showOutcome(data, turn, revision);
+      // 播放错误、取消、超时不冒充播放完成，也不提前挂起。
+      if ((playback === 'ended' || playback === 'displayed') && wantsWait(data)) {
+        void waitForOpponent(turn);
+      }
+    }
+    if (!activeUtterance && el.composer.hidden) listener.resume();
   }
 
   /* ---------------- 输入行 ---------------- */
 
   // 文字输入是语音的降级入口：展开时先停识别，免得把键盘声当指令
   function openComposer(focus) {
+    cancelTurn();
     el.keyboard.setAttribute('aria-expanded', 'true');
     if (listener && listener.enabled) listener.pause();
     if (!el.composer.hidden) {
@@ -352,37 +416,44 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     return typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance === 'function';
   }
 
+  // 音频层仅消费最终话术，以完成/失败/取消事件通知调用方。
   function speak(text) {
-    if (!canSpeak() || !text.trim()) return;
+    if (!text.trim()) return Promise.resolve('silent');
     stopSpeaking();
+    if (!canSpeak()) return Promise.resolve('displayed');
     listener.pause();
-    var utter = new window.SpeechSynthesisUtterance(text);
-    activeUtterance = utter;
-    utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
-    utter.rate = TTS_RATE;
-    utter.onstart = function () {
-      if (activeUtterance === utter) el.replies.setAttribute('aria-label', '对话记录，伙伴正在朗读');
-    };
-    function finish() {
-      if (activeUtterance !== utter) return;
-      clearTimeout(ttsTimer);
-      ttsTimer = null;
-      activeUtterance = null;
-      el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
-      if (!busy && el.composer.hidden && listener) listener.resume();
-    }
-    utter.onend = utter.onerror = finish;
-    // 有些浏览器（尤其 iOS）不会回调 onend：超时直接收尾并打断朗读
-    clearTimeout(ttsTimer);
-    ttsTimer = setTimeout(function () {
-      try { window.speechSynthesis.cancel(); } catch (err) { /* 忽略 */ }
-      finish();
-    }, TTS_TIMEOUT);
-    try { window.speechSynthesis.speak(utter); }
-    catch { finish(); }
+    return new Promise(function (resolve) {
+      var utter = new window.SpeechSynthesisUtterance(text);
+      activeUtterance = utter;
+      utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
+      utter.rate = TTS_RATE;
+      utter.onstart = function () {
+        if (activeUtterance === utter) el.replies.setAttribute('aria-label', '对话记录，伙伴正在朗读');
+      };
+      function finish(reason) {
+        if (activeUtterance !== utter) return;
+        clearTimeout(ttsTimer);
+        ttsTimer = null;
+        activeUtterance = null;
+        finishPlayback = null;
+        el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
+        resolve(reason);
+        if (!busy && el.composer.hidden && listener) listener.resume();
+      }
+      finishPlayback = finish;
+      utter.onend = function () { finish('ended'); };
+      utter.onerror = function () { finish('error'); };
+      ttsTimer = setTimeout(function () {
+        finish('timeout');
+        try { window.speechSynthesis.cancel(); } catch (err) { /* 浏览器已收尾 */ }
+      }, TTS_TIMEOUT);
+      try { window.speechSynthesis.speak(utter); }
+      catch { finish('error'); }
+    });
   }
 
   function stopSpeaking() {
+    if (finishPlayback) finishPlayback('cancelled');
     clearTimeout(ttsTimer);
     ttsTimer = null;
     activeUtterance = null;
@@ -426,9 +497,9 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     }
   });
 
-  function stopListening() { listener.stop(); }
+  function stopListening() { cancelTurn(); listener.stop(); }
   function toggleListening() {
-    if (listener.enabled) { listener.stop(); return; }
+    if (listener.enabled) { stopListening(); return; }
     if (!speechReady()) {
       pushReply(SpeechRecognitionCtor ? MIC_NO_HTTPS : MIC_NO_API, 'warn');
       openComposer(true);
@@ -452,8 +523,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   el.composer.addEventListener('submit', function (event) {
     event.preventDefault();
-    var value = el.text.value.trim();
-    if (!value) {
+    var value = el.text.value;
+    if (!value.trim()) {
       closeComposer();
       return;
     }
