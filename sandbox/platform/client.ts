@@ -102,7 +102,8 @@ export class SandboxClient {
       } else outcome = tool === 'wait_event' ? await agent.wait(mcp, request) : await agent.run(text, mcp, request);
       const state = await this.state(deviceId).catch(() => null);
       const cancelled = request.signal?.aborted === true;
-      const stale = state !== null && ((outcome.battleId !== undefined && outcome.battleId !== (state.battle?.battleId ?? null)) || (tool==='notification' && notificationStage!==undefined && notificationStage!==createHash('sha256').update(JSON.stringify(state.battle)).digest('hex')));
+      const stale = (state !== null && outcome.battleId !== undefined && outcome.battleId !== (state.battle?.battleId ?? null))
+        || (tool==='notification' && notificationStage!==undefined && (state===null || notificationStage!==createHash('sha256').update(JSON.stringify(state.battle)).digest('hex')));
       const trace = mcp.takeTrace();
       const validationReason = 'validationReason' in outcome ? outcome.validationReason : undefined;
       const rewriteStatus = cancelled ? 'cancelled' : stale ? 'stale' : outcome.rewriteStatus;
