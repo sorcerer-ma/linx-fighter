@@ -53,7 +53,10 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     mic: $('mic'),
     keyboard: $('keyboard'),
     transcript: $('transcript'),
-    micStatus: $('mic-status')
+    micStatus: $('mic-status'),
+    speechProfile: $('speech-profile'),
+    profileStatus: $('profile-status'),
+    speechDetail: $('speech-detail')
 
   };
 
@@ -65,6 +68,9 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     revision: -2
   };
   var config = null;
+  var selectedSpeechProfile = null;
+  var speechProfiles = [];
+  var speechSource = 'legacy';
   var source = null;
   var busy = false; // 正在等 /api/say
   var conversation = createConversation(el.conversationScroll, el.replies, $('conversation-latest'));
@@ -171,6 +177,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       })
       .then(function (data) {
         config = data;
+        loadSpeechProfiles(data);
         $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 事实约束人设表达' : '事实兜底 · 人设表达未启用';
         connectStream(data);
       })
@@ -179,6 +186,51 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
         setConn('offline');
         pushReply('连不上沙箱，先启动 pnpm sandbox。', 'warn');
       });
+  }
+
+  function loadSpeechProfiles(data) {
+    const expected = ['cancan', 'qingcang', 'tiancai'];
+    const profiles = data.speechProfiles;
+    if (!Array.isArray(profiles) || profiles.length !== expected.length ||
+        expected.some(id => profiles.filter(profile => profile.id === id && typeof profile.name === 'string').length !== 1) ||
+        !expected.includes(data.defaultSpeechProfile)) {
+      el.speechProfile.disabled = true;
+      el.profileStatus.textContent = '音色与性格配置不完整，暂时无法发送指令。';
+      return;
+    }
+    speechProfiles = profiles;
+    const options = profiles.map(profile => {
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = profile.name;
+      return option;
+    });
+    el.speechProfile.replaceChildren(...options);
+    selectedSpeechProfile = data.defaultSpeechProfile;
+    el.speechProfile.value = selectedSpeechProfile;
+    el.speechProfile.disabled = false;
+    showProfileStatus();
+  }
+
+  function showProfileStatus() {
+    const profile = speechProfiles.find(item => item.id === selectedSpeechProfile);
+    el.profileStatus.textContent = profile ? '当前：' + profile.name +
+      (config.voice && config.voice.tts === 'backend' ? '' : '。浏览器朗读不保证对应音色。') : '请选择已配置的音色与性格。';
+  }
+
+  function changeSpeechProfile() {
+    const next = el.speechProfile.value;
+    if (!speechProfiles.some(profile => profile.id === next)) {
+      el.speechProfile.value = selectedSpeechProfile || '';
+      el.profileStatus.textContent = '未知的音色与性格，未切换。';
+      return;
+    }
+    if (next === selectedSpeechProfile) return;
+    cancelTurn();
+    selectedSpeechProfile = next;
+    showProfileStatus();
+    el.speechDetail.textContent = '已停止上一条播报；下一句使用新的音色与性格。';
+    if (!busy && el.composer.hidden) listener.resume();
   }
 
   function connectStream(cfg) {
@@ -249,8 +301,12 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       (data.protocol.need === 'wait_guest' || data.protocol.need === 'wait_foe');
   }
 
-  function showOutcome(data, turn, revision) {
+  function showOutcome(data, turn, revision, profileId) {
     if (turn !== turnSequence || document.hidden) return Promise.resolve('cancelled');
+    if (data.profileId !== undefined && data.profileId !== profileId) {
+      pushReply('回复的音色与性格不匹配，已停止播报。', 'warn', 'system');
+      return Promise.resolve('cancelled');
+    }
     const currentBattleId = state.battle && state.battle.battleId;
     // 工具执行时的局号来自服务端元信息，不从玩家原话或伙伴台词猜测。
     if (state.revision !== revision && data.sourceBattleId !== undefined &&
@@ -265,10 +321,13 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     const systemReply = data.ok === false || data.isError === true;
     pushReply(data.reply, systemReply ? 'warn' : 'normal', systemReply ? 'system' : 'partner');
     activeReplyBattleId = data.sourceBattleId || null;
-    return speak(data.speech, data.reply, turn);
+    speechSource = data.speech && data.speech.source || 'legacy';
+    el.replies.dataset.speechSource = speechSource;
+    el.speechDetail.textContent = speechSourceText();
+    return speak(data.speech, data.reply, turn, profileId);
   }
 
-  async function waitForOpponent(turn) {
+  async function waitForOpponent(turn, profileId) {
     if (turn !== turnSequence || document.hidden) return;
     const abort = new AbortController();
     waitAbort = abort;
@@ -277,12 +336,12 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     try {
       const res = await fetch('/api/wait', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ deviceId: deviceId }), signal: abort.signal
+        body: JSON.stringify({ deviceId: deviceId, profileId: profileId }), signal: abort.signal
       });
       const data = await res.json();
       if (abort.signal.aborted || turn !== turnSequence) return;
       if (!res.ok || !data) throw new Error('bad wait response');
-      await showOutcome(data, turn, revision);
+      await showOutcome(data, turn, revision, profileId);
     } catch (error) {
       if (abort.signal.aborted || turn !== turnSequence) return;
       pushReply('等待连接中断，未重复执行任何行动；可以询问战况。', 'warn');
@@ -295,6 +354,11 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   async function say(text) {
     var value = String(text == null ? '' : text);
     if (!value.trim() || busy) return;
+    if (!selectedSpeechProfile) {
+      pushReply('音色与性格尚未就绪，请先确认配置。', 'warn', 'system');
+      return;
+    }
+    const profileId = selectedSpeechProfile;
     const turn = cancelTurn();
     const revision = state.revision;
     busy = true;
@@ -310,7 +374,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     try {
       const res = await fetch('/api/say', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ deviceId: deviceId, text: value }), signal: abort.signal
+        body: JSON.stringify({ deviceId: deviceId, text: value, profileId: profileId }), signal: abort.signal
       });
       data = await res.json();
       if (!res.ok || !data) throw new Error('bad response');
@@ -325,13 +389,13 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       render();
     }
     if (data && turn === turnSequence) {
-      const playback = await showOutcome(data, turn, revision);
+      const playback = await showOutcome(data, turn, revision, profileId);
       // 播放错误、取消、超时不冒充播放完成，也不提前挂起。
       if ((playback === 'ended' || playback === 'displayed') && wantsWait(data)) {
-        void waitForOpponent(turn);
+        void waitForOpponent(turn, profileId);
       }
     }
-    if (!activeUtterance && el.composer.hidden) listener.resume();
+    if (turn === turnSequence && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
   }
 
   /* ---------------- 输入行 ---------------- */
@@ -421,22 +485,27 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   // 单段适配边界为 {text, emotion}，对应未来语音队列 enqueue(text, emotion)。
   // 浏览器只使用 text；emotion 是模型意图，不伪造音色情绪或映射音高/语速。
+  function speechSourceText() {
+    return ({model: '模型演绎', legacy: '旧格式回复', fallback: '安全兜底'})[speechSource] || '未知来源';
+  }
+
   function browserSpeechSegment(item) {
     const utter = new window.SpeechSynthesisUtterance(item.text);
     utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
     utter.rate = TTS_RATE;
     el.replies.dataset.emotionIntent = item.emotion;
     el.replies.dataset.emotionApplied = 'false';
+    el.speechDetail.textContent = speechSourceText() + ' · 情绪意图 ' + item.emotion + '；浏览器未应用情绪。';
     return utter;
   }
 
-  function speak(plan, reply, turn) {
+  function speak(plan, reply, turn, profileId) {
     stopSpeaking();
     // 旧版本只有 reply：明确作为 neutral 单段兼容，不从文字猜情绪。
     const segments = plan && plan.version === 1 && Array.isArray(plan.segments)
       ? plan.segments : [{ text: reply, emotion: 'neutral' }];
     if (!segments.length) return Promise.resolve('silent');
-    if (config && config.voice && config.voice.tts === 'backend') return speakBackend(segments, turn);
+    if (config && config.voice && config.voice.tts === 'backend') return speakBackend(segments, turn, profileId);
     if (!canSpeak()) return Promise.resolve('displayed');
     listener.pause();
     return new Promise(function (resolve) {
@@ -489,18 +558,21 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     });
   }
 
-  async function speakBackend(segments, turn) {
+  async function speakBackend(segments, turn, profileId) {
     const controller = new AbortController();
     cloudPlayback = controller;
     listener.pause();
     try {
       for (const segment of segments) {
         if (controller.signal.aborted || turn !== turnSequence || document.hidden) return 'cancelled';
-        await backendPlayback({ text: segment.text, emotion: segment.emotion }, controller.signal, function (emotion) {
+        await backendPlayback({ text: segment.text, emotion: segment.emotion, profileId: profileId }, controller.signal, function (emotion) {
           if (cloudPlayback !== controller) return;
           el.replies.dataset.emotionIntent = emotion.requested;
           el.replies.dataset.emotionApplied = emotion.applied;
           el.replies.dataset.emotionControl = emotion.control;
+          el.replies.dataset.speechProfile = emotion.profileId || profileId;
+          el.replies.dataset.speechSpeaker = emotion.speaker || '';
+          el.speechDetail.textContent = speechSourceText() + ' · 音色 ' + (emotion.speaker || '未确认') + ' · 情绪意图 ' + emotion.requested + ' / 应用 ' + emotion.applied + ' / ' + emotion.control;
           el.replies.setAttribute('aria-label', '伙伴正在朗读，情绪请求 ' + emotion.requested + '，应用 ' + emotion.applied + '，控制 ' + emotion.control);
         });
       }
@@ -590,6 +662,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   /* ---------------- 事件绑定 ---------------- */
 
+  el.speechProfile.addEventListener('change', changeSpeechProfile);
   el.mic.addEventListener('click', toggleListening);
   el.mic.addEventListener('pointercancel', stopListening);
   el.keyboard.addEventListener('click', toggleComposer);
