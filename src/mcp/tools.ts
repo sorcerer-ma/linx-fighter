@@ -155,7 +155,8 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     },
     async ({ opponent, mode, room, text, speaker }) =>
       invoke('game_start', { opponent, mode, room, text, speaker }, () =>
-        service.start(battleKey(ctx), { opponent, mode, room, text, speaker: speaker || undefined }),
+        // 身份和其他工具同一个来源：工具参数优先，没有就用请求头解析出的说话人
+        service.start(battleKey(ctx), { opponent, mode, room, text, speaker: speaker || ctx.speakerName || undefined }),
       ),
   );
 

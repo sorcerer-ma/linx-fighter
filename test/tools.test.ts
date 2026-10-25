@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { GameService } from '../src/game/service.js';
+import { GameService } from '../src/game/service.js';
 import { createLogger } from '../src/log.js';
 import { applyRequestContext, createDeviceContext, type DeviceContext } from '../src/mcp/context.js';
 import { registerGameTools } from '../src/mcp/tools.js';
+import { BattleStore } from '../src/store/battles.js';
+import { RoomStore } from '../src/store/rooms.js';
 
 /** 平台取消这次调用时带过来的信号：wait_event 要能提前收摊 */
 interface ToolExtra {
@@ -24,6 +26,7 @@ function registerWith(
   service: GameService,
   logger = createLogger('error'),
   waitTimeoutMs = 30_000,
+  headers: Record<string, string> = {},
 ): { handlers: Map<string, ToolHandler>; definitions: Map<string, Record<string, unknown>>; ctx: DeviceContext } {
   const handlers = new Map<string, ToolHandler>();
   const definitions = new Map<string, Record<string, unknown>>();
@@ -35,7 +38,11 @@ function registerWith(
   } as unknown as McpServer;
 
   const ctx = createDeviceContext('conn-tools');
-  applyRequestContext(ctx, { 'x-linx-device-id': 'dev-tools', 'x-linx-agent-id': 'agent-tools' });
+  applyRequestContext(ctx, {
+    'x-linx-device-id': 'dev-tools',
+    'x-linx-agent-id': 'agent-tools',
+    ...headers,
+  });
   registerGameTools(fakeServer, { service, logger, ctx, waitTimeoutMs });
   return { handlers, definitions, ctx };
 }
@@ -122,5 +129,27 @@ describe('工具层', () => {
     assert.equal(called.signal, controller.signal);
     assert.equal(result.isError, undefined);
     assert.equal(result.content[0]!.text, '对手出招了');
+  });
+
+  it('game_start 没带 speaker 参数时认请求头里的说话人，名单内正常开局', async () => {
+    // 平台把声纹名字放在 X-Linx-Speaker-Name 头里，工具参数里不重复传
+    const store = new BattleStore({ ttlMs: 60_000, now: () => 1_000_000 });
+    const rooms = new RoomStore({ ttlMs: 60_000, now: () => 1_000_000, random: () => 0 });
+    const service = new GameService({
+      store,
+      rooms,
+      logger: createLogger('error'),
+      now: () => 1_000_000,
+      random: () => 0,
+      speakers: ['小林'],
+    });
+    const { handlers } = registerWith(service, undefined, undefined, { 'x-linx-speaker-name': '小林' });
+
+    const result = await handlers.get('game_start')!({ opponent: '木人' });
+
+    // 名单内的人不能被当成陌生人静默掉：真的开了局，也给出了可朗读的开局播报
+    assert.notEqual(result.content[0]!.text, '\u200b');
+    assert.match(result.content[0]!.text, /对决开始/);
+    assert.ok(service.snapshot('dev-tools#agent-tools'), '应真的开了一局');
   });
 });
