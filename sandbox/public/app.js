@@ -1,3 +1,6 @@
+import { BackendRecognition } from './backend-recognition.js';
+import { backendPlayback } from './playback.js';
+import { diagnosticText } from './speech-diagnostic.js';
 import { createConversation } from './conversation.js';
 import { createListeningSession } from './listening.js';
 import { companionView, newSettlement, renderCompanion, opponentDetails } from './companion.js';
@@ -9,7 +12,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
  *  1. 身份：?player=1 → web-1；否则 sessionStorage；否则随机 web-xxxx。
  *  2. 输入：唯一路径 POST /api/say，body { deviceId, text }。
  *  3. 局面：GET /api/config 拿 eventsUrl → EventSource 监听 state 事件，revision 单调丢弃。
- *  4. 语音：浏览器 SpeechRecognition 识别（实时填输入框、结束即发送），speechSynthesis 朗读 reply。
+ *  4. 语音：按配置选后台或浏览器识别，partial 只展示，final 单次发送；最终话术分段播放。
  *
  * 身份只写 sessionStorage：localStorage 会让所有标签页变成同一个人。
  */
@@ -30,7 +33,20 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   // 连接状态点：灰=连接中、绿=已连接、红=断开（点本身不显示文字）
   var CONN_LABEL = { connecting: '连接中', connected: '已连接', offline: '断开' };
 
-  var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var BrowserRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  // listener 在配置之前创建；每次开始收音时才按已加载配置选择真正的识别器。
+  function recognitionConstructor() {
+    if (!config || !config.voice) return null;
+    if (config.voice.asr === 'doubao') return BackendRecognition;
+    if (config.voice.asr === 'browser') return BrowserRecognition;
+    return null;
+  }
+  function ConfiguredRecognition() {
+    const Recognition = recognitionConstructor();
+    if (!Recognition) throw new Error('asr_not_configured');
+    return new Recognition();
+  }
 
   /* ---------------- DOM ---------------- */
 
@@ -51,7 +67,10 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     mic: $('mic'),
     keyboard: $('keyboard'),
     transcript: $('transcript'),
-    micStatus: $('mic-status')
+    micStatus: $('mic-status'),
+    speechProfile: $('speech-profile'),
+    profileStatus: $('profile-status'),
+    speechDetail: $('speech-detail')
 
   };
 
@@ -63,6 +82,9 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     revision: -2
   };
   var config = null;
+  var selectedSpeechProfile = null;
+  var speechProfiles = [];
+  var speechSource = 'legacy';
   var source = null;
   var busy = false; // 正在等 /api/say
   var conversation = createConversation(el.conversationScroll, el.replies, $('conversation-latest'));
@@ -78,6 +100,13 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var turnSequence = 0;
   var waitAbort = null;
   var finishPlayback = null;
+  var cloudPlayback = null;
+  var notificationRequest = null;
+  var notificationPlaying = false;
+  var queuedNotification = null;
+  var seenPushIds = [];
+  var playerSpeaking = false;
+  var PUSH_KINDS = ['opponent-move', 'opponent-joined', 'ult-ready', 'idle-turn', 'idle-respond', 'wait-opponent', 'wait-guest'];
   var activeReplyBattleId = null;
 
   /* ---------------- 身份 ---------------- */
@@ -168,6 +197,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       })
       .then(function (data) {
         config = data;
+        loadSpeechProfiles(data);
+        if (!listener.enabled) el.micStatus.textContent = micPrompt({ enabled: false, active: false, paused: false });
         $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 事实约束人设表达' : '事实兜底 · 人设表达未启用';
         connectStream(data);
       })
@@ -176,6 +207,53 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
         setConn('offline');
         pushReply('连不上沙箱，先启动 pnpm sandbox。', 'warn');
       });
+  }
+
+  function loadSpeechProfiles(data) {
+    const expected = ['cancan', 'qingcang', 'tiancai'];
+    const profiles = data.speechProfiles;
+    if (!Array.isArray(profiles) || profiles.length !== expected.length ||
+        expected.some(id => profiles.filter(profile => profile.id === id && typeof profile.name === 'string').length !== 1) ||
+        !expected.includes(data.defaultSpeechProfile)) {
+      el.speechProfile.disabled = true;
+      el.profileStatus.textContent = '音色与性格配置不完整，暂时无法发送指令。';
+      return;
+    }
+    speechProfiles = profiles;
+    const options = profiles.map(profile => {
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = profile.name;
+      return option;
+    });
+    el.speechProfile.replaceChildren(...options);
+    selectedSpeechProfile = data.defaultSpeechProfile;
+    el.speechProfile.value = selectedSpeechProfile;
+    el.speechProfile.disabled = false;
+    showProfileStatus();
+  }
+
+  function showProfileStatus() {
+    const profile = speechProfiles.find(item => item.id === selectedSpeechProfile);
+    el.profileStatus.textContent = profile ? '当前：' + profile.name +
+      (config.voice && config.voice.tts === 'backend' ? '' : '。浏览器朗读不保证对应音色。') : '请选择已配置的音色与性格。';
+  }
+
+  function changeSpeechProfile() {
+    const next = el.speechProfile.value;
+    if (!speechProfiles.some(profile => profile.id === next)) {
+      el.speechProfile.value = selectedSpeechProfile || '';
+      el.profileStatus.textContent = '未知的音色与性格，未切换。';
+      return;
+    }
+    if (next === selectedSpeechProfile) return;
+    // 丢弃切换前的 partial；保持用户启用意图，再为新 profile 接续收音。
+    listener.pause();
+    cancelTurn();
+    selectedSpeechProfile = next;
+    showProfileStatus();
+    el.speechDetail.textContent = '已停止上一条播报；下一句使用新的音色与性格。';
+    if (!busy && el.composer.hidden) listener.resume();
   }
 
   function connectStream(cfg) {
@@ -209,6 +287,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       setConn(source && source.readyState === 2 ? 'offline' : 'connecting');
     };
     source.addEventListener('state', onStateEvent);
+    source.addEventListener('push', onPushEvent);
   }
 
   function onStateEvent(event) {
@@ -218,22 +297,32 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     } catch (err) {
       return;
     }
+    const freshRevision = typeof payload.revision === 'number' && payload.revision > state.revision;
     if (typeof payload.revision === 'number') {
       if (payload.revision <= state.revision) return; // 丢弃乱序/重复
       state.revision = payload.revision;
     }
+    // 通知只对应签发时的局面；同局新结算也会使旧应对提示失效。
+    if (freshRevision || (state.battle && payload.battle && state.battle.phase !== payload.battle.phase)) cancelNotifications();
     const nextBattleId = payload.battle && payload.battle.battleId;
+    if (state.battle && state.battle.battleId !== nextBattleId) cancelNotifications();
     if ((waitAbort && state.battle && state.battle.battleId && nextBattleId !== state.battle.battleId) ||
-        (activeUtterance && activeReplyBattleId && nextBattleId !== activeReplyBattleId)) cancelTurn();
+        ((activeUtterance || cloudPlayback) && activeReplyBattleId && nextBattleId !== activeReplyBattleId)) cancelTurn();
     unconfirmed = false;
     applyBattle(payload.battle);
+    resumeListeningIfIdle();
   }
 
   /* ---------------- 发送 ---------------- */
 
   // 每条输入最多等待一次。新输入、停止或离开页面使旧响应失效。
+  function resumeListeningIfIdle() {
+    if (listener && listener.enabled && !document.hidden && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
+  }
+
   function cancelTurn() {
     turnSequence += 1;
+    cancelNotifications();
     if (waitAbort) waitAbort.abort();
     waitAbort = null;
     stopSpeaking();
@@ -241,13 +330,95 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     return turnSequence;
   }
 
+  function cancelNotifications() {
+    queuedNotification = null;
+    const active = notificationRequest;
+    notificationRequest = null;
+    if (active) active.abort();
+    if (notificationPlaying) stopSpeaking();
+    notificationPlaying = false;
+  }
+
+  function notificationIsCurrent(signal) {
+    return signal.turn === turnSequence && signal.profileId === selectedSpeechProfile &&
+      state.battle && state.battle.battleId === signal.battleId && !document.hidden &&
+      el.composer.hidden && !playerSpeaking && Date.now() - signal.receivedAt < 10000;
+  }
+
+  function onPushEvent(event) {
+    let payload;
+    try { payload = JSON.parse(event.data); } catch { return; }
+    if (!payload || typeof payload.id !== 'string' || !payload.id ||
+        typeof payload.battleId !== 'string' || !PUSH_KINDS.includes(payload.kind) ||
+        seenPushIds.includes(payload.id)) return;
+    seenPushIds.push(payload.id);
+    if (seenPushIds.length > 64) seenPushIds.shift();
+    // 这里只读取信号，不使用服务端 payload.text 作为最终话术。
+    const signal = { pushId: payload.id, battleId: payload.battleId, kind: payload.kind,
+      turn: turnSequence, profileId: selectedSpeechProfile, receivedAt: Date.now() };
+    if (!signal.profileId || !notificationIsCurrent(signal) || busy || waitAbort ||
+        (notificationRequest && !notificationPlaying)) return;
+    if (activeUtterance || cloudPlayback) {
+      queuedNotification = signal; // 播放中最多保留一个最新通知，不排长队。
+      return;
+    }
+    void requestNotification(signal);
+  }
+
+  function drainNotification() {
+    const signal = queuedNotification;
+    queuedNotification = null;
+    if (!signal || !notificationIsCurrent(signal) || busy || waitAbort || notificationRequest ||
+        activeUtterance || cloudPlayback) return;
+    void requestNotification(signal);
+  }
+
+  async function requestNotification(signal) {
+    if (!notificationIsCurrent(signal) || busy || waitAbort || notificationRequest) return;
+    const controller = new AbortController();
+    notificationRequest = controller;
+    const timer = setTimeout(() => controller.abort(), SAY_TIMEOUT);
+    const revision = state.revision;
+    try {
+      const response = await fetch('/api/notify', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId: deviceId, kind: signal.kind, battleId: signal.battleId,
+          pushId: signal.pushId, profileId: signal.profileId }), signal: controller.signal
+      });
+      const data = await response.json();
+      if (controller.signal.aborted || !notificationIsCurrent(signal) || notificationRequest !== controller) return;
+      if (!response.ok || !data) throw new Error('bad notification response');
+      if (data.sourceBattleId !== signal.battleId) return;
+      notificationPlaying = true;
+      const playback = await showOutcome(data, signal.turn, revision, signal.profileId);
+      if (!['ended', 'displayed', 'silent'].includes(playback)) queuedNotification = null;
+      // 通知不是玩家输入，永不由它追加 wait_event 或重发 game_say。
+    } catch (error) {
+      if (!controller.signal.aborted && notificationIsCurrent(signal)) {
+        el.speechDetail.textContent = '通知未播报，可主动询问战况。';
+      }
+    } finally {
+      clearTimeout(timer);
+      if (notificationRequest === controller) {
+        notificationRequest = null;
+        notificationPlaying = false;
+        drainNotification();
+        if (!busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
+      }
+    }
+  }
+
   function wantsWait(data) {
     return !data.silent && data.protocol &&
       (data.protocol.need === 'wait_guest' || data.protocol.need === 'wait_foe');
   }
 
-  function showOutcome(data, turn, revision) {
+  function showOutcome(data, turn, revision, profileId) {
     if (turn !== turnSequence || document.hidden) return Promise.resolve('cancelled');
+    if (data.profileId !== undefined && data.profileId !== profileId) {
+      pushReply('回复的音色与性格不匹配，已停止播报。', 'warn', 'system');
+      return Promise.resolve('cancelled');
+    }
     const currentBattleId = state.battle && state.battle.battleId;
     // 工具执行时的局号来自服务端元信息，不从玩家原话或伙伴台词猜测。
     if (state.revision !== revision && data.sourceBattleId !== undefined &&
@@ -262,10 +433,13 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     const systemReply = data.ok === false || data.isError === true;
     pushReply(data.reply, systemReply ? 'warn' : 'normal', systemReply ? 'system' : 'partner');
     activeReplyBattleId = data.sourceBattleId || null;
-    return speak(data.reply);
+    speechSource = data.speech && data.speech.source || 'legacy';
+    el.replies.dataset.speechSource = speechSource;
+    el.speechDetail.textContent = speechSourceText();
+    return speak(data.speech, data.reply, turn, profileId);
   }
 
-  async function waitForOpponent(turn) {
+  async function waitForOpponent(turn, profileId) {
     if (turn !== turnSequence || document.hidden) return;
     const abort = new AbortController();
     waitAbort = abort;
@@ -274,24 +448,31 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     try {
       const res = await fetch('/api/wait', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ deviceId: deviceId }), signal: abort.signal
+        body: JSON.stringify({ deviceId: deviceId, profileId: profileId }), signal: abort.signal
       });
       const data = await res.json();
       if (abort.signal.aborted || turn !== turnSequence) return;
       if (!res.ok || !data) throw new Error('bad wait response');
-      await showOutcome(data, turn, revision);
+      await showOutcome(data, turn, revision, profileId);
     } catch (error) {
       if (abort.signal.aborted || turn !== turnSequence) return;
       pushReply('等待连接中断，未重复执行任何行动；可以询问战况。', 'warn');
     } finally {
       clearTimeout(timeout);
       if (waitAbort === abort) waitAbort = null;
+      drainNotification();
+      if (turn === turnSequence && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
     }
   }
 
   async function say(text) {
     var value = String(text == null ? '' : text);
     if (!value.trim() || busy) return;
+    if (!selectedSpeechProfile) {
+      pushReply('音色与性格尚未就绪，请先确认配置。', 'warn', 'system');
+      return;
+    }
+    const profileId = selectedSpeechProfile;
     const turn = cancelTurn();
     const revision = state.revision;
     busy = true;
@@ -307,7 +488,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     try {
       const res = await fetch('/api/say', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ deviceId: deviceId, text: value }), signal: abort.signal
+        body: JSON.stringify({ deviceId: deviceId, text: value, profileId: profileId }), signal: abort.signal
       });
       data = await res.json();
       if (!res.ok || !data) throw new Error('bad response');
@@ -322,13 +503,16 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       render();
     }
     if (data && turn === turnSequence) {
-      const playback = await showOutcome(data, turn, revision);
+      const playback = await showOutcome(data, turn, revision, profileId);
       // 播放错误、取消、超时不冒充播放完成，也不提前挂起。
       if ((playback === 'ended' || playback === 'displayed') && wantsWait(data)) {
-        void waitForOpponent(turn);
+        queuedNotification = null;
+        void waitForOpponent(turn, profileId);
       }
     }
-    if (!activeUtterance && el.composer.hidden) listener.resume();
+    if (turn === turnSequence) drainNotification();
+    // 旧请求可以清除 busy，但不能越过新请求或音频；切换 profile 后仍接续启用意图。
+    resumeListeningIfIdle();
   }
 
   /* ---------------- 输入行 ---------------- */
@@ -416,43 +600,121 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     return typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance === 'function';
   }
 
-  // 音频层仅消费最终话术，以完成/失败/取消事件通知调用方。
-  function speak(text) {
-    if (!text.trim()) return Promise.resolve('silent');
+  // 单段适配边界为 {text, emotion}，对应未来语音队列 enqueue(text, emotion)。
+  // 浏览器只使用 text；emotion 是模型意图，不伪造音色情绪或映射音高/语速。
+  function speechSourceText() {
+    return ({model: '模型演绎', legacy: '旧格式回复', fallback: '安全兜底'})[speechSource] || '未知来源';
+  }
+
+  function browserSpeechSegment(item) {
+    const utter = new window.SpeechSynthesisUtterance(item.text);
+    utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
+    utter.rate = TTS_RATE;
+    el.replies.dataset.emotionIntent = item.emotion;
+    el.replies.dataset.emotionApplied = 'false';
+    el.speechDetail.textContent = speechSourceText() + ' · 情绪意图 ' + item.emotion + '；浏览器未应用情绪。';
+    return utter;
+  }
+
+  function speak(plan, reply, turn, profileId) {
     stopSpeaking();
+    // 旧版本只有 reply：明确作为 neutral 单段兼容，不从文字猜情绪。
+    const segments = plan && plan.version === 1 && Array.isArray(plan.segments)
+      ? plan.segments : [{ text: reply, emotion: 'neutral' }];
+    if (!segments.length) return Promise.resolve('silent');
+    if (config && config.voice && config.voice.tts === 'backend') return speakBackend(segments, turn, profileId);
     if (!canSpeak()) return Promise.resolve('displayed');
     listener.pause();
     return new Promise(function (resolve) {
-      var utter = new window.SpeechSynthesisUtterance(text);
-      activeUtterance = utter;
-      utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
-      utter.rate = TTS_RATE;
-      utter.onstart = function () {
-        if (activeUtterance === utter) el.replies.setAttribute('aria-label', '对话记录，伙伴正在朗读');
-      };
+      let index = 0;
+      let finished = false;
       function finish(reason) {
-        if (activeUtterance !== utter) return;
+        if (finished) return;
+        finished = true;
         clearTimeout(ttsTimer);
         ttsTimer = null;
         activeUtterance = null;
         finishPlayback = null;
+        delete el.replies.dataset.emotionIntent;
+        delete el.replies.dataset.emotionApplied;
         el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
         resolve(reason);
-        if (!busy && el.composer.hidden && listener) listener.resume();
+        if (reason !== 'cancelled' && !notificationPlaying && !queuedNotification && !busy && el.composer.hidden && listener) listener.resume();
+      }
+      function playNext() {
+        if (finished) return;
+        if (turn !== turnSequence || document.hidden) { finish('cancelled'); return; }
+        if (index === segments.length) { finish('ended'); return; }
+        const utter = browserSpeechSegment(segments[index++]);
+        activeUtterance = utter;
+        utter.onstart = function () {
+          if (!finished && activeUtterance === utter) el.replies.setAttribute('aria-label', '对话记录，伙伴正在朗读（浏览器未应用情绪）');
+        };
+        utter.onend = function () {
+          if (finished || activeUtterance !== utter) return;
+          clearTimeout(ttsTimer);
+          ttsTimer = null;
+          // 同步接续下一段，整条话术结束之前不恢复识别，不触发 wait_event。
+          playNext();
+        };
+        utter.onerror = function () {
+          if (finished || activeUtterance !== utter) return;
+          finish('error');
+          try { window.speechSynthesis.cancel(); } catch (err) { /* 浏览器已收尾 */ }
+        };
+        ttsTimer = setTimeout(function () {
+          if (finished || activeUtterance !== utter) return;
+          finish('timeout');
+          try { window.speechSynthesis.cancel(); } catch (err) { /* 浏览器已收尾 */ }
+        }, TTS_TIMEOUT);
+        try { window.speechSynthesis.speak(utter); }
+        catch { utter.onerror(); }
       }
       finishPlayback = finish;
-      utter.onend = function () { finish('ended'); };
-      utter.onerror = function () { finish('error'); };
-      ttsTimer = setTimeout(function () {
-        finish('timeout');
-        try { window.speechSynthesis.cancel(); } catch (err) { /* 浏览器已收尾 */ }
-      }, TTS_TIMEOUT);
-      try { window.speechSynthesis.speak(utter); }
-      catch { finish('error'); }
+      playNext();
     });
   }
 
+  async function speakBackend(segments, turn, profileId) {
+    const controller = new AbortController();
+    cloudPlayback = controller;
+    listener.pause();
+    try {
+      for (const segment of segments) {
+        if (controller.signal.aborted || turn !== turnSequence || document.hidden) return 'cancelled';
+        await backendPlayback({ text: segment.text, emotion: segment.emotion, profileId: profileId }, controller.signal, function (emotion) {
+          if (cloudPlayback !== controller) return;
+          el.replies.dataset.emotionIntent = emotion.requested;
+          el.replies.dataset.emotionApplied = emotion.applied;
+          el.replies.dataset.emotionControl = emotion.control;
+          el.replies.dataset.speechProfile = emotion.profileId || profileId;
+          el.replies.dataset.speechSpeaker = emotion.speaker || '';
+          el.speechDetail.textContent = speechSourceText() + ' · 音色 ' + (emotion.speaker || '未确认') + ' · 情绪意图 ' + emotion.requested + ' / 应用 ' + emotion.applied + ' / ' + emotion.control;
+          el.replies.setAttribute('aria-label', '伙伴正在朗读，情绪请求 ' + emotion.requested + '，应用 ' + emotion.applied + '，控制 ' + emotion.control);
+        });
+      }
+      return controller.signal.aborted || turn !== turnSequence ? 'cancelled' : 'ended';
+    } catch (error) {
+      if (controller.signal.aborted) return 'cancelled';
+      const detail = diagnosticText(error.diagnostic);
+      pushReply('伙伴语音播放失败，文字回复已保留。' + (detail ? '\n' + detail : ''), 'warn', 'system');
+      return 'error';
+    } finally {
+      if (cloudPlayback === controller) {
+        cloudPlayback = null;
+        delete el.replies.dataset.emotionIntent;
+        delete el.replies.dataset.emotionApplied;
+        delete el.replies.dataset.emotionControl;
+        el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
+      }
+    }
+  }
+
   function stopSpeaking() {
+    if (cloudPlayback) { const current = cloudPlayback; cloudPlayback = null; current.abort(); }
+    delete el.replies.dataset.emotionIntent;
+    delete el.replies.dataset.emotionApplied;
+    delete el.replies.dataset.emotionControl;
     if (finishPlayback) finishPlayback('cancelled');
     clearTimeout(ttsTimer);
     ttsTimer = null;
@@ -465,20 +727,26 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   // 语音不可用时，底栏提示直接指向键盘入口，免得演示者以为按钮坏了
   function speechReady() {
-    return Boolean(SpeechRecognitionCtor) && window.isSecureContext !== false;
+    if (window.isSecureContext === false || !recognitionConstructor()) return false;
+    if (config.voice.asr === 'doubao') return Boolean(window.navigator && window.navigator.mediaDevices &&
+      window.navigator.mediaDevices.getUserMedia && window.AudioContext && window.AudioWorkletNode);
+    return true;
   }
 
   function micPrompt(session) {
     if (session.active) return '正在聆听，点击停止';
     if (session.enabled) return session.paused ? '聆听已开启，等待伙伴回复' : '聆听已开启，正在接续收音';
     if (speechReady()) return '点击开启持续聆听';
-    return SpeechRecognitionCtor ? '页面不是 HTTPS，点键盘输入' : '此浏览器不支持语音，点键盘输入';
+    if (!config) return '正在加载语音配置';
+    if (window.isSecureContext === false) return '页面不是 HTTPS，点键盘输入';
+    return config.voice.asr === 'doubao' ? '此浏览器不支持后台收音，点键盘输入' : '此浏览器不支持语音，点键盘输入';
   }
 
   var listener = createListeningSession({
-    Recognition: SpeechRecognitionCtor,
+    Recognition: ConfiguredRecognition,
     onState: function (session) {
       listening = session.active;
+      if (!session.active) playerSpeaking = false;
       el.mic.dataset.listening = session.active ? 'true' : 'false';
       el.mic.setAttribute('aria-pressed', String(session.enabled));
       el.mic.setAttribute('aria-label', session.enabled ? '停止持续聆听' : '开启持续聆听');
@@ -486,6 +754,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       render();
     },
     onText: function (text, final) {
+      playerSpeaking = !final && Boolean(text.trim());
+      if (playerSpeaking) cancelNotifications();
       el.transcript.textContent = (final ? '玩家 · 已识别：' : '玩家 · 识别中：') + text;
     },
     onFinal: function (text) { say(text); },
@@ -501,7 +771,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   function toggleListening() {
     if (listener.enabled) { stopListening(); return; }
     if (!speechReady()) {
-      pushReply(SpeechRecognitionCtor ? MIC_NO_HTTPS : MIC_NO_API, 'warn');
+      pushReply(!config ? '语音配置尚未就绪，请稍后再开启麦克风。' : window.isSecureContext === false ? MIC_NO_HTTPS :
+        config.voice.asr === 'doubao' ? '此浏览器不支持后台收音，请用支持安全麦克风和 AudioWorklet 的浏览器，或点键盘输入。' : MIC_NO_API, 'warn');
       openComposer(true);
       return;
     }
@@ -517,6 +788,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   /* ---------------- 事件绑定 ---------------- */
 
+  el.speechProfile.addEventListener('change', changeSpeechProfile);
   el.mic.addEventListener('click', toggleListening);
   el.mic.addEventListener('pointercancel', stopListening);
   el.keyboard.addEventListener('click', toggleComposer);

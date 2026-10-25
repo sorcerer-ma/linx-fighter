@@ -28,7 +28,7 @@
 1. 智能体配置项逐字段检查（<https://linx.qiniu.com/docs/xrobot/api/agent>）。智能体 `extra` 里与语音识别有关的只有：
 
    ```json
-   "asr": { "disable_emotion": false, "enable_auto_lang": true }
+   { "asr": { "disable_emotion": false, "enable_auto_lang": true } }
    ```
 
    原文对这两个字段的解释（<https://linx.qiniu.com/docs/xrobot/guide/agent-config>）：「3.4 语音识别配置 … 情绪识别：在语音服务支持时，尝试识别用户的说话情绪；混合语种识别：在语音服务支持时，自动判断输入语言」。**这就是控制台里语音识别相关的全部可配置项。**
