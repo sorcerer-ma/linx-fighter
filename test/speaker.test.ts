@@ -81,7 +81,7 @@ describe('说话人校验与轮次归属', () => {
   it('双人房：轮到你才回应，另一边的声音一并不理', async () => {
     const { service } = setup(['阿澈', '阿岚']);
     await service.start(HOST, { mode: 'pvp', speaker: '阿澈' });
-    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/房间(\d{4})/)![1]!;
+    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/编号(\d{4})/)![1]!;
     await service.start(GUEST, { room: code, speaker: '阿岚' });
 
     // 房主先手：先由房主出招，出完之后轮到加入者应对
@@ -99,7 +99,7 @@ describe('说话人校验与轮次归属', () => {
   it('别人在对方回合插话，本机完全不回应', async () => {
     const { service } = setup(['阿澈', '阿岚']);
     await service.start(HOST, { mode: 'pvp', speaker: '阿澈' });
-    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/房间(\d{4})/)![1]!;
+    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/编号(\d{4})/)![1]!;
     await service.start(GUEST, { room: code, speaker: '阿岚' });
 
     // 开局轮到房主：加入者这边说什么都不能有反应
@@ -122,12 +122,12 @@ describe('说话人校验与轮次归属', () => {
   it('房间号复用不继承上一局席位：新局两位说话人都能重新认领', async () => {
     const { service } = setup(['阿澈', '阿岚', '阿远', '阿宁']);
     await service.start(HOST, { mode: 'pvp', speaker: '阿澈' });
-    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/房间(\d{4})/)![1]!;
+    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/编号(\d{4})/)![1]!;
     await service.start(GUEST, { room: code, speaker: '阿岚' });
 
     // 房主带人重开：旧房被撤，random 固定为 0，新房间还是同一个号码
     await service.start(HOST, { mode: 'pvp', speaker: '阿远' });
-    const reused = service.status(HOST, { speaker: '阿远' }).text.match(/房间(\d{4})/)![1]!;
+    const reused = service.status(HOST, { speaker: '阿远' }).text.match(/编号(\d{4})/)![1]!;
     assert.equal(reused, code, '房间号应被复用');
     await service.start(GUEST, { room: reused, speaker: '阿宁' });
 

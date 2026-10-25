@@ -7,7 +7,7 @@ import {
   syllableDistance,
   toSyllables,
 } from '../src/game/asr.js';
-import { parseAction } from '../src/game/actions.js';
+import { ACTIONS, parseAction } from '../src/game/actions.js';
 import { readCommand } from '../src/game/command.js';
 
 /** 断言识别到指定招式，并把命中路径一起钉住，避免以后放宽到错配 */
@@ -63,6 +63,10 @@ describe('音节与音节距离', () => {
     assert.equal(syllableDistance('kang', 'hang'), 0.5);
     assert.equal(syllableDistance('an', 'ang'), 0.5);
     assert.equal(syllableDistance('en', 'eng'), 0.5);
+    // 鼻音韵尾脱落：平台吞掉 an/ang 的尾巴时，仍按一处轻微混淆算
+    assert.equal(syllableDistance('sha', 'shan'), 0.5);
+    assert.equal(syllableDistance('qia', 'qiang'), 0.5);
+    assert.equal(syllableDistance('da', 'dang'), 0.5);
     assert.equal(syllableDistance('zong', 'zhong'), 0.5);
     assert.equal(syllableDistance('yin', 'ying'), 0.5);
     assert.equal(syllableDistance('gong', 'ji'), 1);
@@ -74,11 +78,19 @@ describe('音节与音节距离', () => {
 
 describe('线上真实语料：同音只差一处也认', () => {
   it('语料里的错识别句子都能命中正确招式', () => {
-    expectAction('公鸡', 'light', 'exact');
-    expectAction('重机', 'heavy', 'exact');
+    expectAction('公鸡', 'light', 'syllable');
+    expectAction('我要公鸡你', 'light', 'syllable');
+    expectAction('重机', 'heavy', 'syllable');
     expectAction('硬航', 'take', 'exact');
     expectAction('长寿', 'take', 'exact');
     expectAction('我要可党。', 'guard', 'exact');
+    // 平台吞掉「闪避」的 an 韵尾后会转写成脏话，靠通用的韵尾脱落规则接住
+    expectAction('傻逼', 'dodge', 'syllable');
+    expectAction('傻避', 'dodge', 'syllable');
+    expectAction('闪币', 'dodge', 'syllable');
+    expectAction('散避', 'dodge', 'syllable');
+    expectAction('朵开', 'dodge', 'syllable');
+    expectAction('躲壁', 'dodge', 'syllable');
     expectAction('我要开大。', 'ult', 'exact');
     expectAction('我开大招。', 'ult', 'exact');
     expectAction('强化攻击', 'light', 'exact');
@@ -95,6 +107,19 @@ describe('线上真实语料：同音只差一处也认', () => {
   });
 });
 
+describe('招式词表自洽', () => {
+  it('每个误写词都能在对应阶段命中本招式', () => {
+    const responseIds = new Set(['guard', 'dodge', 'take']);
+    for (const meta of Object.values(ACTIONS)) {
+      const stage = (responseIds.has(meta.id) ? 'response' : 'active') as 'response' | 'active';
+      for (const word of [meta.label, ...(meta.asrErrors ?? [])]) {
+        const matched = matchSpokenAction(word, stage);
+        assert.equal(matched?.id, meta.id, `${meta.id} 的「${word}」应命中自身，实际 ${matched?.id ?? '未命中'}`);
+      }
+    }
+  });
+});
+
 describe('词表里没有的写法靠音节比较兜住', () => {
   it('完全同音的错字', () => {
     expectAction('抢工', 'heavy', 'syllable');
@@ -107,8 +132,8 @@ describe('词表里没有的写法靠音节比较兜住', () => {
   });
 
   it('前后鼻音、声母混淆的近似说法', () => {
-    // 多散：duo/san 与「躲闪」只差 s/sh 这一处，整句只容一处混淆
-    const match = matchSpokenAction('多散');
+    // 散避：san/bi 与「闪避」只差 s/sh 这一处，整句只容一处混淆
+    const match = matchSpokenAction('散避');
     assert.ok(match);
     assert.equal(match.id, 'dodge');
     assert.equal(match.via, 'syllable');
@@ -149,9 +174,9 @@ describe('宁可认不出，也不认错', () => {
     }
   });
 
-  it('单字别名只做精确匹配，不做近音扩展', () => {
+  it('单字只保留「打」，其余交给命令路由', () => {
     assert.equal(matchSpokenAction('打')?.id, 'light');
-    assert.equal(matchSpokenAction('躲')?.id, 'dodge');
+    assert.equal(matchSpokenAction('躲'), null);
     assert.equal(matchSpokenAction('大家'), null);
     assert.equal(matchSpokenAction('躲开')?.id, 'dodge');
   });
@@ -206,6 +231,9 @@ describe('按阶段筛选招式', () => {
     assert.equal(matchSpokenAction('大招', 'response'), null);
     assert.equal(matchSpokenAction('格挡', 'response')?.id, 'guard');
     assert.equal(matchSpokenAction('大招', 'active')?.id, 'ult');
+    // 脏话只是「闪避」的误转写，主动阶段仍不能当防守招
+    assert.equal(matchSpokenAction('傻逼', 'active'), null);
+    assert.equal(matchSpokenAction('傻逼', 'response')?.id, 'dodge');
     // 不传阶段时全表参与：词表本身仍由流水线校验阶段
     assert.equal(matchSpokenAction('格挡')?.id, 'guard');
   });

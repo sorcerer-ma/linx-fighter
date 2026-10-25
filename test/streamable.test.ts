@@ -182,7 +182,7 @@ describe('Streamable HTTP 通道', () => {
     const say = sayAs;
 
     const opened = await say(host, '开房间');
-    const room = /房间(\d{4})/.exec(opened)?.[1];
+    const room = /编号(\d{4})/.exec(opened)?.[1];
     assert.ok(room, `应播报四位房间号：${opened}`);
     await say(guest, `加入房间${room}`);
     await say(host, '强攻');
@@ -216,7 +216,7 @@ describe('Streamable HTTP 通道', () => {
   it('平台在挂起期间断开连接时，等待位当场让出来', async () => {
     const host = 'device-abort-host';
     const opened = await sayAs(host, '开房间');
-    const room = /房间(\d{4})/.exec(opened)?.[1];
+    const room = /编号(\d{4})/.exec(opened)?.[1];
     assert.ok(room, `应播报四位房间号：${opened}`);
 
     const controller = new AbortController();

@@ -74,7 +74,7 @@ export function renderCompanion(app, battle, view) {
 export function opponentDetails(battle, connected) {
   if (!connected) return '连接或行动结果待核实，暂不展示缓存的对手数值。';
   if (!battle) return '尚无对局，没有对手状态。';
-  if (battle.waiting) return '对手尚未加入房间。';
+  if (battle.waiting) return '对方还没有接受挑战。';
   const foe = battle.opponent;
   const phase = battle.phase === 'victory' ? '对手已被击倒'
     : battle.phase === 'defeat' ? '对手获胜'

@@ -41,7 +41,7 @@
 ## 4. 关联设计
 
 - [定位与范围](positioning-and-scope.md)：产品目标、长期关系与本轮非目标。
-- [玩家旅程](player-journey.md)：开房、加入、首次攻防与终局路径。
+- [玩家旅程](player-journey.md)：发起挑战、接受挑战、首次攻防与终局路径。
 - [语音与信息反馈](voice-and-feedback.md)：伙伴表达、生命值与能量、公开信息及载体差异。
 - [游戏玩法](../game/game-design.md)：当前招式、资源与裁决规则。
 - [验收与试玩](acceptance-and-playtest.md)：演示与体验的验证口径，未执行不写成通过。

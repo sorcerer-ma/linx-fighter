@@ -56,15 +56,15 @@ describe('三层解析：规则 → 端侧同音 → 命令路由', () => {
     assert.deepEqual(calls.router, [], '规则命中就不该等模型');
   });
 
-  it('端侧同音认得出就不等模型：轻机 → 普攻', async () => {
+  it('端侧同音认得出就不等模型：公鸡 → 普攻', async () => {
     const { service, calls } = setup();
     await service.start(KEY);
 
-    // 「轻机」不在招式词表里，只有同音节匹配能认；模型这一步不该被叫起来
-    const result = await service.say(KEY, '轻机');
+    // 「公鸡」不在招式词表里，只有同音节匹配能认；模型这一步不该被叫起来
+    const result = await service.say(KEY, '公鸡');
 
     assert.equal(result.battle?.pending?.move, 'light');
-    assert.deepEqual(calls.fuzzy, ['active:轻机']);
+    assert.deepEqual(calls.fuzzy, ['active:公鸡']);
     assert.deepEqual(calls.router, [], '端侧已经认出来了，不能再花一次模型往返');
   });
 
@@ -106,7 +106,7 @@ describe('三层解析：规则 → 端侧同音 → 命令路由', () => {
   it('等对手时端侧不猜招：那句话多半不是本机说的', async () => {
     const { service, calls } = setup();
     await service.start(KEY, { mode: 'pvp' });
-    const room = service.status(KEY).text.match(/房间(\d{4})/)![1]!;
+    const room = service.status(KEY).text.match(/编号(\d{4})/)![1]!;
     await service.start('device-b#agent-2', { room });
     await service.say(KEY, '普攻');
 
