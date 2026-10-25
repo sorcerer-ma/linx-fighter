@@ -174,9 +174,9 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 ## 6. 智能体提示词与协议切换
 
 本分支只注册 game_say 与 wait_event，content 内返回 v:2 JSON，不依赖 structuredContent。Agent 依据事实生成人设话术，失败采用 say/text；玩家原话只执行一次，不自动重做行动。
-沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
+平台可手动复制 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 的共享提示词内容（不复制沙箱代码或内部情绪格式）。沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
 
-表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；旧平台是否消费 presentation 仍需验证，不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
+表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；v2不依赖 presentation 或 structuredContent，平台须实际读到content文本块内的事实JSON；不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
 
 字段见 [协议](mcp-protocol.md#7-智能体提示词)，验收见 [迁移说明](mcp-v2-migration.md)。未新增 MCP_PROTOCOL 开关或协议猜测；发布前必须配对更新平台提示词，旧文本模板不得直接朗读 JSON。仓库模板不会自动同步平台。
 
