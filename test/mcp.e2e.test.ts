@@ -267,15 +267,15 @@ describe('MCP 协议链路', () => {
     assert.match(textOf(miss), /没听清/);
   });
 
-  it('game_say 开房间与加入房间走通双人联机', async () => {
+  it('game_say 发起挑战与接受挑战走通双人联机', async () => {
     const host = await connect('device-say-host', 'say-pvp-host');
-    const opened = await callTool(host, 'game_say', { text: '开房间' });
-    const room = /房间(\d{4})/.exec(textOf(opened))?.[1];
-    assert.ok(room, `应播报四位房间号：${textOf(opened)}`);
+    const opened = await callTool(host, 'game_say', { text: '共鸣对决，发起挑战' });
+    const room = /编号(\d{4})/.exec(textOf(opened))?.[1];
+    assert.ok(room, `应播报四位编号：${textOf(opened)}`);
 
     const guest = await connect('device-say-guest', 'say-pvp-guest');
-    const joined = await callTool(guest, 'game_say', { text: `加入房间${room}` });
-    assert.match(textOf(joined), /房间/);
+    const joined = await callTool(guest, 'game_say', { text: `接受挑战，编号${room}` });
+    assert.match(textOf(joined), /接下了编号/);
 
     // 两边看到的是同一局的镜像视角：加入者先手
     const guestStatus = await callTool(guest, 'game_say', { text: '战况如何' });

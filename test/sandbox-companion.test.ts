@@ -39,7 +39,7 @@ it('初次载入、查询重复、换房和历史替换不重播战果', () => {
 it('对手调试只显示可信公开快照，明确缺席与阶段视角', () => {
   assert.ok(!opponentDetails(battle(),false).includes('18'));
   assert.ok(opponentDetails(null,true).includes('尚无对局'));
-  assert.ok(opponentDetails(battle({waiting:true}),true).includes('尚未加入'));
+  assert.ok(opponentDetails(battle({waiting:true}),true).includes('还没有接受挑战'));
   const b=battle({pending:{actor:'player',move:'light',moveLabel:'普攻',damage:999}});
   const text=opponentDetails(b,true);
   assert.ok(text.includes('18 / 18'));assert.ok(text.includes('需要应对'));assert.ok(!text.includes('999'));

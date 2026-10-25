@@ -59,16 +59,16 @@ function setup(overrides: Partial<ConstructorParameters<typeof GameService>[0]> 
 }
 
 function findRoom(service: GameService, host: string): string {
-  // 从房间号已经写进对局键这件事反推不方便，直接遍历不可行；
-  // 让服务返回文本里的房间号最稳。
+  // 从挑战编号已经写进对局键这件事反推不方便，直接遍历不可行；
+  // 让服务返回文本里的挑战编号最稳。
   const text = service.status(host).text;
   const match = text.match(/房间(\d{4})/);
-  assert.ok(match, `战况里应带房间号：${text}`);
+  assert.ok(match, `战况里应带挑战编号：${text}`);
   return match[1]!;
 }
 
 describe('双人联机', () => {
-  it('开房拿到四位房间号，并提示对手怎么加入', async () => {
+  it('开房拿到四位挑战编号，并提示对手怎么加入', async () => {
     const { service, rooms } = setup();
     const result = await service.start(HOST, { mode: 'pvp' });
 
@@ -81,7 +81,7 @@ describe('双人联机', () => {
     assert.ok(rooms.byPlayer(HOST));
   });
 
-  it('重复喊开房时复用同一个房间号', async () => {
+  it('重复喊开房时复用同一个挑战编号', async () => {
     const { service } = setup();
     const first = await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
@@ -90,7 +90,7 @@ describe('双人联机', () => {
     assert.equal(first.battle?.id, second.battle?.id);
   });
 
-  it('第二位玩家凭房间号加入，看到镜像视角的同一局', async () => {
+  it('第二位玩家凭挑战编号加入，看到镜像视角的同一局', async () => {
     const { service } = setup();
     await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
@@ -173,7 +173,7 @@ describe('双人联机', () => {
     assert.match(missing.text, /没找到房间0000/);
   });
 
-  it('房间号容忍中文数字，格式不对时提示四位数字', async () => {
+  it('挑战编号容忍中文数字，格式不对时提示四位数字', async () => {
     assert.equal(normalizeRoomCode('一二三四'), '1234');
     assert.equal(normalizeRoomCode('四三二一'), '4321');
     assert.equal(normalizeRoomCode('房间 1234'), '1234');
@@ -185,7 +185,7 @@ describe('双人联机', () => {
     assert.match(result.text, /四位数字/);
   });
 
-  it('房主开房后重开：等人时复用房间号，已开局则换新房间', async () => {
+  it('房主开房后重开：等人时复用挑战编号，已开局则换新房间', async () => {
     const { service, rooms, store } = setup();
     await service.start(HOST, { mode: 'pvp' });
     const firstCode = findRoom(service, HOST);
@@ -197,7 +197,7 @@ describe('双人联机', () => {
 
     await service.start(GUEST, { room: firstCode });
     await service.start(HOST, { mode: 'pvp' });
-    // 已开局后重开：旧房撤掉、新局重开（房间号可能复用，不能按码判断）
+    // 已开局后重开：旧房撤掉、新局重开（挑战编号可能复用，不能按码判断）
     const newCode = findRoom(service, HOST);
     assert.notEqual(store.get(`pvp:${newCode}`)!.id, firstBattleId);
     assert.equal(rooms.size, 1);
@@ -214,7 +214,7 @@ describe('双人联机', () => {
     assert.match((await service.start(GUEST, { room: '1000' })).text, /没找到/);
   });
 
-  it('房间号格式不对、房间不存在与满员分别提示', async () => {
+  it('挑战编号格式不对、房间不存在与满员分别提示', async () => {
     const { service } = setup();
 
     assert.match((await service.start(GUEST, { room: 'abc' })).text, /四位数字/);
@@ -317,7 +317,7 @@ describe('双人联机', () => {
     registerGameTools(server, { service, logger: createLogger('error'), ctx });
 
     const start = handlers.get('game_say')!;
-    const opened = await start({ text: '开房间' });
+    const opened = await start({ text: '共鸣对决，发起挑战' });
     const reply = JSON.parse(opened.content[0]!.text) as GameReply;
     assert.match(reply.room ?? '', /^\d{4}$/);
     assert.equal(reply.need, 'wait_guest');
@@ -326,7 +326,7 @@ describe('双人联机', () => {
     // 换一个设备身份加入，避免房主自己进自己的房
     ctx.deviceId = 'device-b';
     ctx.agentId = 'agent-2';
-    const joined = await start({ text: `加入房间${reply.room}` });
+    const joined = await start({ text: `接受挑战，编号${reply.room}` });
     const joinedReply = JSON.parse(joined.content[0]!.text) as GameReply;
     assert.ok(joinedReply.events?.some(event => event.t === 'join' && event.code === reply.room));
     assert.ok(joinedReply.events?.some(event => event.t === 'start'));
@@ -358,10 +358,10 @@ describe('载体形态下的补账播报', () => {
     const host = toolset(service, hostCtx);
     const guest = toolset(service, guestCtx);
 
-    const opened = await host('game_say', { text: '开房间' });
+    const opened = await host('game_say', { text: '共鸣对决，发起挑战' });
     const code = opened.room!;
     assert.match(code, /^\d{4}$/);
-    await guest('game_say', { text: `加入房间${code}` });
+    await guest('game_say', { text: `接受挑战，编号${code}` });
 
     // 房主出招、访客应招：欠房主一条补账
     await host('game_say', { text: '强攻' });
@@ -449,7 +449,7 @@ describe('语音原话兜底开房与加入', () => {
     const { service } = setup();
     await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
-    const joined = await service.say(GUEST, `加入房间${code}`);
+    const joined = await service.say(GUEST, `接受挑战，编号${code}`);
     assert.match(joined.text, /我进了房间/);
     assert.equal(joined.battle?.mode, 'pvp');
     assert.equal(joined.battle?.player.id, 'player');
@@ -564,7 +564,7 @@ describe('房间与席位的边界', () => {
     const battleBefore = store.get(pvpBattleKey(code));
     assert.ok(battleBefore);
 
-    // 房间号不存在
+    // 挑战编号不存在
     const missing = await service.say(GUEST, '加入房间9999');
     assert.match(missing.text, /没找到房间9999/);
     assert.equal(rooms.byPlayer(GUEST)?.code, code);
@@ -627,12 +627,12 @@ describe('房间与席位的边界', () => {
     assert.doesNotMatch(later.text, /刚才那一手/);
   });
 
-  it('房主拿自己的房间号不会把自己登记成加入者', async () => {
+  it('房主拿自己的挑战编号不会把自己登记成加入者', async () => {
     const { service, rooms } = setup();
     await service.start(HOST, { mode: 'pvp' });
     const code = findRoom(service, HOST);
 
-    const again = await service.say(HOST, `加入房间${code}`);
+    const again = await service.say(HOST, `接受挑战，编号${code}`);
     assert.match(again.text, /还等着另一位玩家加入/);
     const room = rooms.get(code);
     assert.ok(room);

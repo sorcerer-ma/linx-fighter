@@ -239,34 +239,39 @@ export function narrateStatus(battle: Battle, options: { waiting?: boolean; expr
   return joinLines(lines);
 }
 
-/** 双人联机：房间开好，等另一位玩家 */
+/** 双人联机：挑战已发起，等对方凭编号接受 */
 export function narrateRoomCreated(code: string): string {
-  return `房间${code}开好了，把房间号告诉另一位玩家，说「加入房间${code}」就能进来`;
+  return `挑战已发起，编号${code}。让对方说「接受挑战，编号${code}」就能进来`;
 }
 
-/** 双人联机：成功加入房间 */
+/** 双人联机：成功接下挑战 */
 export function narrateRoomJoined(code: string): string {
-  return `我进了房间${code}，对面就是另一位玩家`;
+  return `我接下了编号${code}的挑战，对面就是另一位玩家`;
 }
 
-/** 双人联机：房间还没等到人 */
+/** 双人联机：挑战还没等到人接受 */
 export function narrateWaitingRoom(code: string): string {
-  return `房间${code}还等着另一位玩家加入，进来就能开打`;
+  return `编号${code}还等着对方接受，说「接受挑战，编号${code}」就能进来`;
 }
 
-/** 双人联机：房间号不存在或已过期 */
+/** 双人联机：编号不存在或已过期 */
 export function narrateRoomMissing(code: string): string {
-  return `没找到房间${code}，确认四位房间号再试一次`;
+  return `没找到编号${code}的挑战，确认四位数编号再试一次`;
 }
 
-/** 双人联机：房间已满 */
+/**
+ * 双人联机：挑战已经有人接下
+ *
+ * 尾句带「说「发起挑战」」：装置会分段收音，任何一句单独回灌都要被 crosstalk 认出来，
+ * 否则「自己发起挑战」会被读成发起挑战，把玩家自己那一局连同对手一起撤掉。
+ */
 export function narrateRoomFull(code: string): string {
-  return `房间${code}已经满员，自己开一局，或者换一个房间号`;
+  return `编号${code}已经被接受了，说「发起挑战」自己开一局，或者换一个编号`;
 }
 
-/** 双人联机：房间号格式不对 */
+/** 双人联机：编号格式不对 */
 export function narrateRoomInvalid(): string {
-  return '房间号要四位数字，再说一遍试试';
+  return '编号要四位数字，再说一遍试试';
 }
 
 /**

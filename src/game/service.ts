@@ -58,18 +58,18 @@ export interface ServiceResult {
 
 /** 只读局面快照：给状态流与调试接口用，不做播报、不推进对局 */
 export interface SnapshotResult {
-  /** 四位房间号；单人局为 null */
+  /** 四位挑战编号；单人局为 null */
   room: string | null;
   state: BattleState;
 }
 
-/** 开局参数：单人可指定对手名；双人可开房或加入房间 */
+/** 开局参数：单人可指定对手名；双人可发起挑战或接受挑战 */
 export interface StartOptions {
   opponent?: string;
   mode?: 'solo' | 'pvp';
-  /** 四位房间号，填了就加入房间，忽略 mode */
+  /** 四位挑战编号，填了就接受该编号的挑战，忽略 mode */
   room?: string;
-  /** 玩家原话：平台模型不确定结构化参数时塞进来，服务端兜底识别「开房间 / 加入房间」 */
+  /** 玩家原话：平台模型不确定结构化参数时塞进来，服务端兜底识别「发起挑战 / 接受挑战」 */
   text?: string;
 }
 
@@ -173,10 +173,10 @@ export class GameService {
   }
 
   /**
-   * 开一局：单人、开双人房，或凭房间号加入。
+   * 开一局：单人、发起双人挑战，或凭编号接受挑战。
    *
    * 平台模型给了结构化参数就按参数走；给的是原话就交给 readCommand，
-   * 「开房间 / 加入房间1234」这类说法和服务端自己的识别保持同一套规则。
+   * 「发起挑战 / 接受挑战，编号1234」这类说法和服务端自己的识别保持同一套规则。
    */
   async start(sessionKey: string, options: StartOptions = {}): Promise<ServiceResult> {
     const phrase = [options.opponent, options.text].filter(Boolean).join(' ');
@@ -234,12 +234,12 @@ export class GameService {
   }
 
   /**
-   * 按命令分派：房间、玩法、战况都在这里收口，只有招式会进对局流水线。
+   * 按命令分派：挑战、玩法、战况都在这里收口，只有招式会进对局流水线。
    *
    * 「在不在房间」只决定这一手记到哪张桌上，不再影响这句话怎么理解——
-   * 所以已经在房间里的玩家说「加入房间1234」照样能换房。
+   * 所以已经在房间里的玩家说「接受挑战，编号1234」照样能换房。
    *
-   * `routed` 只有模型路由回来的命令才带：开局、开房会改对局归属，执行前要
+   * `routed` 只有模型路由回来的命令才带：开局、发起挑战会改对局归属，执行前要
    * 核对还是不是问模型时那一局（见 discardIfStale）。
    */
   private execute(
@@ -543,15 +543,15 @@ export class GameService {
   }
 
   /**
-   * 开双人房：先建基准对局，再等第二位玩家凭房间号加入。
+   * 发起双人挑战：先建基准对局，再等对方凭编号接受。
    *
-   * 已经在等人时又喊一次「开房」就复用原房间号，别让玩家每说一次就换一个码；
+   * 已经在等人时又喊一次「发起挑战」就复用原编号，别让玩家每说一次就换一个码；
    * 已经开打则撤掉旧房重开——旧房里等着的对手不会对着作废的局面继续出招。
    */
   private openRoom(sessionKey: string, routed?: RoutedHand): ServiceResult {
     // 同开局：模型回来时已经不是当时那一局（多半是刚进了别人的房间），
-    // 这时再开房会把玩家从原来的房间里撤出来，连对手那一局一起清掉
-    const stale = this.discardIfStale(sessionKey, routed, '开房');
+    // 这时再发起挑战会把玩家从原来的房间里撤出来，连对手那一局一起清掉
+    const stale = this.discardIfStale(sessionKey, routed, '发起挑战');
     if (stale) return stale;
 
     const existing = this.rooms.byPlayer(sessionKey);

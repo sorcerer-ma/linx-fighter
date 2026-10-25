@@ -53,7 +53,7 @@ export interface HistoryEntryState {
 export interface BattleState {
   /** Authoritative identity for ignoring delayed previous-battle replies. */
   battleId: string;
-  /** 四位房间号；单人局为 null */
+  /** 四位挑战编号；单人局为 null */
   room: string | null;
   mode: BattleMode;
   /** 玩家坐在基准对局的哪一边；快照已镜像，界面不用管 */

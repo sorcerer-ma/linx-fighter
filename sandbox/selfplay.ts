@@ -190,10 +190,10 @@ async function playDuel(options: DuelOptions, round: number): Promise<DuelResult
     return result;
   };
 
-  const opened = await say(host, '开房间');
+  const opened = await say(host, '共鸣对决，发起挑战');
   const room = opened.protocol?.room ?? opened.state?.room;
-  if (!room) throw new Error('开房结果没有权威房间号');
-  await say(guest, `加入房间${room}`);
+  if (!room) throw new Error('发起挑战结果没有权威编号');
+  await say(guest, `接受挑战，编号${room}`);
   // 已有访客加入再消费等待，避免自对弈先阻塞等待自己尚未执行的动作。
   if (opened.protocol?.need === 'wait_guest') {
     const joined = await client.wait(host);

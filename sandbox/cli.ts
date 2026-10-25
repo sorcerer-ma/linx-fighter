@@ -105,7 +105,7 @@ async function main(argv: string[]): Promise<number> {
   if (command === 'say' || command === 'wait') {
     const text = flagText(flags, 'text') ?? positionals.join(' ').trim();
     if (command === 'say' && !text) {
-      console.error('缺少要说的内容，例如：tsx sandbox/cli.ts say --device web-p1 "开房间"');
+      console.error('缺少要说的内容，例如：tsx sandbox/cli.ts say --device web-p1 "共鸣对决，发起挑战"');
       return 1;
     }
 
