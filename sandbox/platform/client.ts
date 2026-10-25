@@ -1,6 +1,6 @@
-import { SandboxAgent } from './agent.js';
+import { SandboxAgent, type ExpressionValidationReason } from './agent.js';
+import { fallbackSpeech, type SpeechPlan } from './speech.js';
 import type { GameReply } from '../../src/game/protocol.js';
-import type { ReplyRejectionReason } from './reply-check.js';
 import { randomUUID } from 'node:crypto';
 import type { BattleState } from '../../src/game/state.js';
 import type { Logger } from '../../src/log.js';
@@ -38,7 +38,8 @@ export interface SayResult {
   protocol?: GameReply;
   sourceBattleId?: string | null;
   silent: boolean;
-  validationReason?: ReplyRejectionReason;
+  validationReason?: ExpressionValidationReason;
+  speech: SpeechPlan;
   reply: string;
   isError: boolean;
   tool: string;
@@ -83,19 +84,21 @@ export class SandboxClient {
       const trace = mcp.takeTrace();
       const validationReason = 'validationReason' in outcome ? outcome.validationReason : undefined;
       const rewriteStatus = cancelled ? 'cancelled' : stale ? 'stale' : outcome.rewriteStatus;
+      const speech = cancelled || stale ? fallbackSpeech('') : outcome.speech;
       this.options.logger.info('沙箱转发', {
-        deviceId, requestId: sessionId, rewriteStatus, validationReason,
+        deviceId, requestId: sessionId, rewriteStatus, validationReason, speechSource:speech.source, speechSegments:speech.segments.length,
         expressionError: 'expressionError' in outcome ? outcome.expressionError : undefined,
         isError: outcome.isError, round: state?.battle?.round ?? 0, room: state?.room, tool, ms: trace.ms,
       });
       return { ok: true, ...base, reply: stale || cancelled ? '' : outcome.text, protocol: outcome.reply,
-        sourceBattleId:outcome.battleId, silent:outcome.silent || stale || cancelled, validationReason,
+        sourceBattleId:outcome.battleId, silent:outcome.silent || stale || cancelled, validationReason, speech,
         isError: outcome.isError, sourceReply:outcome.sourceText, rewriteStatus,
         expressionError:'expressionError' in outcome && typeof outcome.expressionError === 'string' ? outcome.expressionError : undefined, state, trace };
     } catch {
       const cancelled = options.signal?.aborted === true;
       this.options.logger.warn('沙箱工具结果未确认', { deviceId, requestId:sessionId, tool, cancelled });
-      return { ok:false, ...base, silent:cancelled, reply:cancelled ? '' : '这一手结果未确认，我先核实局面。',
+      const reply = cancelled ? '' : '这一手结果未确认，我先核实局面。';
+      return { ok:false, ...base, silent:cancelled, reply, speech:fallbackSpeech(reply),
         isError:true, state:null, trace:mcp.takeTrace(), error:cancelled ? 'cancelled' : 'upstream_unreachable' };
     }
   }

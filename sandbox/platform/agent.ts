@@ -1,4 +1,5 @@
 import { replyRejectionReason, type ReplyRejectionReason } from './reply-check.js';
+import { fallbackSpeech, parseSpeechOutput, type SpeechPlan, type SpeechRejectionReason } from './speech.js';
 import { OpenAiReplyModel } from './reply-model.js';
 import type { GameReply } from '../../src/game/protocol.js';
 import { readFileSync } from 'node:fs';
@@ -15,10 +16,11 @@ export function loadAgentPrompt(path: string): string {
 export interface ReplyModel {
   express(system: string, facts: GameReply, options?: { signal?: AbortSignal }): Promise<string>;
 }
+export type ExpressionValidationReason = ReplyRejectionReason | SpeechRejectionReason;
 export interface AgentOutcome {
   tool:string; text:string; sourceText:string; reply:GameReply; battleId?:string|null;
-  isError:boolean; silent:boolean; rewriteStatus:string;
-  validationReason?:ReplyRejectionReason; expressionError?:string;
+  isError:boolean; silent:boolean; rewriteStatus:string; speech:SpeechPlan;
+  validationReason?:ExpressionValidationReason; expressionError?:string;
 }
 
 /** Exactly one game operation. Expression cannot select or retry tools. */
@@ -33,15 +35,21 @@ export class SandboxAgent {
   private async express(tool: string, result: { reply: GameReply; isError: boolean; battleId?: string | null }, options: { signal?: AbortSignal }): Promise<AgentOutcome> {
     const facts = result.reply;
     const sourceText = facts.silent ? '' : facts.text ?? facts.say ?? '这一手结果未确认，我先核实局面。';
-    const original = { tool, text: sourceText, sourceText, reply: facts, battleId:result.isError ? undefined : result.battleId, isError: result.isError, silent: facts.silent === true };
+    const original = { tool, text: sourceText, sourceText, reply: facts, battleId:result.isError ? undefined : result.battleId, isError: result.isError, silent: facts.silent === true, speech:fallbackSpeech(sourceText) };
     if (facts.silent) return { ...original, rewriteStatus: 'silent' };
-    if (!this.model || options.signal?.aborted || result.isError || facts.reason === 'unknown') return { ...original, rewriteStatus: 'original' };
+    if (options.signal?.aborted) return { ...original, text:'', silent:true, speech:fallbackSpeech(''), rewriteStatus:'cancelled' };
+    if (!this.model || result.isError || facts.reason === 'unknown') return { ...original, rewriteStatus: 'original' };
     try {
-      const candidate = await this.model.express(this.prompt, facts, options);
+      const output = await this.model.express(this.prompt, facts, options);
+      if (options.signal?.aborted) return { ...original, text:'', silent:true, speech:fallbackSpeech(''), rewriteStatus:'cancelled' };
+      const parsed = parseSpeechOutput(output);
+      if (!parsed.ok) return { ...original, rewriteStatus:'fallback-invalid', validationReason:parsed.reason };
+      const candidate = parsed.text;
       const validationReason = replyRejectionReason(candidate, facts);
       if (validationReason) return { ...original, rewriteStatus: 'fallback-invalid', validationReason };
-      return { ...original, text: candidate, rewriteStatus: candidate === sourceText ? 'original' : 'rewritten' };
+      return { ...original, text: candidate, speech:parsed.speech, rewriteStatus: candidate === sourceText ? 'original' : 'rewritten' };
     } catch (error) {
+      if (options.signal?.aborted) return { ...original, text:'', silent:true, speech:fallbackSpeech(''), rewriteStatus:'cancelled' };
       const expressionError = error instanceof Error && /^表达模型请求失败：HTTP \d+$/.test(error.message) ? error.message : '表达模型不可用';
       return { ...original, rewriteStatus: 'fallback-error', expressionError };
     }
