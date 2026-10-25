@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>共鸣：闻声对决 · 开口，就是操作</title>
+<meta name="description" content="玩家用嘴指挥硬件伙伴，和朋友面对面打一场 1v1 回合制对决。平台负责唤醒、听写与朗读；服务端用规则引擎统一裁决；模型只说话，不碰数字。">
+<meta name="color-scheme" content="light">
+<link rel="icon" type="image/png" href="assets/logo.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- 图标库：统一 24×24 描边风格，用 <use href="#i-xxx"> 引用 -->
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></symbol>
+    <symbol id="i-nfc" viewBox="0 0 24 24"><path d="M23.958 1.98C23.895 1 23.143.256 22.145.197c-1.102-.066-4.668-.12-5.693-.12 1.832 1.264 2.082 3.644 2.255 8.066.101 2.62.01 11.799.002 12.188l-.049 2.504-9.628-9.63v-3.014l7.656 7.658c.02-1.516.04-3.492.04-5.299 0-1.76-.026-3.354-.076-4.193-.288-4.819-.737-7.077-3.253-7.962-.77-.27-1.487-.335-2.683-.351C9.728.032 2.848.037 1.854.091.8.147.09.914.042 1.9c-.048.977-.064 19.174 0 20.165.062.98.815 1.724 1.812 1.782 1.102.067 4.668.075 5.694.075-1.832-1.264-2.083-3.643-2.255-8.066-.1-2.62-.009-11.8 0-12.188l.047-2.504 9.629 9.63v3.013L7.312 6.152c-.02 1.514-.04 3.49-.04 5.298 0 1.76.026 3.354.077 4.192.288 4.82.736 7.077 3.252 7.962.77.271 1.487.337 2.683.352.987.012 7.868.006 8.861-.047 1.056-.056 1.765-.822 1.813-1.811.048-.976.064-19.127 0-20.118"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h1.5M7 8v8M11 4.5v15M15 7v10M19 10v4M21.5 12H21"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20C7.5 17 5 14 5 10.8A3.8 3.8 0 0 1 12 8a3.8 3.8 0 0 1 7 2.8C19 14 16.5 17 12 20Z"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-8 12h5l-1 8 8-12h-5l1-8Z"/></symbol>
+    <symbol id="i-swords" viewBox="0 0 24 24"><path d="m4 20 5-5M20 4l-9 9M17 3l4 4-9 9-4-4 9-9ZM3 3l4 4M21 21l-3-3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 2.6v5.1c0 4.4-3 7.4-7 9.3-4-1.9-7-4.9-7-9.3V5.6L12 3Z"/></symbol>
+    <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M12 3l7 2.6v5.1c0 4.4-3 7.4-7 9.3-4-1.9-7-4.9-7-9.3V5.6L12 3Z"/><path d="m8.8 11.6 2.3 2.4 4.3-4.6"/></symbol>
+    <symbol id="i-dodge" viewBox="0 0 24 24"><path d="M3 6h5M3 12h7M3 18h5"/><path d="m14 6 4.5 6L14 18"/><path d="m18.5 6 3.5 6-3.5 6"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.5"/><path d="M4 10h4M4 14h4M16 10h4M16 14h4M10 4v4M14 4v4M10 16v4M14 16v4"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.5 18a3.8 3.8 0 0 1-.4-7.6A5.2 5.2 0 0 1 17.6 9a4 4 0 0 1 .5 9H7.5Z"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9.5 4.5a3 3 0 0 0-3 3 3 3 0 0 0-1.5 5.4A3 3 0 0 0 7 17.6a3 3 0 0 0 5.5 1.4V4.9a3 3 0 0 0-3-.4Z"/><path d="M14.5 4.5a3 3 0 0 1 3 3 3 3 0 0 1 1.5 5.4 3 3 0 0 1-2 4.7 3 3 0 0 1-5.5 1.4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="18" cy="19" r="2.2"/><path d="M6 7.2v4.3A4 4 0 0 0 10 15.5h4a4 4 0 0 1 4 4"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 8.5 4.7L12 12.4 3.5 7.7 12 3Z"/><path d="m3.5 12.6 8.5 4.7 8.5-4.7"/><path d="m3.5 17 8.5 4.7 8.5-4.7"/></symbol>
+    <symbol id="i-cards" viewBox="0 0 24 24"><rect x="6" y="7" width="9" height="13" rx="1.6"/><path d="M9.5 4.2h7a2 2 0 0 1 2 2v9.4M10.5 11.5h3M12 10v3"/></symbol>
+    <symbol id="i-store" viewBox="0 0 24 24"><path d="M4 9.5h16M5.5 9.5V6h13v3.5M6.5 12v7.5h11V12"/><path d="M10 19.5V15h4v4.5"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3.2 20 7.6v8.8L12 20.8 4 16.4V7.6L12 3.2Z"/><path d="m4 7.6 8 4.4 8-4.4M12 12v8.4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c0-3 2.5-4.8 5.5-4.8s5.5 1.8 5.5 4.8"/><circle cx="17" cy="9.5" r="2.2"/><path d="M16 14.6c2.6.2 4.5 1.8 4.5 4.4"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8L12 3.5Z"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M4 9a8 8 0 0 1 13.5-3M20 5v4h-4"/><path d="M20 15a8 8 0 0 1-13.5 3M4 19v-4h4"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><path d="M9 5.5 10.5 7M15 5.5 13.5 7"/><rect x="8" y="7.5" width="8" height="9" rx="4"/><path d="M5 11h3M16 11h3M5 16h3M16 16h3M12 16.5v3"/></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 3.5a4.5 4.5 0 0 0 5.9 5.9L10.9 19a3 3 0 0 1-4.2-4.2L16.2 5.3"/><path d="m5.5 18.5 1.8-1.8"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4.5h11l-2.4 4L17 12.5H6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 4v15M6.5 13.5 12 19l5.5-5.5"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h15M13.5 6.5 19 12l-5.5 5.5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5-10-6.5Z"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-sound-on" viewBox="0 0 24 24"><path d="M11 5 6.5 8.8H3.5v6.4h3L11 19V5Z"/><path d="M15 9.2a4 4 0 0 1 0 5.6M17.8 6.4a8 8 0 0 1 0 11.2"/></symbol>
+    <symbol id="i-sound-off" viewBox="0 0 24 24"><path d="M11 5 6.5 8.8H3.5v6.4h3L11 19V5Z"/><path d="m15 9.5 5 5M20 9.5l-5 5"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.7.6-3.3-1.2-3.3-1.2-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.2-4.5-1.1-4.5-4.8 0-1.1.4-1.9 1-2.6-.1-.3-.4-1.3.1-2.6 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 4.9 0c1.9-1.3 2.7-1 2.7-1 .5 1.3.2 2.3.1 2.6.6.7 1 1.5 1 2.6 0 3.7-2.3 4.6-4.5 4.8.3.3.7 1 .7 2v3c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z"/></symbol>
+    <symbol id="i-led" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9.5h3.5L13 5.5v13L7.5 14.5H4v-5Z"/><path d="M16.5 9a4.5 4.5 0 0 1 0 6"/></symbol>
+  </defs>
+</svg>
+
+<div class="progress" aria-hidden="true"><span data-progress></span></div>
+
+<header class="nav" data-nav>
+  <a class="nav__brand" href="#hero">
+    <img src="assets/logo.png" alt="" width="34" height="34">
+    <span>共鸣：闻声对决</span>
+  </a>
+  <nav class="nav__links" aria-label="页面导航">
+    <a href="#problem">问题</a>
+    <a href="#play">玩法</a>
+    <a href="#footage">实录</a>
+    <a href="#arch">结构</a>
+    <a href="#listen">技术</a>
+    <a href="#fair">公平</a>
+    <a href="#grow">未来</a>
+  </nav>
+  <a class="btn btn--ghost nav__cta" href="#play">看怎么打</a>
+</header>
+
+<main>
+
+  <!-- ========== S1 首屏：产品片直接可见 ========== -->
+  <section class="scene scene--hero" id="hero">
+    <div class="deco deco--arcs" aria-hidden="true">
+      <span class="arc arc--a"></span>
+      <span class="arc arc--b"></span>
+      <span class="arc arc--c"></span>
+      <span class="arc arc--d"></span>
+    </div>
+    <div class="deco deco--wash" aria-hidden="true"></div>
+
+    <div class="hero__grid">
+      <div class="hero__copy">
+        <p class="kicker"><span class="dot"></span>面对面 1v1 回合制</p>
+        <h1 class="display">
+          <span class="line">开口，</span>
+          <span class="line">就是操作</span>
+        </h1>
+        <p class="lede">
+          你用嘴指挥自己的硬件伙伴，和朋友面对面打完一局。
+          平台负责唤醒、听写与朗读；服务端用规则引擎统一裁决；模型只说话，不碰数字。
+        </p>
+        <div class="hero__actions">
+          <a class="btn btn--solid" href="#play">看怎么打一场 <svg class="icon"><use href="#i-arrow-down"/></svg></a>
+          <a class="btn btn--quiet" href="#arch">它长什么样</a>
+        </div>
+      </div>
+
+      <figure class="film" data-parallax="-0.03">
+        <div class="film__frame">
+          <video class="film__video" controls autoplay muted loop playsinline preload="metadata"
+                 src="media/intro.mp4" poster="assets/poster-intro.jpg"
+                 aria-label="60 秒产品介绍片"></video>
+          <span class="film__badge"><svg class="icon"><use href="#i-play"/></svg>60 秒产品片</span>
+        </div>
+        <figcaption class="film__cap">
+          <span class="film__note">一个声音，一台机器，一场面对面的对决</span>
+        </figcaption>
+      </figure>
+    </div>
+
+    <ul class="hero__facts" data-reveal>
+      <li>
+        <svg class="icon"><use href="#i-users"/></svg>
+        <div><b>两台设备，一张桌子</b><small>面对面开打，围观的人能起哄</small></div>
+      </li>
+      <li>
+        <svg class="icon"><use href="#i-swords"/></svg>
+        <div><b>七个词，一局一个样</b><small>出手前猜不到对面是挡还是闪</small></div>
+      </li>
+      <li>
+        <svg class="icon"><use href="#i-mic"/></svg>
+        <div><b>不背口令</b><small>说「给他点颜色看看」，也算强攻</small></div>
+      </li>
+      <li>
+        <svg class="icon"><use href="#i-spark"/></svg>
+        <div><b>声音是唯一入口</b><small>没有手柄，也没有技能栏</small></div>
+      </li>
+    </ul>
+
+    <div class="hero__foot">
+      <span class="scroll-hint">向下滚动</span>
+    </div>
+  </section>
+
+  <!-- ========== S2 问题 ========== -->
+  <section class="scene scene--problem" id="problem">
+    <div class="wrap">
+      <header class="sect-head" data-reveal>
+        <p class="num">01 / 问题</p>
+        <h2 class="h2">语音助手停在问答，<br>硬件伙伴停在卖萌</h2>
+      </header>
+
+      <div class="stops">
+        <article class="stop" data-reveal data-parallax="-0.02">
+          <span class="stop__ico"><svg class="icon"><use href="#i-wave"/></svg></span>
+          <h3>停在问答</h3>
+          <p>一次一条，说完就散。没有回合，没有立场，更没有输赢。</p>
+        </article>
+        <article class="stop" data-reveal data-parallax="-0.05">
+          <span class="stop__ico"><svg class="icon"><use href="#i-box"/></svg></span>
+          <h3>停在卖萌</h3>
+          <p>会应声、会放歌、会亮灯，唯独没把用户那张嘴用上——它只是音箱加灯。</p>
+        </article>
+        <article class="stop" data-reveal data-parallax="-0.08">
+          <span class="stop__ico"><svg class="icon"><use href="#i-users"/></svg></span>
+          <h3>停在屏幕</h3>
+          <p>两个人坐在一起，却各自低头点按钮，社交隔着屏幕。</p>
+        </article>
+      </div>
+
+      <p class="statement" data-reveal>
+        语音不是输入方式之一，<br>而是这个玩法里唯一顺手的输入。
+      </p>
+
+      <div class="compare" data-reveal>
+        <table>
+          <caption class="sr-only">手机游戏、语音助手与本产品的形态差异</caption>
+          <thead>
+            <tr><th scope="col"></th><th scope="col">手机游戏</th><th scope="col">语音助手</th><th scope="col" class="is-us">我们</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">输入</th><td>手指点按，眼睛盯着</td><td>一问一答，说完就散</td><td class="is-us">原话直给，手是空的</td></tr>
+            <tr><th scope="row">对手</th><td>匹配到的陌生人</td><td>没有对手</td><td class="is-us">坐你对面的朋友</td></tr>
+            <tr><th scope="row">伙伴</th><td>角色只是你捏的头像</td><td>助手，不替你出手</td><td class="is-us">会替你还手的伙伴</td></tr>
+            <tr><th scope="row">场合</th><td>需要腾出双手和视线</td><td>独处、碎片时间</td><td class="is-us">面对面，边聊边打</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== S3 玩法 ========== -->
+  <section class="scene scene--play" id="play">
+    <div class="play__pin" data-play-pin>
+      <div class="wrap play__stage">
+        <header class="sect-head sect-head--row" data-reveal>
+          <div>
+            <p class="num">02 / 玩法</p>
+            <h2 class="h2">规则薄到一张表</h2>
+          </div>
+        </header>
+
+        <div class="arena" data-arena>
+          <div class="arena__hud">
+            <div class="hud-side hud-side--you">
+              <span class="hud-name"><svg class="icon"><use href="#i-heart"/></svg>你 · 先手</span>
+              <div class="bar"><i data-hp-you style="width:100%"></i></div>
+              <span class="hud-val"><b data-hp-you-num>14</b>/14</span>
+            </div>
+            <div class="hud-round">第 <b data-round>1</b> 轮</div>
+            <div class="hud-side hud-side--foe">
+              <span class="hud-name"><svg class="icon"><use href="#i-heart"/></svg>对手 · 后手</span>
+              <div class="bar"><i data-hp-foe style="width:100%"></i></div>
+              <span class="hud-val"><b data-hp-foe-num>18</b>/18</span>
+            </div>
+          </div>
+
+          <div class="arena__stage">
+            <div class="stage-ring" aria-hidden="true"></div>
+            <div class="device device--arena device--left" data-device>
+              <div class="device__body">
+                <div class="device__screen" data-face="ready" aria-hidden="true"></div>
+                <span class="device__strip"></span>
+                <span class="device__dots"><i></i><i></i><i></i><i></i><i></i></span>
+              </div>
+            </div>
+            <div class="device device--arena device--right" data-device>
+              <div class="device__body">
+                <div class="device__screen" data-face="ready" aria-hidden="true"></div>
+                <span class="device__strip"></span>
+                <span class="device__dots"><i></i><i></i><i></i><i></i><i></i></span>
+              </div>
+            </div>
+            <div class="bubble bubble--arena" data-arena-bubble aria-live="polite"></div>
+            <div class="spark" data-spark aria-hidden="true"></div>
+          </div>
+
+          <ol class="beats" data-beats>
+            <li data-beat="0"><b>开局</b>先手 14、后手 18，先手少 4 点生命值</li>
+            <li data-beat="1"><b>出招</b>「我出普攻，接招！」</li>
+            <li data-beat="2"><b>应对</b>「我闪避。」——成功则伤害归零</li>
+            <li data-beat="3"><b>结算</b>第 3 轮起每轮 +2，拖到第 5 轮出结果</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap play__below">
+      <div class="ledger" data-reveal>
+        <h3 class="h3"><svg class="icon"><use href="#i-swords"/></svg>7 个动作，一次读招</h3>
+        <table class="act-table">
+          <caption class="sr-only">七个动作的能量与效果，主动七选一，应对四选一</caption>
+          <thead>
+            <tr><th scope="col">动作</th><th scope="col">能量</th><th scope="col">效果</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="act act--atk">普攻</span></td><td><span class="pips"><i></i></span>1</td><td>3 伤害</td></tr>
+            <tr><td><span class="act act--atk">强攻</span></td><td><span class="pips"><i></i><i></i></span>2</td><td>5 伤害</td></tr>
+            <tr><td><span class="act act--ult">大招 · 共鸣冲击</span></td><td><span class="pips"><i></i><i></i><i></i><i></i></span>4</td><td>9 伤害，一局一次</td></tr>
+            <tr><td><span class="act act--self">蓄力</span></td><td><span class="pips pips--none">0</span></td><td>能量 +1</td></tr>
+            <tr><td><span class="act act--def">格挡</span></td><td><span class="pips"><i></i></span>1</td><td>伤害 −2</td></tr>
+            <tr><td><span class="act act--def">闪避</span></td><td><span class="pips"><i></i></span>1</td><td>按招式闪避率完全免伤</td></tr>
+            <tr><td><span class="act act--self">承受</span></td><td><span class="pips pips--none">0</span></td><td>硬吃全额伤害，保留能量</td></tr>
+          </tbody>
+        </table>
+        <p class="ledger__note">主动七选一、应对四选一。先手 14 / 后手 18，第 3 轮起每轮 +2。</p>
+      </div>
+
+      <div class="flow" data-reveal>
+        <h3 class="h3"><svg class="icon"><use href="#i-route"/></svg>一次结算的固定顺序</h3>
+        <ol class="flow__list">
+          <li><b>应对方先付能量</b><span>动作说出口就先扣，不够就是打不出来。</span></li>
+          <li><b>闪避判定</b><span>按招式各自的闪避率，躲开就完全不疼。</span></li>
+          <li><b>暴击判定</b><span>命中再叠伤害，普攻强攻 20%，大招 40%。</span></li>
+          <li><b>格挡减伤</b><span>定值再减 2 点，减到 0 为止。</span></li>
+          <li><b>结算扣血</b><span>生命值扣到 0 以下按 0 算，胜负当场定。</span></li>
+        </ol>
+        <p class="flow__foot">顺序固定、随机可注入：同一句指令，两边算出来的数永远一致。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== S3 真机实录 ========== -->
+  <section class="scene scene--footage" id="footage">
+    <div class="wrap">
+      <header class="sect-head" data-reveal>
+        <p class="num">03 / 真机实录</p>
+        <h2 class="h2">拍的，不是画的</h2>
+        <p class="sect-sub">设备放在桌上、手机握在手里，三段现场录像，没有补拍也没有剪辑加速。</p>
+      </header>
+
+      <div class="reels">
+        <figure class="reel" data-reveal>
+          <div class="reel__frame">
+            <video class="reel__video" controls playsinline preload="metadata"
+                   poster="assets/poster-faces.jpg" aria-label="设备表情实录"
+                   src="media/faces-full.mp4"></video>
+            <span class="reel__tag">3 分 25 秒 · 实录</span>
+          </div>
+          <figcaption>
+            <h3>它在你面前变脸</h3>
+            <p>听你说、准备出招、挨了一下、赢了——表情跟着战况走，不是贴图轮播。</p>
+          </figcaption>
+        </figure>
+
+        <figure class="reel" data-reveal>
+          <div class="reel__frame">
+            <video class="reel__video" controls playsinline preload="metadata"
+                   poster="assets/poster-voice.jpg" aria-label="设备语音对话实录"
+                   src="media/pvp.mp4"></video>
+            <span class="reel__tag">3 分 06 秒 · 实录</span>
+          </div>
+          <figcaption>
+            <h3>说一句，它就开始听</h3>
+            <p>唤醒、听清、回应，都在这一块小屏上发生——屏幕之外，没有别的操作。</p>
+          </figcaption>
+        </figure>
+
+        <figure class="reel" data-reveal>
+          <div class="reel__frame">
+            <video class="reel__video" controls playsinline preload="metadata"
+                   poster="assets/poster-battle.jpg" aria-label="双人对战实录"
+                   src="media/pvp-battle.mp4"></video>
+            <span class="reel__tag">5 分 08 秒 · 实录</span>
+          </div>
+          <figcaption>
+            <h3>两台设备，面对面开打</h3>
+            <p>两个人各说各的，谁也没碰按钮——同一句话，两边算出来的是同一组数。</p>
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== S4 结构：设备与四层 ========== -->
+  <section class="scene scene--arch" id="arch">
+    <div class="wrap">
+      <header class="sect-head" data-reveal>
+        <p class="num">04 / 结构</p>
+        <h2 class="h2">一台设备，两种视角</h2>
+        <p class="lede lede--narrow">小屏朝着对手，主人对着背面。翻到哪一面，指示线就标哪一面——指示灯用三种颜色说话：平时绿、血少了红、大招攒满蓝。</p>
+        <span class="badge badge--future"><svg class="icon"><use href="#i-star"></use></svg>设想与推演 · 尚未交付</span>
+      </header>
+
+      <div class="arch__grid">
+        <div class="hw" data-hw>
+          <div class="hw__stage">
+            <!-- 正面：三个部件 -->
+            <div class="anno anno--l" data-part="strip" data-side="front">
+              <p class="anno__text"><b>正面灯带</b>和背面是同一条指示灯，屏上方看得见：呼吸是在听，缓一拍是听进去了。</p>
+              <span class="anno__lead"></span>
+            </div>
+            <div class="anno anno--l" data-part="hp" data-side="front">
+              <p class="anno__text"><b>生命值写在长度里</b>爱心加一条绿带，长度就是剩余；屏里不写数字，对手在对面也看得见。</p>
+              <span class="anno__lead"></span>
+            </div>
+            <div class="anno anno--r" data-part="ult" data-side="front">
+              <p class="anno__text"><b>大招</b>屏的右上角：能量攒到 4 点，空心环变成实心，这一局就能放一次。</p>
+              <span class="anno__lead"></span>
+            </div>
+            <div class="anno anno--r" data-part="ap" data-side="front">
+              <p class="anno__text"><b>能量</b>屏的右下角五颗闪电：亮着就是有，出招和应对都花它。</p>
+              <span class="anno__lead"></span>
+            </div>
+
+            <!-- 背面：三个部件 -->
+            <div class="anno anno--l" data-part="led" data-side="back">
+              <p class="anno__text"><b>指示灯</b>背面没有屏幕，只有这条灯，三种颜色三种意思：
+                <span class="leds" role="list">
+                  <span class="leds__i" data-led="normal" role="listitem"><i></i>绿 · 平时</span>
+                  <span class="leds__i" data-led="low" role="listitem"><i></i>红 · 血量低</span>
+                  <span class="leds__i" data-led="ult" role="listitem"><i></i>蓝 · 大招就绪</span>
+                </span>
+              </p>
+              <span class="anno__lead"></span>
+            </div>
+            <div class="anno anno--r" data-part="nfc" data-side="back">
+              <p class="anno__text"><b><svg class="icon icon--fill"><use href="#i-nfc"/></svg>碰一碰</b>两台设备靠一下就能进同一间房、直接开局，不用再输配对码。</p>
+              <span class="anno__lead"></span>
+            </div>
+            <div class="anno anno--l" data-part="emblem" data-side="back">
+              <p class="anno__text"><b>声波徽记</b>外壳正中一个声波符号：它的本事在声音里。</p>
+              <span class="anno__lead"></span>
+            </div>
+            <div class="anno anno--r" data-part="shell" data-side="back">
+              <p class="anno__text"><b>外壳</b>无屏、无按键；主人从背面下命令，不必盯着它的脸。</p>
+              <span class="anno__lead"></span>
+            </div>
+
+            <div class="hw__mid">
+              <div class="hw__device" data-hw-device role="button" tabindex="0" aria-label="翻转设备，查看正面或背面的部件">
+                <div class="hw__side hw__side--front">
+                  <div class="device device--hw">
+                    <div class="device__body">
+                      <span class="device__strip" data-hwpart="strip"></span>
+                      <div class="device__screen">
+                        <div class="screen__face" data-face="idle" aria-hidden="true"></div>
+                        <div class="screen__res" aria-hidden="true">
+                          <span class="res__hp" data-hwpart="hp">
+                            <svg class="res__heart" viewBox="0 0 20 20"><path d="M10 17 3 10C-2 4 6-1 10 5c4-6 12-1 7 5Z" fill="currentColor"></path></svg>
+                            <span class="res__bar"><i></i></span>
+                          </span>
+                          <span class="res__ap" data-hwpart="ap">
+                            <svg class="res__bolt" viewBox="0 0 12 18"><path d="m7 1-6 9h4l-1 7 7-10H7Z"></path></svg>
+                            <svg class="res__bolt" viewBox="0 0 12 18"><path d="m7 1-6 9h4l-1 7 7-10H7Z"></path></svg>
+                            <svg class="res__bolt" viewBox="0 0 12 18"><path d="m7 1-6 9h4l-1 7 7-10H7Z"></path></svg>
+                            <svg class="res__bolt" viewBox="0 0 12 18"><path d="m7 1-6 9h4l-1 7 7-10H7Z"></path></svg>
+                            <svg class="res__bolt is-off" viewBox="0 0 12 18"><path d="m7 1-6 9h4l-1 7 7-10H7Z"></path></svg>
+                          </span>
+                        </div>
+                        <!-- 大招徽记：正面屏右上角，未就绪是空心环 + 一颗核心点 -->
+                        <span class="hw__ult" data-hwpart="ult" aria-hidden="true"><i></i></span>
+                      </div>
+                      <span class="device__dots"><i></i><i></i><i></i><i></i><i></i></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="hw__side hw__side--back">
+                  <div class="device device--hw device--back">
+                    <div class="device__body">
+                      <span class="hw__led" data-hwpart="led" aria-hidden="true"></span>
+                      <!-- 背面上部：近场通信的碰一碰区域，只做示意，不画天线细节 -->
+                      <span class="hw__nfc" data-hwpart="nfc" aria-hidden="true">
+                        <svg class="icon icon--fill"><use href="#i-nfc"/></svg>
+                      </span>
+                      <svg class="hw__emblem" data-hwpart="emblem" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="6.4" cy="12" r="1.5" fill="currentColor"></circle>
+                        <path d="M10 8.4a5 5 0 0 1 0 7.2M13.6 5.6a9 9 0 0 1 0 12.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                      </svg>
+                      <span class="device__grille" data-hwpart="shell" aria-hidden="true"></span>
+                      <span class="device__dots"><i></i><i></i><i></i><i></i><i></i></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="hw__mount" aria-hidden="true"></div>
+            </div>
+
+            <div class="hw__controls">
+              <div class="seg" role="group" aria-label="切换硬件视角">
+                <button type="button" class="seg__btn" data-view="front" aria-pressed="false">正面 · 朝对手</button>
+                <button type="button" class="seg__btn" data-view="back" aria-pressed="true">背面 · 朝主人</button>
+              </div>
+              <p class="hw__hint">点按钮或直接点设备翻面<span class="hw__hint-mouse">；鼠标停在部件名上，对应的零件会亮一下</span>。</p>
+            </div>
+          </div>
+        </div>
+
+        <ol class="layers" data-layers>
+          <li data-reveal>
+            <span class="layers__ico"><svg class="icon"><use href="#i-box"></use></svg></span>
+            <div><h3>载体</h3><p>硬件伙伴 · 手机网页</p></div>
+          </li>
+          <li data-reveal>
+            <span class="layers__ico"><svg class="icon"><use href="#i-cloud"></use></svg></span>
+            <div><h3>平台</h3><p>负责唤醒与听说：把你的原话原样交出去。</p></div>
+          </li>
+          <li data-reveal>
+            <span class="layers__ico"><svg class="icon"><use href="#i-chip"></use></svg></span>
+            <div><h3>服务端</h3><p>只认文本，不看人：每一手都算清，每个数字都由规则给出。</p></div>
+          </li>
+          <li data-reveal>
+            <span class="layers__ico"><svg class="icon"><use href="#i-brain"></use></svg></span>
+            <div><h3>模型</h3><p>只负责组句与选招：改说法可以，改数字不行。</p></div>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== S5 听懂 ========== -->
+  <section class="scene scene--listen" id="listen">
+    <div class="wrap">
+      <header class="sect-head" data-reveal>
+        <p class="num">05 / 技术深潜 · 一</p>
+        <h2 class="h2">听懂一句话，<br>比生成一句话难</h2>
+        <p class="sect-sub">ASR 没有热词，招式名会听错。一句话至少要过三层，每一层都在兜前一层。</p>
+      </header>
+
+      <div class="pipe" data-pipe>
+        <div class="pipe__track" aria-hidden="true"></div>
+        <span class="pipe__pill" data-pipe-pill>「我要开大招」</span>
+        <ol class="pipe__gates">
+          <li data-gate="0">
+            <span class="pipe__no">01</span>
+            <h3>规则读词</h3>
+            <p class="pipe__metric">~0 ms</p>
+            <small>整句精确优先、长说法优先、别名与唤出词</small>
+          </li>
+          <li data-gate="1">
+            <span class="pipe__no">02</span>
+            <h3>同音归一</h3>
+            <p class="pipe__metric">毫秒级 · 端侧</p>
+            <small>58 音节 / 1700+ 字，只兜拼音规则接不住的误听</small>
+          </li>
+          <li data-gate="2">
+            <span class="pipe__no">03</span>
+            <h3>决策模型</h3>
+            <p class="pipe__metric">0.7–1.1 s</p>
+            <small>只在规则认不出、且选项收窄后才调用</small>
+          </li>
+        </ol>
+      </div>
+
+      <div class="eff" data-reveal>
+        <table>
+          <caption class="sr-only">三种识别方案的命中率与延迟对比</caption>
+          <thead>
+            <tr><th scope="col">方案</th><th scope="col">命中率</th><th scope="col">p95 延迟</th><th scope="col">说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>纯关键词</td><td>76.6%</td><td>—</td><td>旧实现，已弃</td></tr>
+            <tr><td>纯模型</td><td>90.6%</td><td>1.55 s</td><td>每条都调用，贵且慢</td></tr>
+            <tr class="is-best"><td>混合路由</td><td>92.2%</td><td>0.85 s</td><td>只有 8 / 64 条走到模型</td></tr>
+          </tbody>
+        </table>
+        <p class="foot-note">92.2% 是自拟 64 条语料上的端到端命中率，不是 ASR 字准率。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== S6 说人话 ========== -->
+  <section class="scene scene--contract" id="contract">
+    <div class="wrap">
+      <header class="sect-head" data-reveal>
+        <p class="num">06 / 技术深潜 · 二</p>
+        <h2 class="h2">事实在服务端，<br>语气在模型</h2>
+        <p class="sect-sub">模型可以自由改写整句，但数字、归属、战果和下一步必须留着。</p>
+      </header>
+
+      <div class="duo" data-duo>
+        <div class="duo__col duo__col--fact" data-reveal>
+          <span class="duo__k"><svg class="icon"><use href="#i-chip"></use></svg>服务端给的</span>
+          <ul>
+            <li>这一手谁赢了，掉了多少</li>
+            <li>双方还剩多少生命值、多少能量</li>
+            <li>你下一个能出什么</li>
+          </ul>
+        </div>
+
+        <div class="duo__mid" aria-hidden="true">
+          <span class="duo__arrow"><svg class="icon"><use href="#i-arrow-right"></use></svg></span>
+          <span class="duo__midnote">模型只说人话</span>
+        </div>
+
+        <div class="duo__col duo__col--voice" data-reveal>
+          <span class="duo__k"><svg class="icon"><use href="#i-mic"></use></svg>伙伴说出口的</span>
+          <p class="duo__quote">「我 13 点生命值，对手 15 点。格挡减 2 伤、闪避赌一把，都花 1 点能量——想怎么打？」</p>
+        </div>
+      </div>
+      <p class="duo__note" data-reveal>换一种说法随便，数字对不上就不许说出口。</p>
+
+      <div class="cards3">
+        <article class="card" data-reveal>
+          <span class="card__ico"><svg class="icon"><use href="#i-check"></use></svg></span>
+          <h3>一句话里必须留下的</h3>
+          <p>谁、多少、发生了什么、下一步。措辞归模型，事实归服务端。</p>
+        </article>
+        <article class="card" data-reveal>
+          <span class="card__ico"><svg class="icon"><use href="#i-shield"></use></svg></span>
+          <h3>超了就直接报错</h3>
+          <p>战况一旦超出上限，宁可报错也不截断——截断过的真相比没有真相更危险。</p>
+        </article>
+        <article class="card" data-reveal>
+          <span class="card__ico"><svg class="icon"><use href="#i-refresh"></use></svg></span>
+          <h3>说错了就收回</h3>
+          <p>表达没过校验就退回原话，而且不会当成第二次出手——失败不能变成多打一手。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== S6 公平性 ========== -->
+  <section class="scene scene--fair" id="fair">
+    <div class="wrap">
+      <header class="sect-head" data-reveal>
+        <p class="num">07 / 公平</p>
+        <h2 class="h2">同一套规则，<br>谁也改不了数</h2>
+        <p class="sect-sub">语音最容易糊弄人，所以我们把不容易看见的地方也写在明面上。</p>
+      </header>
+
+      <ol class="fair-list" data-fair>
+        <li data-reveal>
+          <span class="fair__no">01</span>
+          <div>
+            <h3>裁决权唯一</h3>
+            <p>生命值、能量、轮次、随机数与胜负只有服务端能改；模型与客户端都不许推演数值。</p>
+          </div>
+          <span class="fair__stamp">唯一</span>
+        </li>
+        <li data-reveal>
+          <span class="fair__no">02</span>
+          <div>
+            <h3>补偿写在明处</h3>
+            <p>先手 14、后手 18，先手少 4 点生命值；第 3 轮起每轮 +2，逼出胜负而不是拖平。</p>
+          </div>
+          <span class="fair__stamp">明示</span>
+        </li>
+        <li data-reveal>
+          <span class="fair__no">03</span>
+          <div>
+            <h3>对手不偷看</h3>
+            <p>对手 AI 只从合法动作里挑，拿不到你未结算的选择；失败就回退本地策略。</p>
+          </div>
+          <span class="fair__stamp">隔离</span>
+        </li>
+        <li data-reveal>
+          <span class="fair__no">04</span>
+          <div>
+            <h3>说错不获益</h3>
+            <p>识别失败、否定、歧义与非法行动一律零消耗：不扣能量、不扣大招次数、不推进阶段。</p>
+          </div>
+          <span class="fair__stamp">零损</span>
+        </li>
+        <li data-reveal>
+          <span class="fair__no">05</span>
+          <div>
+            <h3>结果可复核</h3>
+            <p>每局怎么算的都能逐项重放：掉了多少、随到了什么，翻得出来——你不需要相信，你可以重算。</p>
+          </div>
+          <span class="fair__stamp">可算</span>
+        </li>
+      </ol>
+      <p class="fair__proof" data-reveal><b>256,000 局</b>对拍：开局两边胜率接近五五开，中局和残局也一直在起伏——这一局还没完，脑子说了算。</p>
+    </div>
+  </section>
+
+  <!-- ========== S7 养成（未来） ========== -->
+  <section class="scene scene--grow" id="grow">
+    <div class="wrap wrap--split">
+      <div class="grow__copy">
+        <header class="sect-head" data-reveal>
+          <p class="num">08 / 未来 · 一</p>
+          <h2 class="h2">不打仗的日子，<br>也有理由打开它</h2>
+          <span class="badge badge--future"><svg class="icon"><use href="#i-star"></use></svg>设想与推演 · 尚未交付</span>
+        </header>
+        <ul class="grow__list" data-reveal>
+          <li><h3><svg class="icon"><use href="#i-spark"></use></svg>成长线</h3><p>伙伴有名字、有性格、有成长状态，等级与外观随你一起变。</p></li>
+          <li><h3><svg class="icon"><use href="#i-wave"></use></svg>场外能量</h3><p>随身设备能测步数，步数只换养成资源，日封顶，不进战斗数值。</p></li>
+          <li><h3><svg class="icon"><use href="#i-heart"></use></svg>跨局的记忆</h3><p>它记得你上次怎么赢的，也记得你怎么输的——这比排行榜更容易被记住。</p></li>
+        </ul>
+      </div>
+      <div class="grow__visual" data-reveal data-grow>
+        <div class="rings" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="device device--grow">
+          <div class="device__body">
+            <div class="device__screen" data-face="ready" aria-hidden="true"></div>
+            <span class="device__strip"></span>
+            <span class="device__dots"><i></i><i></i><i></i><i></i><i></i></span>
+          </div>
+        </div>
+        <span class="grow__pop" data-grow-pop aria-hidden="true">升级！</span>
+        <div class="grow__exp">
+          <span class="grow__lv">Lv. <b data-grow-lv>1</b> / 99</span>
+          <span class="grow__bar" data-grow-bar aria-hidden="true"><i></i></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== S13 商业价值（未来） ========== -->
+  <section class="scene scene--biz" id="biz">
+    <div class="wrap">
+      <header class="sect-head" data-reveal>
+        <p class="num">09 / 未来 · 二</p>
+        <h2 class="h2">三层收入，<br>精灵是那个入口</h2>
+        <span class="badge badge--future"><svg class="icon"><use href="#i-star"></use></svg>设想与推演 · 尚未交付</span>
+      </header>
+
+      <div class="layers layers--biz">
+        <article class="layer" data-reveal>
+          <span class="layer__ico"><svg class="icon"><use href="#i-box"></use></svg></span>
+          <span class="layer__k">硬件</span>
+          <h3>设备与联名</h3>
+          <p>一台伙伴一个价格，外观与联名是第一层；不吃订阅。</p>
+        </article>
+        <article class="layer is-hot" data-reveal>
+          <span class="layer__ico"><svg class="icon"><use href="#i-cards"></use></svg></span>
+          <span class="layer__k">内容</span>
+          <h3>精灵抽卡</h3>
+          <p>新精灵、皮肤、赛季卡池。抽卡是这个品类最熟的付费动作，概率与保底公开。</p>
+        </article>
+        <article class="layer" data-reveal>
+          <span class="layer__ico"><svg class="icon"><use href="#i-store"></use></svg></span>
+          <span class="layer__k">IP 与线下</span>
+          <h3>道馆 · 展会 · 门店</h3>
+          <p>面对面是这个品类的场地优势：认证道馆与场次，把一次性购买变成复购。</p>
+        </article>
+      </div>
+
+      <div class="biz__pay" data-reveal>
+        <p class="biz__lead">第一道口子是精灵本身</p>
+        <p>一只说得出口头禅、赢了会欢呼的伙伴，比一套皮肤更值钱；卡池让「想要下一只」成为长期理由。</p>
+      </div>
+
+      <ol class="phase" data-reveal>
+        <li><b>现在</b><span>双人语音对战闭环</span></li>
+        <li><b>半年</b><span>养成、战绩与称号、第二只精灵</span></li>
+        <li><b>一年</b><span>精灵卡池、线下道馆、联名精灵</span></li>
+      </ol>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot__top">
+      <div class="foot__brand">
+        <img src="assets/logo.png" alt="" width="44" height="44">
+        <div>
+          <strong>共鸣：闻声对决</strong>
+          <p>用嘴指挥硬件伙伴，和朋友面对面打一场 1v1 回合制对战。</p>
+        </div>
+      </div>
+      <a class="foot__repo" href="https://github.com/sorcerer-ma/linx-fighter" rel="noopener">
+        <svg class="icon"><use href="#i-github"></use></svg>
+        <span>github.com/sorcerer-ma/linx-fighter</span>
+      </a>
+    </div>
+    <div class="foot__bottom">
+      <span>© 2026 linx-fighter</span>
+      <span>页面中的表情与动作是视觉化表达，真机表现以现场为准；结构、养成与商业三节为设想与推演，尚未交付。</span>
+    </div>
+  </div>
+</footer>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script src="vendor/lenis.min.js"></script>
+<script src="main.js"></script>
+
+
+</body></html>
