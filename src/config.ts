@@ -57,13 +57,29 @@ export interface AppConfig {
   /** 座位归属策略：双人房里按座位口令把指令算到对的机器上，默认 off */
   attribution: AttributionMode;
   /**
-   * 后台监控页口令；为空时 /admin 公开可见（演示现场方便围观）。
+   * 后台监控页口令；为空时 /admin 公开可见（便于现场查看局面）。
    * 配置后访问必须带 ?token= 或 Authorization: Bearer。
    */
   adminToken?: string;
+  /**
+   * 可以触发游戏的说话人（平台声纹的名字，逗号分隔）：未登记的声音不回应，
+   * 避免环境里其他人声、噪声误触发对局。为空表示不限制。
+   */
+  speakers: string[];
+  /** wait_event 最多挂多久（毫秒）：平台先掐断连接时以平台为准，这里只是服务端上限 */
+  waitEventTimeoutMs: number;
 }
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
+/** 说话人名单：逗号分隔、去空白；空串或没配都是「不设限」 */
+function parseSpeakers(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,，]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
 
 /** 只认 off / low 两个值，写错就当没配 */
 function parseChatReasoning(raw: string | undefined): ChatReasoning | undefined {
@@ -114,5 +130,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 2000))),
     attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
+    speakers: parseSpeakers(env.ALLOWED_SPEAKERS),
+    waitEventTimeoutMs: Math.max(1000, Math.min(30000, parseInteger(env.WAIT_EVENT_TIMEOUT_MS, 30000))),
   };
 }

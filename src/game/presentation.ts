@@ -1,3 +1,4 @@
+import { isUltimateReady } from './rules.js';
 import type { Battle, BattleEvent } from './types.js';
 
 /** Additive MCP presentation contract. Facts are built from authoritative state,
@@ -10,7 +11,7 @@ export interface Presentation {
   facts: {
     round?: number;
     phase?: Battle['phase'];
-    you?: { hp:number; energy:number; ultimateRemaining:number };
+    you?: { hp:number; energy:number; ultimateRemaining:number; ultimateReady:boolean };
     opponent?: { hp:number; energy:number; ultimateRemaining:number };
     opponentName?: string;
     events: BattleEvent[];
@@ -27,7 +28,7 @@ export function presentation(kind: Presentation['kind'], battle: Battle | null, 
     : options.waiting ? 'wait-join' : battle.pending ? (battle.pending.actor === 'player' ? 'wait-response' : 'respond')
     : battle.active === 'player' ? 'act' : 'wait-opponent';
   return {version:1,kind,certainty:kind==='error'?'unknown':(kind==='rejected'||kind==='retry')?'not-applied':'confirmed',facts:{
-    ...(battle ? {round:battle.round,phase:battle.phase,you:fighter(battle.player),...(options.waiting?{}:{opponent:fighter(battle.enemy),opponentName:battle.enemy.name})} : {}),
+    ...(battle ? {round:battle.round,phase:battle.phase,you:{...fighter(battle.player),ultimateReady:isUltimateReady(battle.player)},...(options.waiting?{}:{opponent:fighter(battle.enemy),opponentName:battle.enemy.name})} : {}),
     events:options.events??[],next,...(options.rejection ? {rejection:options.rejection}:{}),
   },renderings:options.renderings??[]};
 }

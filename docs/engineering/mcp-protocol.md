@@ -247,7 +247,7 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
 
 提示词明确以下边界：
 
-- ASR最终原话仅一次 `game_say`，不分类、不改写、不拆分超长输入；公开游戏工具只有它和无参数的 `wait_event`。
+- ASR最终原话仅一次 `game_say`，不分类、不改写、不拆分超长输入；公开游戏工具只有它和只含可选平台speaker元数据的 `wait_event`。
 - 读取 content 文本块内的 `v:2` JSON，以权威 events、need 与明确状态自由生成人设话术；`say` 是安全退路，不能因涉及数字或胜负就强制照念。`text` 保留规则／问答含义。必要事实优先于通常两句／60字目标。
 - `silent:true` 完全不输出，包括零宽字符或占位符。`failed` 与 `unknown` 分开；未知、传输异常或表达失败不重做操作，不编造缺失快照，不直接念JSON。
 - 仅在 `need=wait_guest/wait_foe` 且本轮未等待时，实际音频播放完成后调用一次 `wait_event`；等待返回不递归等待，取消、换局或新指令后不播旧结果。

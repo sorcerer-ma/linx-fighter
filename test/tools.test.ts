@@ -24,7 +24,7 @@ function registerWith(service:GameService, logger=createLogger('error')) {
 const success={text:'兼容内部文案',battle:null,reply:{v:2,ok:true,phase:'idle',need:'none',events:[],say:'我在。'}};
 
 describe('v2 工具层',()=>{
-  it('只注册原话与等待两个工具，等待没有身份或说话人入参',()=>{
+  it('只注册原话与等待两个工具，等待只接收本次可选声纹元数据，不接收对局身份',()=>{
     const {handlers,definitions}=registerWith({} as GameService);
     assert.deepEqual([...handlers.keys()].sort(),['game_say','wait_event']);
     const say=z.toJSONSchema(definitions.get('game_say')!.inputSchema as z.ZodType,{io:'input'});
@@ -33,14 +33,14 @@ describe('v2 工具层',()=>{
     assert.ok(say.properties!.speaker);
     assert.equal(say.additionalProperties,false);
     const wait=z.toJSONSchema(definitions.get('wait_event')!.inputSchema as z.ZodType,{io:'input'});
-    assert.deepEqual(wait.properties,{});assert.equal(wait.additionalProperties,false);
+    assert.deepEqual(Object.keys(wait.properties!),['speaker']);assert.equal(wait.additionalProperties,false);
   });
-  it('原话不裁剪，声纹写回上下文；只编码事实 JSON',async()=>{
+  it('原话不裁剪，声纹不污染下一次上下文；只编码事实 JSON',async()=>{
     let received='';let key='';
     const {handlers,ctx}=registerWith({say:async(k:string,text:string)=>{key=k;received=text;return success;}} as unknown as GameService);
     const input='  强化攻击  ';
     const result=await handlers.get('game_say')!({text:input,speaker:'小林'});
-    assert.equal(received,input);assert.equal(key,'dev-tools#agent-tools');assert.equal(ctx.speakerName,'小林');
+    assert.equal(received,input);assert.equal(key,'dev-tools#agent-tools');assert.equal(ctx.speakerName,'');
     assert.deepEqual(JSON.parse(result.content[0]!.text),success.reply);
     assert.equal(result.structuredContent,undefined);assert.equal(result.isError,undefined);
     assert.deepEqual(result._meta,{'linx/battleId':null});
@@ -72,6 +72,21 @@ describe('v2 工具层',()=>{
     const {handlers}=registerWith({waitEvent:(_key:string,options:{signal?:AbortSignal})=>{observed=options.signal;return success;}} as unknown as GameService);
     await handlers.get('wait_event')!({}, {signal:controller.signal});assert.equal(observed,controller.signal);
   });
+  it('声纹只取本次参数或请求头，冲突与缺失不继承旧值',async()=>{
+    const heard:Array<string|undefined>=[];
+    const service={say:(_key:string,_text:string,options:{speaker?:string})=>{heard.push(options.speaker);return success;},waitEvent:(_key:string,options:{speaker?:string;timeoutMs?:number})=>{heard.push(options.speaker);assert.equal(options.timeoutMs,30000);return success;}} as unknown as GameService;
+    const {handlers,ctx}=registerWith(service);
+    await handlers.get('game_say')!({text:'普攻',speaker:'阿澈'});
+    await handlers.get('game_say')!({text:'普攻'});
+    assert.deepEqual(heard,['阿澈',undefined]);
+    ctx.speakerName='阿岚';
+    const refused=await handlers.get('wait_event')!({speaker:'阿澈'});
+    assert.equal(JSON.parse(refused.content[0]!.text).silent,true);
+    assert.deepEqual(heard,['阿澈',undefined]);
+    await handlers.get('wait_event')!({});
+    assert.equal(heard[2],'阿岚');
+  });
+
   it('silent 是合法 JSON，没有占位话术或 structuredContent',async()=>{
     const {handlers}=registerWith({say:()=>({...success,text:'',reply:{v:2,ok:true,silent:true}})} as unknown as GameService);
     const result=await handlers.get('game_say')!({text:'普攻'});

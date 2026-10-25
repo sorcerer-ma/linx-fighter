@@ -90,6 +90,8 @@ export const ECHO_RULES: readonly EchoRule[] = [
   { name: 'help', pattern: /轮到我主动时|念唤出指令|按你的话/ },
   // 播报的第二句常是「下一步怎么说」的说明，玩家指挥时不会这么念
   { name: 'broadcast-hint', pattern: /可以说(普攻|强攻|大招|蓄力|格挡|闪避|承受)|直接说招式|说招式就行|一次只说一种|重新说一次/ },
+  // 主动推送里的催促：玩家不会把「我陪你等着」这类陪伴话当成指令
+  { name: 'push-wait', pattern: /还没听到你的指令|我陪你等着|对手还在琢磨|你定我照做/ },
   { name: 'replay-hint', pattern: /说.{0,2}开始游戏|陪你练一局/ },
   // 「现在只能承受，硬吃这一下」：句子后半句是播报才有的说法，玩家自己说「只能承受」不算
   { name: 'must-take', pattern: /只能承受.{0,6}硬吃这一下/ },

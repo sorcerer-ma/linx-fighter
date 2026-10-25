@@ -10,6 +10,7 @@ export interface ToolDependencies {
   logger: Logger;
   /** 当前 MCP 连接对应的设备上下文，POST 调用时会先刷新 */
   ctx: DeviceContext;
+  waitTimeoutMs?: number;
 }
 const speakerField = z.string().trim().min(1).max(20).optional()
   .describe('由平台声纹填入的说话人称呼；没有就不传，不要自己编。仅用于门禁，不决定对局身份');
@@ -27,14 +28,20 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
   const { service, logger, ctx } = deps;
   const invoke = async (
     tool: string, speaker: string | undefined,
-    run: (key: string) => ServiceResult | Promise<ServiceResult>,
+    run: (key: string, speaker: string | undefined) => ServiceResult | Promise<ServiceResult>,
   ) => {
-    if (speaker) ctx.speakerName = speaker;
+    const argumentSpeaker = speaker?.trim() || undefined;
+    const headerSpeaker = ctx.speakerName.trim() || undefined;
+    const conflict = Boolean(argumentSpeaker && headerSpeaker && argumentSpeaker !== headerSpeaker);
+    const currentSpeaker = argumentSpeaker ?? headerSpeaker;
     // 在 await 之前捕获身份；同一连接的其他请求不能改变这次调用的归属。
     const key = battleKey(ctx);
     try {
       logger.info('工具调用', { tool, sessionKey: key, deviceId: ctx.deviceId, agentId: ctx.agentId });
-      const result = await run(key);
+      // Conflicting current metadata is untrusted. Never reuse a previous tool argument.
+      const result: ServiceResult = conflict
+        ? {text:'',battle:null,reply:{v:2,ok:true,silent:true}}
+        : await run(key, currentSpeaker);
       if (!result.reply) throw new Error('MissingProtocolReply');
       const text = encodeReply(result.reply);
       logger.info('工具返回', {
@@ -57,13 +64,15 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
     title: '玩家说了什么',
     description: '玩家每句话原样交给游戏，不改字、不分类、不补上下文。服务端理解并执行，返回 v2 JSON 事实；只依据事实演绎，不念 JSON。silent=true 不出声；need 为 wait_guest 或 wait_foe 时，先播完即时回复，再最多调用一次 wait_event。',
     inputSchema: sayInput,
-  }, async ({ text, speaker }) => invoke('game_say', speaker, (key) => {
-    if (!text.trim() || [...text].length > 200) return service.invalidInput(key);
-    return service.say(key, text, { catchUp: ctx.display !== 'screen' });
+  }, async ({ text, speaker }) => invoke('game_say', speaker, (key, currentSpeaker) => {
+    if (!text.trim() || [...text].length > 200) return service.invalidInput(key, {speaker:currentSpeaker});
+    return service.say(key, text, { catchUp: ctx.display !== 'screen', speaker:currentSpeaker });
   }));
   server.registerTool('wait_event', {
     title: '等待对手',
-    description: '仅上一条 need 为 wait_guest 或 wait_foe 时，在即时话术播放完成后调用；每轮最多一次。无参数，等待对手进房或出招；超时、取消不执行游戏动作。返回与 game_say 相同的 v2 JSON。',
-    inputSchema: z.object({}).strict(),
-  }, async (_args, extra) => invoke('wait_event', undefined, (key) => service.waitEvent(key, { signal: extra?.signal })));
+    description: '仅上一条 need 为 wait_guest 或 wait_foe 时，在即时话术播放完成后调用；每轮最多一次。speaker 仅为本次平台声纹元数据，不自行编造；等待对手进房或出招；超时、取消不执行游戏动作。返回与 game_say 相同的 v2 JSON。',
+    inputSchema: z.object({speaker:speakerField}).strict(),
+  }, async ({speaker}, extra) => invoke('wait_event', speaker, (key, currentSpeaker) => service.waitEvent(key, {
+    signal: extra?.signal, speaker:currentSpeaker, timeoutMs:Math.min(deps.waitTimeoutMs??30000,30000),
+  })));
 }

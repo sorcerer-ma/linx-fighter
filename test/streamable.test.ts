@@ -132,3 +132,43 @@ describe('Streamable HTTP 通道', () => {
     assert.ok([200, 202].includes(result.status), `通知应被接受，实际 ${result.status}：${result.text}`);
   });
 });
+
+it('wait_event 的本次声纹参数/header 冲突静默，且不会消费进房事实或继承前次参数', async () => {
+  const logger = createLogger('error');
+  const store = new BattleStore({ttlMs:60000});
+  const rooms = new RoomStore({ttlMs:60000,random:()=>0});
+  const service = new GameService({store,rooms,logger,random:()=>0,speakers:['阿澈','阿岚']});
+  const app = createApp({config:loadConfig({}),logger,store,rooms,service});
+  let isolated!: Server;
+  await new Promise<void>(resolve=>{isolated=app.listen(0,'127.0.0.1',()=>resolve());});
+  const url=`http://127.0.0.1:${(isolated.address() as AddressInfo).port}/mcp`;
+  let nextId=0;
+  const invoke = async (device:string,name:string,args:Record<string,unknown>,speaker?:string):Promise<GameReply> => {
+    const response=await fetch(url,{
+      method:'POST',
+      headers:{'content-type':'application/json',accept:'application/json, text/event-stream',
+        'X-Linx-Device-Id':device,'X-Linx-Agent-Id':'speaker-wait',
+        ...(speaker?{'X-Linx-Speaker-Name':encodeURIComponent(speaker)}:{}),
+      },
+      body:JSON.stringify({jsonrpc:'2.0',id:++nextId,method:'tools/call',params:{name,arguments:args}}),
+    });
+    assert.equal(response.status,200);
+    const payload=await response.json() as {result:{content:Array<{text:string}>;isError?:boolean}};
+    assert.notEqual(payload.result.isError,true);
+    return JSON.parse(payload.result.content[0]!.text) as GameReply;
+  };
+  try {
+    const opening=await invoke('header-host','game_say',{text:'发起挑战',speaker:'阿澈'});
+    assert.equal(opening.need,'wait_guest');
+    assert.equal((await invoke('header-host','wait_event',{})).silent,true,'前一工具参数不能代替本次声纹');
+    await invoke('header-guest','game_say',{text:`接受挑战，编号${opening.room}`,speaker:'阿岚'});
+    const conflict=await invoke('header-host','wait_event',{speaker:'阿岚'},'阿澈');
+    assert.deepEqual(conflict,{v:2,ok:true,silent:true});
+    const permitted=await invoke('header-host','wait_event',{},'阿澈');
+    assert.ok(permitted.events?.some(event=>event.t==='start'),'冲突请求不得消费事实');
+    const repeated=await invoke('header-host','wait_event',{speaker:'阿澈'},'阿澈');
+    assert.equal(repeated.silent,true,'已交付阶段不重复播报');
+  } finally {
+    await new Promise<void>((resolve,reject)=>isolated.close(error=>error?reject(error):resolve()));
+  }
+});

@@ -12,7 +12,7 @@
 
 另带一个本地沙箱（[`sandbox/`](docs/testing/sandbox.md)）：在浏览器里模拟灵犀设备的输入与播报，可开多个窗口互相对战，也可以用命令行或脚本让 Agent 自己把整局打完——不依赖控制台与实体硬件，Agent 能在真实链路上自主模拟、自主回归。
 
-双人局通过 v2 有序事实补齐错过的结算：即时话术实际播完后，`need=wait_guest/wait_foe` 才调用一次 `wait_event`；等待、后续行动或战况查询只消费一次战果，换局清理旧事实。SSE只画界面，不另播一份原文。`X-Linx-Display: screen` 仍影响旧内部文本补账，但不屏蔽 v2 权威事件；有屏与无屏 Agent 都依据事实组织必要反馈。
+双人局通过 v2 有序事实补齐错过的结算：即时话术实际播完后，`need=wait_guest/wait_foe` 才调用一次 `wait_event`；等待、后续行动或战况查询只消费一次战果，换局清理旧事实。SSE state只画界面，push只提供通知信号，不另播一份原文。`X-Linx-Display: screen` 仍影响旧内部文本补账，但不屏蔽 v2 权威事件；有屏与无屏 Agent 都依据事实组织必要反馈。
 
 [MCP v2 事实协议](docs/engineering/mcp-protocol.md) 已包含两工具、JSON事实、静默及等待实现。部署状态、平台提示词生效与真机验收须分别确认，见[实施说明](docs/engineering/mcp-v2-migration.md)。
 
@@ -93,7 +93,7 @@ open 'http://localhost:8100/?player=1'   # 说「开房间」，拿到 4 位挑�
 open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开打
 ```
 
-手机连同一内网打开 `http://<电脑内网 IP>:8100/?player=3` 就是第三名玩家；页面里的局面走 `/events` 实时刷新，输入仍然只有语音和文字一条路。浏览器只在 HTTPS 或 localhost 下给麦克风，局域网 HTTP 打开时页面会降级成文字输入（详见 [docs/testing/sandbox.md](docs/testing/sandbox.md)）。
+手机连同一内网打开 `http://<电脑内网 IP>:8100/?player=3` 就是第三名玩家；页面里的局面走 `/events` 实时刷新，对手进房、对手出招、大招刚就绪或长时间没开口时还会由 `push` 信号触发事实查询与Agent主动提醒，输入仍然只有语音和文字一条路。浏览器只在 HTTPS 或 localhost 下给麦克风，局域网 HTTP 打开时页面会降级成文字输入（详见 [docs/testing/sandbox.md](docs/testing/sandbox.md)）。
 
 ## MCP 接口
 
@@ -102,7 +102,7 @@ open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开
 | 工具 | 玩家说法 | 说明 |
 | --- | --- | --- |
 | `game_say` | 玩家的任何一句话 | **统一入口**：把原话一字不改放进 `text`，服务端自己判断是出招、查战况、看玩法还是开局；平台侧模型不用做选择 |
-| `wait_event` | 无参数 | need 为 wait_guest / wait_foe 时，先播完即时回复，再挂起等待一次；不推进游戏 |
+| `wait_event` | 可选平台 speaker 元数据 | need 为 wait_guest / wait_foe 时，先播完即时回复，再挂起等待一次；不推进游戏 |
 
 公开工具仅上述两个。原话 1～200 个 Unicode 字符，超长明确拒绝，不截断执行。content 文本块是 v:2 JSON，silent 真正静默，表达失败用 say/text；未知结果不自动重试行动。
 
@@ -116,7 +116,7 @@ open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开
 | `/mcp` | DELETE | 会话收尾，直接返回 200 |
 | `/health` | GET | 健康检查：状态、对局数、房间数、运行时长 |
 | `/state?device=&agent=` | GET | 某位玩家视角的局面快照（JSON），供沙箱与 Agent 自主模拟 |
-| `/events?device=&agent=` | GET | SSE 状态流：局面变化时推 `event: state`，15 秒一次心跳注释；跨域开放，手机页面可直连 |
+| `/events?device=&agent=` | GET | SSE 状态流：局面变化时推 `event: state`，服务端主动提醒推 `event: push`，15 秒一次心跳注释；跨域开放，手机页面可直连 |
 | `/admin` | GET | 只读后台监控页：所有进行中的房间与单人局、双方数值、阶段与待响应，3 秒轮询；`ADMIN_TOKEN` 为空时公开 |
 | `/admin/api/rooms` | GET | 同一份看板的 JSON，给脚本或第二屏用 |
 | `/debug/*` | GET/POST | 调试接口：`start` / `action` / `status` / `state`，默认仅非生产环境开启；`start` 支持 `mode` 与 `room` |
@@ -177,7 +177,7 @@ flowchart TB
   Device["灵犀硬件<br/>唤醒 · ASR · TTS"] -- "平台侧 POST /mcp" --> Http
   Web["沙箱页面 / 手机<br/>语音或文字输入 · 只读局面"] -- "POST /api/say" --> Sandbox["本地沙箱<br/>MCP 客户端 + 静态页"]
   Sandbox -- "POST /mcp · game_say" --> Http
-  Http["HTTP 外壳<br/>Express · 两套传输 · 身份提取"] --> Mcp["MCP 协议层<br/>5 个工具 · 设备上下文"]
+  Http["HTTP 外壳<br/>Express · 两套传输 · 身份提取"] --> Mcp["MCP 协议层<br/>6 个工具 · 设备上下文"]
   Mcp --> Service["GameService<br/>按命令分派 · 一手一张桌子"]
   Service --> Command["一句话读成命令<br/>command.ts"]
   Service --> Router["命令路由<br/>router.ts"]
@@ -251,6 +251,7 @@ flowchart TB
 | 13 | 状态流用 SSE 而不是 WebSocket | 单向、低频、浏览器自带重连；WebSocket 只在双向低延迟输入时才值得 |
 | 14 | 沙箱独立进程、走真实 MCP 入口 | 它跑通的链路就是玩家会走的链路；坏了只能怪自己的 bug |
 | 15 | 补账播报 + `X-Linx-Display` 协商 | 无屏终端需要补，有屏客户端自己能看；能力走请求头，不进工具入参 |
+| 16 | 主动推送复用 `/events` SSE，不新开连接 | 页面已经维持一条单向下行；新增 `push` 事件即可覆盖对手动作、大招就绪与空闲提醒，MCP 平台侧仍保持请求—响应 |
 
 每条决策的来龙去脉、替代方案与否决原因见 [docs/engineering/architecture.md](docs/engineering/architecture.md)。
 
@@ -319,12 +320,13 @@ flowchart TB
 | --- | --- |
 | `test/actions.test.ts` | 七招表、精确与包含匹配、ASR 误识别、唤出指令唯一性、空输入 |
 | `test/engine.test.ts` | 初始化与先手、伤害/暴击/格挡/闪避、强制承受、能量与大招限制、轮次加成、胜负、纯函数与 seed 复现、双人 pending |
+| `test/rules.test.ts` | 招式可用性：按能量筛主动/应对、大招就绪与次数、满能量不蓄力 |
 | `test/enemy.test.ts` | 本地 AI 主动/应对决策、斩杀优先、保大招、生命值积攒能量、致死规避 |
 | `test/enemy-jev.test.ts` | JEV 对手决策：合法选项过滤、题干（含战报与习惯）、解析、低置信度/超时/异常回退 |
 | `test/router.test.ts` | 命令路由：阶段菜单（含结束状态）、置信度阈值、返回解析、请求体含原话、失败回退 |
 | `test/asr.test.ts` | 端侧同音纠错：音节表、声母/韵母混淆权重、线上语料逐条命中、噪声不误认、长说法优先 |
 | `test/routing.test.ts` | 三层解析顺序：规则命中不叫后两层、端侧命中不等模型、端侧不越过规则、问句与等对手时不猜招、注掉端侧后退回两层 |
-| `test/crosstalk.test.ts` | 回灌识别：真机日志原句、逐子句判定、问号与口头指令的区分、2 秒静默应答 |
+| `test/crosstalk.test.ts` | 回灌识别：真机日志原句、逐子句判定、问号与口头指令的区分、2 秒静默应答、推送文案覆盖 |
 | `test/seat.test.ts` | 座位口令：红方／蓝方归属、strict 与 off、摘掉口令后仍能认招、确认回复不需要口令 |
 | `test/admin.test.ts` | 监控页：快照字段与脱敏、口令校验、限速与代理来源、页面安全头、无对局时的空表 |
 | `test/narrator.test.ts` | 播报两句与 60 字约束、各事件、终局、房间与战况文案 |
@@ -341,7 +343,7 @@ flowchart TB
 | `test/echoes.test.ts` | 补账消息：取走即清空、按序攒着、互不影响、过期与清理 |
 | `test/log.test.ts` | 级别过滤、单行 JSON 输出、stderr 分流 |
 | `test/tools.test.ts` | 工具注册与业务异常转 `isError` |
-| `test/http.test.ts` | 路由、健康检查、SSE 握手、调试接口（含双人房）、404 与非法 JSON |
+| `test/http.test.ts` | 路由、健康检查、SSE 握手与主动 push、调试接口（含双人房）、404 与非法 JSON |
 | `test/streamable.test.ts` | Streamable HTTP：initialize / tools/list / tools/call |
 | `test/mcp.e2e.test.ts` | 完整对局链路、多设备隔离、无对局自动开局、双人房、`game_say` 单工具走完全流程 |
 | `test/sandbox.test.ts` | 沙箱服务：配置、透传、快照、工具列表、上游不可达与 trace |
@@ -524,3 +526,9 @@ tests/simulation/     Python 参考模拟与原始结果（区别于 test/ 的�
 迁移时分别填写两方 provider 的地址与密钥，路径按各自协议设置（默认 `/systemone` 与 `/chat/completions`）。地址优先级是非空专用变量 → 旧 `BASE_URL` → 默认地址。密钥优先使用专用变量；仅未设置对应专用地址时允许回退旧 `API_KEY`，否则缺少专用密钥就禁用对应能力。空白值视为未设置。路径原本已独立，无共享路径回退。旧配置继续有效，但拆分 provider 后建议移除共享变量，避免一方误用旧密钥。只有决策密钥时仅启用路由/对手决策；只有聊天密钥时仅启用规则外问答，另一方保持本地或固定话术回退。密钥仅放运行环境。
 
 显式配置专用地址后，应由用户核对 provider 并填写对应专用密钥，不自动搬移旧密钥。非秘密示例为决策 `https://api.modelink.ai/v1`、聊天 `https://api.qnaigc.com/v1`。
+
+### 说话人与页面提醒边界
+
+`game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。等待服务端最多30秒、客户端留35秒，取消静默且不消费事实。
+
+手机页面保留七类主动提醒：对手出招、对手接受挑战、大招资源就绪、主动／响应空闲、等待对手、等待接受挑战。SSE push是带身份／对局／一次性ID的信号，不是直接可播台词；沙箱向固定游戏服务取得当下事实，再交真实Agent表达与统一播放队列。入房／出招与wait_event消费去重，旧局、失效或取消信号不播，不重做游戏动作。忙碌、真实说话、输入或隐藏时让路；语音效果仍需平台与真人试听验收。

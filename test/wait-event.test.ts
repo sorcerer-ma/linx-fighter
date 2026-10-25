@@ -63,9 +63,8 @@ describe('v2 bounded event waiting', () => {
     const waiting = service.waitEvent('host', { timeoutMs: 100 });
     const next = await service.say('host', '开始');
     const old = await waiting;
-    assert.deepEqual(old.reply?.events, []);
+    assert.deepEqual(old.reply, {v:2,ok:true,silent:true});
     assert.equal(old.battle?.id, next.battle?.id);
-    assert.equal(old.reply?.need, 'move');
   });
 
   it('does not consume pending facts for invalid input', async () => {

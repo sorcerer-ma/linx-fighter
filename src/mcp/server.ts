@@ -13,7 +13,8 @@ const INSTRUCTIONS = [
   'content[].text 是单个 v2 JSON 事实对象，不是台词，不要把 JSON 念出来。依据 events、need 和明确的局面事实按伙伴人设表达；say 仅为安全兜底。',
   'silent=true 时不生成话术或播放；failed 表示明确未执行，unknown 表示结果未确认，先核实，不要求重复出招。',
   'need=wait_guest 或 wait_foe 时先播放完即时回复，再调用一次 wait_event；一轮最多等待一次。其他 need 不等待，不自动出招。',
-  '身份来自请求头；speaker 仅由平台填入，不自行编造。快照和 SSE 用于画界面，不能另开一条原文播报通道。',
+  '招式选择只看 choices；大招不在 choices 时不能提示可释放，不从能量自行推算。',
+  '身份来自请求头；speaker 仅由平台为本次 game_say 或 wait_event 填入，不自行编造或复用上次名字；参数与本次请求头冲突时静默。快照和 SSE 用于画界面，不能另开一条原文播报通道。',
 ].join('\n');
 
 /**
