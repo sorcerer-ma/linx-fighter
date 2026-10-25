@@ -171,6 +171,8 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 ## 6. 智能体提示词模板
 
+> 本节是 v1（工具直接返回可朗读文本）的模板。v2 改为「事实 JSON + 智能体演绎」，见 [MCP 协议 v2](mcp-protocol.md) 第 7 节；落地时用那一段替换本节，不要两处并存。
+
 直接粘贴到智能体的提示词里，按需微调：
 
 ```text
