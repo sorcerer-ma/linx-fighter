@@ -19,6 +19,7 @@ import {
   narrateHelp,
   narrateNoBattle,
   narrateOpening,
+  narrateOpponentJoined,
   narrateOutsideUnavailable,
   narrateRejection,
   narrateRoomCreated,
@@ -31,6 +32,10 @@ import {
   narrateTurn,
   narrateUnknownAction,
   narrateWaitingRoom,
+  narrateWaitRespond,
+  narrateWaitTimeout,
+  narrateWaitTurn,
+  narrateWake,
 } from './narrator.js';
 import { mirrorEvents, normalizeRoomCode, pvpBattleKey, viewAs } from './pvp.js';
 import type { CommandRouter, RouterStage } from './router.js';
@@ -62,6 +67,8 @@ export interface StartOptions {
   room?: string;
   /** 玩家原话：平台模型不确定结构化参数时塞进来，服务端兜底识别「发起挑战 / 接受挑战」 */
   text?: string;
+  /** 这一次是谁在说（平台声纹给的名字） */
+  speaker?: string;
 }
 
 /**
@@ -73,6 +80,23 @@ export interface StartOptions {
 export interface SayOptions {
   /** 默认 true，保持硬件端的原有体验；有屏客户端传 false */
   catchUp?: boolean;
+  /** 这一次是谁在说，由平台声纹给出；用来判断是不是已登记的人 */
+  speaker?: string;
+}
+
+/**
+ * 挂起等对手的参数。
+ *
+ * 平台模型调用 wait_event 后这次请求先不返回，就在这里停住：对手应招、
+ * 进房间都会把它叫醒（见 GameService.wait 与 EchoStore.wait）。
+ */
+export interface WaitOptions {
+  /** 最多挂多久（毫秒）：平台自己可能收掉连接，到点按「对手还没动静」收尾 */
+  timeoutMs: number;
+  /** 平台断开这次请求时提前收摊，别把等待位一直占着 */
+  signal?: AbortSignal;
+  /** 这一次是谁在等：未登记的声音不挂、也不回应 */
+  speaker?: string;
 }
 
 /**
@@ -88,6 +112,9 @@ interface RoutedHand {
   /** 当时那一局的 id；当时还没有对局则为 null */
   battleId: string | null;
 }
+
+/** 不回应时返回的文本：零宽字符，平台念出来是空的，也不会把设备叫醒 */
+const SILENT_TEXT = '\u200b';
 
 export interface GameServiceDeps {
   store: BattleStore;
@@ -108,6 +135,8 @@ export interface GameServiceDeps {
   attribution?: AttributionMode;
   /** 端侧同音纠错；不传用 asr.ts 的实现，传 null 关掉这一层 */
   fuzzy?: SpokenMatcher | null;
+  /** 已登记的说话人，用来挡掉环境里其他人的声音；空数组表示不限制 */
+  speakers?: string[];
 }
 
 /**
@@ -117,6 +146,18 @@ export interface GameServiceDeps {
 export type SpokenMatcher = (text: string, stage?: SpokenStage) => SpokenMatch | null;
 
 const DEFAULT_SPOKEN_MATCHER: SpokenMatcher = (text, stage) => matchSpokenAction(text, stage);
+
+/**
+ * 一局里两个座位分别绑着谁的声音。
+ *
+ * 绑定跟着 battle.id 走：同一台设备换人重开、房间号被复用都会换一局，
+ * 换局后旧绑定在下一次访问时作废，不能被新局沿用。
+ */
+interface SeatBindings {
+  battleId: string;
+  player?: string;
+  enemy?: string;
+}
 
 /**
  * 游戏服务：MCP 工具只做参数解析，业务编排都在这里。
@@ -140,6 +181,10 @@ export class GameService {
   private readonly echo: EchoStore;
   private readonly attribution: AttributionMode;
   private readonly fuzzy: SpokenMatcher | null;
+  /** 已登记的说话人；未登记的不回应，避免旁人声音误触发；为空表示不限制 */
+  private readonly speakers: string[];
+  /** 每个座位绑定的是谁的声音；键是桌子的存储键（单人局玩家键，双人局 pvp:房间号），记着是哪一局的席位 */
+  private readonly seatSpeakers = new Map<string, SeatBindings>();
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
   /** 桌子要用到的存储，构造一张桌子的入口参数 */
@@ -157,6 +202,7 @@ export class GameService {
     this.echo = deps.echo ?? new EchoStore({ now: this.now });
     this.attribution = deps.attribution ?? 'off';
     this.fuzzy = deps.fuzzy === undefined ? DEFAULT_SPOKEN_MATCHER : deps.fuzzy;
+    this.speakers = deps.speakers ?? [];
     this.battles = new BattleTransactions(deps.store, deps.logger);
     this.tables = { store: deps.store, rooms: deps.rooms, echo: this.echo, logger: deps.logger };
   }
@@ -168,26 +214,45 @@ export class GameService {
    * 「发起挑战 / 接受挑战，编号1234」这类说法和服务端自己的识别保持同一套规则。
    */
   async start(sessionKey: string, options: StartOptions = {}): Promise<ServiceResult> {
+    if (!this.speakerListed(options.speaker)) {
+      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
+    }
     const phrase = [options.opponent, options.text].filter(Boolean).join(' ');
     const command = options.room
       ? ({ kind: 'join-room', code: options.room } as const)
       : phrase
         ? readCommand(phrase)
         : null;
-    if (command?.kind === 'join-room') return this.joinRoom(sessionKey, command.code);
-    if (options.mode === 'pvp' || command?.kind === 'open-room') return this.openRoom(sessionKey);
-    return this.startSolo(sessionKey, options.opponent);
+    if (command?.kind === 'join-room') {
+      const joined = this.joinRoom(sessionKey, command.code);
+      this.bindSeat(sessionKey, options.speaker);
+      return joined;
+    }
+    if (options.mode === 'pvp' || command?.kind === 'open-room') {
+      const opened = this.openRoom(sessionKey);
+      this.bindSeat(sessionKey, options.speaker);
+      return opened;
+    }
+    return this.startSolo(sessionKey, options.opponent).then((started) => {
+      this.bindSeat(sessionKey, options.speaker);
+      return started;
+    });
   }
 
   /** 查看当前战况 */
   /** 查看当前战况：等待中的房间先把房间号说一遍 */
   status(sessionKey: string, options: SayOptions = {}): ServiceResult {
+    if (!this.speakerListed(options.speaker)) {
+      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
+    }
     const table = tableFor(this.tables, sessionKey);
     const battle = table.battle();
     if (!battle) {
       // 房间还在但基准对局没了：这间房已经废了
       if (table.room) {
         this.rooms.remove(table.room);
+        // 对局过期，席位跟着那局一起作废
+        this.seatSpeakers.delete(pvpBattleKey(table.room));
         return { text: narrateRoomMissing(table.room), battle: null };
       }
       return { text: narrateNoBattle(), battle: null, presentation:presentation('status',null) };
@@ -202,7 +267,8 @@ export class GameService {
   }
 
   /** 玩法说明，用于玩家不知道说什么的场景 */
-  help(): ServiceResult {
+  help(options: SayOptions = {}): ServiceResult {
+    if (!this.speakerListed(options.speaker)) return { text: SILENT_TEXT, battle: null };
     return { text: narrateHelp(), battle: null };
   }
 
@@ -214,6 +280,92 @@ export class GameService {
    */
   async say(sessionKey: string, text: string, options: SayOptions = {}): Promise<ServiceResult> {
     return this.execute(sessionKey, readCommand(text), text, options);
+  }
+
+  /**
+   * 等对手这一手：平台模型把请求挂在这里，对手一动就带着结果回话。
+   *
+   * 平台没有反向推送通道，只能在对话轮次里由模型调 wait_event 把请求挂住，
+   * 服务端不主动去连设备。挂着的这段时间里，对手出招、应招、进房间都会叫醒
+   * 这次请求；醒来后按局面决定说什么：
+   * - 本来就没可等的事（轮到自己、单人局对手立刻应招）立即返回，不占着连接；
+   * - 等到攒下的补账就念补账（见 narrateWake），这是最常走的一条；
+   * - 只是局面有动静、还没有播报（对手刚锁定攻击）就提醒该玩家应招；
+   * - 超时或被取消回一句「对手还没动静」，让玩家知道这一手确实没有结果。
+   */
+  async wait(sessionKey: string, options: WaitOptions): Promise<ServiceResult> {
+    if (!this.speakerListed(options.speaker)) {
+      this.logger.info('说话人不在名单里，保持静默', {
+        sessionKey,
+        speaker: (options.speaker ?? '').trim() || null,
+      });
+      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
+    }
+    const table = tableFor(this.tables, sessionKey);
+    const battle = table.view(sessionKey);
+    if (!battle) return { text: narrateNoBattle(), battle: null };
+    if (battle.phase !== 'battle') {
+      // 对局已经结束也先把补账取走：和下面立即返回的分支同一口径，别把旧结算留在队列里。
+      // 这里一律朗读（true）：wait_event 只服务无屏语音链路，有屏端走 game_say，补账由 SayOptions.catchUp 控制。
+      return { text: `${this.drainCatchUp(sessionKey, true)}${narrateEnded(battle)}`, battle };
+    }
+
+    // 房间里还没等到第二位玩家：挂着等对手进房间
+    const waitingForGuest = table.waiting();
+    // 自己刚出招还没应招，或者轮到对手先动：这两种才值得挂
+    const waitingForOpponent = battle.pending ? battle.pending.actor === 'player' : battle.active === 'enemy';
+    if (!waitingForGuest && !waitingForOpponent) {
+      // 对手已经出招等这边应招，或者正轮到这边出招：立刻回，不必挂。
+      // 但立刻回也要先补账：对手上一手可能已经结算完，不取走就要等玩家再开口才听得到。
+      const catchUp = this.drainCatchUp(sessionKey, true);
+      return { text: `${catchUp}${battle.pending ? narrateWaitRespond() : narrateWaitTurn()}`, battle };
+    }
+
+    const reason = waitingForGuest ? 'guest' : 'opponent';
+    const startedAt = this.now();
+    this.logger.info('挂起等待对手', {
+      sessionKey,
+      room: table.room,
+      battleId: battle.id,
+      reason,
+      timeoutMs: options.timeoutMs,
+    });
+
+    const lines = await this.echo.wait(sessionKey, options);
+    const elapsed = this.now() - startedAt;
+    const view = this.viewFor(sessionKey);
+
+    if (lines === null) {
+      // 平台收掉了连接，或者已经等满服务端给的上限：这一手没有结果，别让玩家干等
+      this.logger.info(options.signal?.aborted ? '等待被取消' : '等待超时', {
+        sessionKey,
+        room: table.room,
+        battleId: battle.id,
+        reason,
+        ms: elapsed,
+      });
+      return { text: view ? narrateWaitTimeout(reason) : narrateNoBattle(), battle: view };
+    }
+
+    this.logger.info('等待被唤醒', {
+      sessionKey,
+      room: table.room,
+      reason,
+      ms: elapsed,
+      lines: lines.length,
+    });
+    if (lines.length > 0) {
+      // 叫醒这一手的应招可能已经打完：只念过程不给胜负，玩家就不知道该不该再来一局
+      const ended = view && view.phase !== 'battle' ? narrateEnded(view) : '';
+      return { text: `${narrateWake(lines)}${ended}`, battle: view };
+    }
+
+    // 只是局面有动静、没有攒下播报：照醒来时的最新局面说该做什么，不复述旧账
+    if (!view) return { text: narrateNoBattle(), battle: null };
+    if (view.phase !== 'battle') return { text: narrateEnded(view), battle: view };
+    if (view.pending?.actor === 'enemy') return { text: narrateWaitRespond(), battle: view };
+    if (!view.pending && view.active === 'player') return { text: narrateWaitTurn(), battle: view };
+    return { text: narrateWaitTimeout(reason), battle: view };
   }
 
   /**
@@ -232,6 +384,11 @@ export class GameService {
     options: SayOptions,
     routed?: RoutedHand,
   ): ServiceResult | Promise<ServiceResult> {
+    // 说话人闸门：名单外的人、没轮到自己的人都不回应
+    if (this.speakerGate(sessionKey, command, options.speaker) === 'silent') {
+      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
+    }
+
     // 座位归属（ATTRIBUTION_MODE=strict）：不是冲本机说的、或只报了座位号，到这里就收住。
     // 单人局没有房间也没有对方座位，seat 传 null 让它原样放行
     const table = tableFor(this.tables, sessionKey);
@@ -247,16 +404,25 @@ export class GameService {
       case 'echo':
         this.logger.info('疑似播报回灌', { sessionKey, chars: raw.length, rule: matchEchoRule(raw) });
         return { text: echoAck(sessionKey, raw, this.now()), battle: this.viewFor(sessionKey) };
-      case 'join-room':
-        return this.joinRoom(sessionKey, command.code);
-      case 'open-room':
-        return this.openRoom(sessionKey, routed);
+      case 'join-room': {
+        const joined = this.joinRoom(sessionKey, command.code);
+        if (joined.battle) this.bindSeat(sessionKey, options.speaker);
+        return joined;
+      }
+      case 'open-room': {
+        const opened = this.openRoom(sessionKey, routed);
+        if (opened.battle) this.bindSeat(sessionKey, options.speaker);
+        return opened;
+      }
       case 'help':
-        return this.help();
+        return this.help(options);
       case 'status':
         return this.status(sessionKey, options);
       case 'start':
-        return this.startSolo(sessionKey, undefined, routed);
+        return this.startSolo(sessionKey, undefined, routed).then((started) => {
+          if (started.battle) this.bindSeat(sessionKey, options.speaker);
+          return started;
+        });
       case 'refused':
         return this.refuse(sessionKey, command.why, options);
       case 'ask':
@@ -354,6 +520,8 @@ export class GameService {
       // 房间里没有基准对局：这间房已经废了
       if (table.room) {
         this.rooms.remove(table.room);
+        // 对局过期，席位跟着那局一起作废
+        this.seatSpeakers.delete(pvpBattleKey(table.room));
         this.logger.warn('房间对局已过期', { sessionKey, room: table.room });
         return { text: `${catchUp}${narrateRoomMissing(table.room)}`, battle: null };
       }
@@ -372,6 +540,9 @@ export class GameService {
       }
       canonical = spawned;
       prefix = narrateAutoStart(spawned);
+      // 开局这一手就是说话人本人的：立刻把座位绑给他。
+      // 等下一句再认领的话，先开口的另一个人会把座位抢走，开局人反而被静默。
+      this.bindSeat(sessionKey, options.speaker);
       this.logger.info('对局自动开始', {
         sessionKey,
         battleId: spawned.id,
@@ -440,13 +611,118 @@ export class GameService {
       next: written.pending ? `${written.pending.actor} 待应对` : written.active,
     });
 
-    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口
-    if (!written.pending) this.recordCatchUp(table, seat, written, result.events);
+    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口；
+    // 只是锁定了攻击就只叫醒他（挂着的请求不能干等到超时），补账留到应招之后
+    if (written.pending) {
+      const waitingKey = table.echoTo(seat);
+      if (waitingKey) this.echo.nudge(waitingKey);
+    } else {
+      this.recordCatchUp(table, seat, written, result.events);
+    }
 
     const chantLine = match.chant ? narrateChant(match.chant) : '';
     const body = narrateTurn(result.battle, result.events);
     return { text: `${catchUp}${prefix}${chantLine}${body}`, battle: result.battle,
       presentation:presentation('turn',result.battle,{events:result.events,renderings:[`${catchUp}${prefix}${chantLine}${narrateTurn(result.battle,result.events,{expressive:true})}`]}) };
+  }
+
+  /** 名单为空表示不设限；名单非空时只认名单里的名字（平台声纹给的那个） */
+  private speakerListed(speaker?: string): boolean {
+    if (this.speakers.length === 0) return true;
+    const name = (speaker ?? '').trim();
+    return Boolean(name) && this.speakers.includes(name!);
+  }
+
+  /**
+   * 说话人校验：没登记的声音不回应，挡掉环境里其他人的说话声、回声与
+   * 设备串音，避免它们被当成指令、把局面推进到对不上的状态。
+   *
+   * 已登记的人也要看轮次：不是自己的回合、或者出招人不是本机座位绑定的
+   * 那个人，同样不回应。只有「会动用回合」的说法受轮次约束，
+   * 查战况、问玩法、开局、加入房间照旧。
+   */
+  private speakerGate(sessionKey: string, command: Command, speaker?: string): 'pass' | 'silent' {
+    if (this.speakers.length === 0) return 'pass';
+    if (!this.speakerListed(speaker)) {
+      this.logger.info('说话人不在名单里，保持静默', { sessionKey, speaker: (speaker ?? '').trim() || null });
+      return 'silent';
+    }
+    const name = (speaker ?? '').trim();
+
+    const turnLike =
+      command.kind === 'turn' || command.kind === 'refused' || (command.kind === 'route' && !command.question);
+    if (!turnLike) return 'pass';
+
+    const table = tableFor(this.tables, sessionKey);
+    const battle = table.battle();
+    const seat = table.seat(sessionKey);
+    if (!battle || !seat) return 'pass';
+
+    const owner = this.seatsFor(table, battle)?.[seat];
+    if (owner && owner !== name) {
+      this.logger.info('这一手不是本机玩家说的，保持静默', { sessionKey, seat, owner, speaker: name });
+      return 'silent';
+    }
+
+    const view = viewAs(battle, seat);
+    const myTurn = view.pending ? view.pending.actor !== 'player' : view.active === 'player';
+    if (!myTurn) {
+      this.logger.info('没轮到这个座位，保持静默', {
+        sessionKey,
+        seat,
+        speaker: name,
+        active: view.active,
+        pending: view.pending?.actor ?? null,
+      });
+      return 'silent';
+    }
+
+    // 开局前就存在的老对局没有绑定记录：第一次开口的人认领这个座位
+    if (!owner) this.bindSeat(sessionKey, name);
+    return 'pass';
+  }
+
+  /**
+   * 取这一局已登记的座位绑定。
+   *
+   * 换局、对局过期或撤房后，旧绑定在下一次访问时作废：按未绑定处理，
+   * 新一局可以重新认领座位，不会被上一局的声音挡住。
+   */
+  private seatsFor(table: Table, battle: Battle | null): SeatBindings | null {
+    const seats = this.seatSpeakers.get(table.key);
+    if (!seats) return null;
+    if (!battle || seats.battleId !== battle.id) {
+      this.seatSpeakers.delete(table.key);
+      return null;
+    }
+    return seats;
+  }
+
+  /** 把这次说话人绑到他坐的那一边；同一局里已经绑了别人就不覆盖，避免串音改掉座位 */
+  private bindSeat(sessionKey: string, speaker?: string): void {
+    const name = (speaker ?? '').trim();
+    if (!name) return;
+    const table = tableFor(this.tables, sessionKey);
+    const seat = table.seat(sessionKey);
+    if (!seat) return;
+    const battle = table.battle();
+    if (!battle) return;
+    // 换局后 seatsFor 会先把旧绑定丢掉，这里拿到的只可能是这一局的席位
+    const seats = this.seatsFor(table, battle) ?? { battleId: battle.id };
+    if (seats[seat] === name) return;
+    if (seats[seat]) {
+      this.logger.warn('座位已经绑定了别的说话人', {
+        sessionKey,
+        key: table.key,
+        seat,
+        bound: seats[seat],
+        speaker: name,
+      });
+      return;
+    }
+    seats[seat] = name;
+    this.seatSpeakers.set(table.key, seats);
+    this.logger.info('说话人已绑定座位', { sessionKey, key: table.key, seat, speaker: name });
   }
 
   /**
@@ -500,7 +776,11 @@ export class GameService {
 
     // 单人重新开局：撤掉仍在的房间，避免对手对着已失效的局面出招
     const existing = this.rooms.byPlayer(sessionKey);
-    if (existing) dropRoom(this.tables, existing, '重新开局');
+    if (existing) {
+      dropRoom(this.tables, existing, '重新开局');
+      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
+      this.seatSpeakers.delete(pvpBattleKey(existing.code));
+    }
 
     const battle = await this.spawnSolo(opponent);
 
@@ -538,7 +818,11 @@ export class GameService {
         presentation:presentation('status',this.store.get(pvpBattleKey(existing.code)) ?? null,{waiting:true}),
       };
     }
-    if (existing) dropRoom(this.tables, existing, '重新开局');
+    if (existing) {
+      dropRoom(this.tables, existing, '重新开局');
+      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
+      this.seatSpeakers.delete(pvpBattleKey(existing.code));
+    }
     // 从单人局切到联机时把旧对局清掉，避免退出房间后还对着过期局面出招
     this.store.delete(sessionKey);
     return this.startPvp(sessionKey);
@@ -605,6 +889,8 @@ export class GameService {
     const canonical = this.store.get(pvpBattleKey(code));
     if (!canonical) {
       this.rooms.remove(code);
+      // 这间房的对局过期了，它的席位也一并作废，房间号复用时不继承
+      this.seatSpeakers.delete(pvpBattleKey(code));
       this.logger.warn('房间存在但对局已过期', { sessionKey, room: code });
       return { text: narrateRoomMissing(code), battle: fallback };
     }
@@ -620,7 +906,11 @@ export class GameService {
     }
 
     // 席位已经归到新房，旧房连着那局对局与补账一起撤掉
-    if (claimed.previous) dropRoom(this.tables, claimed.previous, '换房');
+    if (claimed.previous) {
+      dropRoom(this.tables, claimed.previous, '换房');
+      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
+      this.seatSpeakers.delete(pvpBattleKey(claimed.previous.code));
+    }
 
     const view = viewAs(canonical, 'enemy');
     this.store.delete(sessionKey);
@@ -632,6 +922,10 @@ export class GameService {
       round: canonical.round,
       from: claimed.previous?.code ?? null,
     });
+    // 房主正挂着等对手：人一进来就叫醒他，别等他再开口才补上这局已经开打
+    if (this.echo.waitingOn(target.hostKey)) {
+      this.echo.push(target.hostKey, narrateOpponentJoined(canonical));
+    }
     const fresh = view.history.length === 0 && view.round === 1 && !view.pending;
     const opening = fresh
       ? `${narrateRoomJoined(code)}。${narrateBattleStart(view)}`
@@ -691,7 +985,7 @@ export class GameService {
       return this.play(sessionKey, null, raw, options);
     }
     if (command.kind === 'turn') return this.play(sessionKey, command, raw, options, routed);
-    // 开局、开房会改对局归属，也要带着当时那一局过去核对（见 discardIfStale）
+    // 开局、发起挑战会改对局归属，也要带着当时那一局过去核对（见 discardIfStale）
     return this.execute(sessionKey, command, raw, options, routed);
   }
 

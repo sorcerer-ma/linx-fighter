@@ -418,12 +418,45 @@ export function narrateHelp(): string {
 }
 
 /**
+ * 唤醒播报：挂起的 wait_event 等到对手动作后，把错过的那一手念出来。
+ *
+ * 和补账同一套拼句，只是不带「刚才那一手」的开场：玩家刚听完自己的出招，
+ * 接着往下说对手这一手就够顺。
+ */
+export function narrateWake(lines: string[]): string {
+  // 和补账一样只念最近两段：挂久了攒下的旧结果没必要一句句数
+  return `${lines.slice(-2).map(sentence).join('。')}。`;
+}
+
+/** 轮到自己出招：这次挂起没有可等的事，直接提醒玩家下一手 */
+export function narrateWaitTurn(): string {
+  return '该我出招了，你说打哪一招就行。';
+}
+
+/** 对手已经出手、等着这边应招：挂起结束，该玩家说话了 */
+export function narrateWaitRespond(): string {
+  return '对手已经出招，你说格挡、闪避还是承受。';
+}
+
+/**
+ * 挂到超时还没有动静：告诉玩家这一手没有结果，别干等。
+ * `reason` 决定说的是「对手还没进房间」还是「对手还没出手」。
+ */
+export function narrateWaitTimeout(reason: 'guest' | 'opponent'): string {
+  return reason === 'guest' ? '对手还没进房间，进来了我马上说。' : '对手还没出手，出了我马上说。';
+}
+
+/** 房主挂着等的时候对手进来了：先说人到了，再报开局 */
+export function narrateOpponentJoined(battle: Battle): string {
+  return joinLines(['对手进房间了', narrateBattleStart(battle)]);
+}
+
+/**
  * 补账播报：把玩家不在场时错过的结算补念一遍。
  * 双人局里另一方的应对在对方回合结算，出手方听不到，只能等他下次开口时补上。
  */
 export function narrateCatchUp(lines: string[]): string {
-  // 结构上一个人最多错过两次结算；真攒多了也只补最近两段，播报太长反而听不清
-  return `刚才那一手。${lines.slice(-2).map(sentence).join('。')}。`;
+  return `刚才那一手。${narrateWake(lines)}`;
 }
 
 /* ---------------- 服务端主动推送 ---------------- */

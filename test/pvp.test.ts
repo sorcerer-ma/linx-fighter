@@ -26,7 +26,7 @@ function toolset(service: GameService, ctx: DeviceContext) {
       handlers.set(name, handler);
     },
   } as unknown as McpServer;
-  registerGameTools(server, { service, logger: createLogger('error'), ctx });
+  registerGameTools(server, { service, logger: createLogger('error'), ctx, waitTimeoutMs: 30_000 });
   return async (tool: string, input: Record<string, unknown> = {}): Promise<string> => {
     const text = (await handlers.get(tool)!(input)).content[0]?.text;
     assert.ok(text);
@@ -338,7 +338,7 @@ describe('双人联机', () => {
       speakerId: '',
       anonymousId: 'anon-1',
     };
-    registerGameTools(server, { service, logger: createLogger('error'), ctx });
+    registerGameTools(server, { service, logger: createLogger('error'), ctx, waitTimeoutMs: 30_000 });
 
     const start = handlers.get('game_start')!;
     const opened = await start({ mode: 'pvp' });

@@ -293,7 +293,7 @@ export function createApp(deps: AppDependencies): express.Express {
     const session: McpSession = { transport, ctx };
 
     const server = createMcpServer();
-    registerGameTools(server, { service, logger, ctx });
+    registerGameTools(server, { service, logger, ctx, waitTimeoutMs: config.waitEventTimeoutMs });
 
     sessions.set(sessionId, session);
     logger.info('SSE 连接建立', { sessionId, deviceId: ctx.deviceId, agentId: ctx.agentId });
@@ -343,7 +343,7 @@ export function createApp(deps: AppDependencies): express.Express {
     });
 
     const server = createMcpServer();
-    registerGameTools(server, { service, logger, ctx });
+    registerGameTools(server, { service, logger, ctx, waitTimeoutMs: config.waitEventTimeoutMs });
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
