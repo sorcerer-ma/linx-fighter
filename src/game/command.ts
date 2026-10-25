@@ -1,6 +1,6 @@
-import { matchAction, matchActionIds } from './actions.js';
+import { ACTIONS, matchAction, matchActionIds } from './actions.js';
 import { looksLikeAssistantEcho } from './crosstalk.js';
-import { roomCodeFromPhrase, wantsJoinRoom, wantsOpenRoom } from './pvp.js';
+import { parseRoomCodePhrase, wantsJoinRoom, wantsOpenRoom } from './pvp.js';
 import type { ActionId } from './types.js';
 
 /** 去空白与标点、英文转小写：关键词匹配只看字面，标点与大小写不参与判断 */
@@ -40,7 +40,7 @@ export type Command =
   /** 本地规则没定下来：原话交给模型路由，由它决定是哪一类 */
   | { kind: 'route'; question: boolean };
 
-/** 不执行的原因：明确说不打，或一句话点了两招 */
+/** 不执行的原因：明确说不打，或一句话有多个操作／编号 */
 export type RefuseReason = 'negated' | 'ambiguous';
 
 /** 拦下这一手的原因：明确说不打、点了两招，或是在问而不是出手 */
@@ -125,7 +125,7 @@ const QUESTION_MARKERS = [
  */
 const NEGATE_RULES = [
   '不要', '不用', '不想', '不打算', '不打', '不出', '不攻', '不放',
-  '别打', '别出', '别放', '别动', '甭', '算了', '住手', '停手', '别急',
+  '别打', '别出', '别放', '别动', '甭', '算了', '住手', '停手', '别急', '取消',
 ];
 
 /** 带「别」但不是否定的词：判定前先剔掉，「特别强的攻击」仍是正常出招 */
@@ -141,6 +141,33 @@ const NEGATE_FALSE_POSITIVES = ['特别', '区别', '告别', '别的', '分别'
  */
 const CHALLENGE_NEGATION =
   /(?:不要|不用|不想|不打算|甭|算了|不|别)(?:再|去|要|想|用)?(?:退出挑战|退出房间|发起挑战|接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)|进房|挑战你|挑战|联机|开房|开个?房|建个?房|创建房|组队|一起打)/;
+
+/** Courtesy clauses are not cancelled game commands; single 别 is never global. */
+function negatedOperation(raw: string): boolean {
+  const clauses=raw.split(/[，,。！!；;\n]/).filter(clause=>!/^(?:别担心|不用怕|不要怕|别着急|别急)$/.test(clause.trim()));
+  const meaningful=clauses.some(clause=>clause.trim()) ? clauses.join('，') : raw;
+  const text=negatableText(compactText(meaningful));
+  if (includesAny(text,NEGATE_RULES) || CHALLENGE_NEGATION.test(text)) return true;
+  for(const prefix of text.matchAll(/(?:不|别)(?:(?:现在|马上|立刻|直接|帮我|替我|给我|让你|叫你|再|去|要|想|用|说|念)){0,3}/g)) {
+    const rest=text.slice(prefix.index!+prefix[0].length);
+    const action=Object.values(ACTIONS).some(meta=>[meta.id,meta.label,...meta.aliases,...(meta.mentions??[]),...(meta.asrErrors??[]),...meta.chants].some(term=>term.length>1?rest.startsWith(compactText(term)):rest===term));
+    if (action || /^(?:退出挑战|退出房间|发起挑战|接受(?:双人)?挑战|加入(?:双人)?(?:挑战|房间?|对局|对战)|进房|联机|开个?房|建个?房|创建房|组队|一起打)/.test(rest) || [...START_EXACT,...START_RULES].some(term=>rest.startsWith(term))) return true;
+  }
+  return false;
+}
+function isQuestion(raw: string,text: string): boolean {
+  return /[?？]/.test(raw) || includesAny(text,QUESTION_RULES) || includesAny(text,QUESTION_MARKERS) || /是否|能否|可否/.test(text);
+}
+function mutatingKinds(raw: string,text: string,hasCode: boolean): Set<string> {
+  const kinds=new Set(matchActionIds(raw).map(id=>'turn:'+id));
+  if (CHARGE_ENERGY.test(text)) kinds.add('turn:charge');
+  if (wantsJoinRoom(text) || hasCode) kinds.add('join');
+  const withoutJoin=text.replace(/(?:接受|加入)(?:双人)?(?:挑战|房间?|对局|对战)|进房(?:间)?/g,'');
+  if (wantsOpenRoom(withoutJoin)) kinds.add('create');
+  if (/退出(?:挑战|房间)/.test(text)) kinds.add('leave');
+  if (START_EXACT.includes(text) || includesAny(text,START_RULES) || raw.split(/[，,。;；\n]/).some(part=>START_EXACT.includes(compactText(part))) || /(?:先|再|然后|接着|并且|并|和)(?:重开|重新开始|开始游戏)/.test(text)) kinds.add('start');
+  return kinds;
+}
 
 function includesAny(text: string, rules: string[]): boolean {
   return rules.some((rule) => text.includes(rule));
@@ -160,17 +187,17 @@ function negatableText(text: string): string {
 /**
  * 这句话该不该落在招式上。
  *
- * 优先级固定为 反问式疑问 → 否定 → 多招式歧义 → 其它疑问：
- * 「能不能放大招」既含「能不能」又含「不能」，先判反问才不会被当成否定；
- * 「要不要放大招」同理，先判反问才不会被「不要」截走。
+ * 先识别绑定操作的否定，再收集招式歧义与查询标志：
+ * 「能不能放大招」既含「能不能」又含「不能」，否定词清洗会移除反问词组，避免把问法当否定；
+ * 「要不要放大招」同理不会被词组中的「不要」截走。
  */
 function blockReason(raw: string, text: string): BlockReason | null {
   if (!text) return null;
   // 问号要在 compact 之前判断：compact 会把标点一起抹掉
   const asked = /[?？]/.test(raw);
 
-  // 先剔掉「特别/区别/告别」这类词和「要不要」里的「不要」，再判否定
-  if (includesAny(negatableText(text), NEGATE_RULES)) return 'negated';
+  // 否定绑定明确操作，单独的礼貌安抚子句不取消后面的肯定指令。
+  if (negatedOperation(raw)) return 'negated';
 
   // 一句话点到两种招式，分不清要放哪一招，宁可让玩家重说。
   // 提及词表比执行词表宽：收窄后「猛攻」「公鸡」不再直接执行，但仍算点到强攻/普攻。
@@ -189,11 +216,11 @@ function blockReason(raw: string, text: string): BlockReason | null {
 /**
  * 把一句玩家原话读成命令，只认一次。
  *
- * 判定顺序按「意图强度」排：挑战相关的否定 → 带编号的接受挑战 → 问玩法 → 发起挑战 → 其余否定与歧义 → 招式 → 战况 → 开局 → 交给模型。
+ * 判定顺序按「意图强度」排：回灌 → 帮助 → 明确否定/取消 → 问句 → 多操作与多编号歧义 → 明确生命周期/招式 → 战况/开局 → 模型。
  * 几个容易踩的点：
- * - 挑战动词的否定最先判：说「不要接受挑战，编号1234」是要收手，不能真去换房或重开双人房；
+ * - 明确否定必须在生命周期执行前拦下：说「不要接受挑战，编号1234」是要收手，不能真去换房或重开双人房；
  * - 其他否定句不提前：排在问玩法之后，免得「不打了，怎么重新开始」从玩法说明变成一句拒绝；
- * - 挑战语义在前：说「能不能联机」是问怎么开双人，不是问战况；
+ * - 挑战问句只查询：即使带完整编号，也不能直接加入或创建；
  * - 玩法问句在发起挑战与歧义之前：「双人怎么玩」「普攻和强攻怎么用」问的是规则，不能顺手开一局，也不该判成多招式歧义；
  * - 问句必须在招式之前：「我的大招还剩几次」带招式词，但只是问；
  * - 战况与开局不含招式词，放在招式后面判断不会抢走出招。
@@ -210,45 +237,28 @@ export function readCommand(raw: string): Command {
   const ownText = compactText(own);
   const block = blockReason(own, ownText);
 
-  const code = text ? roomCodeFromPhrase(raw) : null;
-  const opens = text ? wantsOpenRoom(text) : false;
+  const identifier=parseRoomCodePhrase(raw);
+  const lifecycle=wantsJoinRoom(text) || wantsOpenRoom(text) || /退出(?:挑战|房间)/.test(text);
 
-  // 挑战入口会撤掉玩家现有那一局（换房、重开双人房），所以挑战动词前的否定必须先收住：
-  // 「不接受挑战，编号1234」「别发起挑战」都不能当成挑战口令执行。
-  // 这里只认紧挨着挑战动词的否定，别的否定句仍走下面的原顺序，
-  // 「不打了，怎么重新开始」这类话还能得到玩法说明。
-  // 反问式疑问（「要不要发起挑战」）先剔掉「要不要」再判，不算否定。
-  if (CHALLENGE_NEGATION.test(negatableText(text))) return { kind: 'refused', why: 'negated' };
+  // Read-only intent precedes every mutation, including a supplied room code.
+  if (text && includesAny(text,HELP_RULES)) return {kind:'help'};
+  if (block==='negated') return {kind:'refused',why:'negated'};
+  if (isQuestion(own,ownText)) {
+    if (!lifecycle && includesAny(text,STATUS_RULES)) return {kind:'status'};
+    return {kind:'route',question:true};
+  }
+  const sequential=own.split(/然后|接着|同时|并且|再/).filter(part=>mutatingKinds(part,compactText(part),false).size>0).length>1;
+  if (identifier.ambiguous || block==='ambiguous' || sequential || mutatingKinds(own,ownText,!!identifier.code).size>1) return {kind:'refused',why:'ambiguous'};
 
-  // Explicit exit cannot be reinterpreted as joining a number mentioned beside it.
+  // A bare identifier is neither a fresh action nor cross-request join context.
+  if (/^(?:(?:挑战)?编号|房间号?)?[0-9０-９零〇一幺二两三四五六七八九十百千万萬壹贰貳叁參肆伍陆陸柒捌玖拾佰仟兩]+$/.test(text)) return {kind:'route',question:true};
   if (/退出(?:挑战|房间)/.test(text)) {
     if (/^(?:我要|我想|请|帮我)?(?:退出挑战|退出房间)(?:吧|了)?$/.test(text)) return {kind:'leave-room'};
-    return block === 'query' ? {kind:'route',question:true} : {kind:'refused',why:'ambiguous'};
+    return {kind:'refused',why:'ambiguous'};
   }
-
-  // 带编号的接受挑战最明确：已经在房间里的玩家也要能凭这句话换房
-  if (code) return { kind: 'join-room', code };
-
-  // 问玩法在歧义判定之前：「普攻和强攻怎么用」提到两招是在问区别，不是要同时出两招
-  if (text && includesAny(text, HELP_RULES)) return { kind: 'help' };
-
-  // Acceptance without a valid code is a recoverable join error, never a new room.
-  if (wantsJoinRoom(text)) {
-    if (block === 'negated') return { kind: 'refused', why: 'negated' };
-    if (block === 'query') return { kind: 'route', question: true };
-    return { kind: 'join-room', code: '' };
-  }
-
-  // 语音链路常把整句话塞进参数，「发起挑战 / 联机」这类说法在这里兜底
-  if (opens) return { kind: 'open-room' };
-
-  if (block === 'negated' || block === 'ambiguous') return { kind: 'refused', why: block };
-
-  if (block === 'query') {
-    // 问的是对局里的数字，本地直接查：战况不消耗资源，不必等模型
-    if (text && includesAny(text, STATUS_RULES)) return { kind: 'status' };
-    return { kind: 'route', question: true };
-  }
+  if (identifier.code) return {kind:'join-room',code:identifier.code};
+  if (wantsJoinRoom(text)) return {kind:'join-room',code:''};
+  if (wantsOpenRoom(text)) return {kind:'open-room'};
 
   const match = ownText ? matchAction(own) : null;
   if (match) return { kind: 'turn', action: match.id, chant: match.chant };

@@ -674,7 +674,7 @@ describe('串音落地到对局', () => {
       const fresh = await service.start(SOLO);
       assert.ok(fresh.battle);
       const blocked = await service.say(SOLO, text);
-      assert.match(blocked.text, /两种招式/, text);
+      assert.match(blocked.text, /不止一个操作或编号/, text);
       // 歧义句既不耗资源也不推进对局，只让玩家重说
       assert.deepEqual(blocked.battle, fresh.battle, text);
     }

@@ -549,7 +549,7 @@ describe('异步与状态的边界', () => {
     assert.equal(store.get(KEY), armed);
 
     const ambiguous = await service.say(KEY, '大招还是强攻');
-    assert.match(ambiguous.text, /两种招式/);
+    assert.match(ambiguous.text, /不止一个操作或编号/);
     assert.equal(store.get(KEY), armed);
     assert.equal(armed.player.ap, 5);
     assert.equal(armed.player.ultLeft, 1);
@@ -565,7 +565,7 @@ describe('异步与状态的边界', () => {
     // 这些口语本地不再直接执行，但句子里点到两招时仍要拦住：能量与战报都不动
     for (const text of ['猛攻还是普攻', '公鸡还是强攻', '回能量还是强攻']) {
       const result = await service.say(KEY, text);
-      assert.match(result.text, /两种招式/, `「${text}」应让玩家重说`);
+      assert.match(result.text, /不止一个操作或编号/, `「${text}」应让玩家重说`);
       assert.equal(store.get(KEY), before, `「${text}」不该动对局`);
     }
 
