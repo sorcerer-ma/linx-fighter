@@ -208,7 +208,7 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 | `ENEMY_TIMEOUT_MS` | `2000` | JEV 对手单次决策超时，超时回退本地 |
 | `ATTRIBUTION_MODE` | `off` | 双人房座位归属：`strict` 时按口令过滤串音 |
 | `ALLOWED_SPEAKERS` | — | 逗号分隔的声纹称呼白名单；配置后未登记的说话人不回应，留空不限制 |
-| `WAIT_EVENT_TIMEOUT_MS` | `30000` | `wait_event` 挂起上限，夹在 1000～30000 毫秒 |
+| `WAIT_EVENT_TIMEOUT_MS` | `300000` | `wait_event` 挂起上限（5 分钟），夹在 1000～300000 毫秒，只能往下调 |
 | `ADMIN_TOKEN` | — | 后台监控页口令；为空时 `/admin` 公开，只适合演示环境 |
 
 沙箱自己的变量（`SANDBOX_*`）见 [沙箱配置](../testing/sandbox.md#配置项)。
@@ -252,6 +252,6 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 ### 说话人与页面提醒边界
 
-`game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。等待服务端最多30秒、客户端留35秒，取消静默且不消费事实。
+`game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。等待服务端最多5分钟、客户端留305秒，取消静默且不消费事实。
 
 手机页面保留七类主动提醒：对手出招、对手接受挑战、大招资源就绪、主动／响应空闲、等待对手、等待接受挑战。SSE push是带身份／对局／一次性ID的信号，不是直接可播台词；沙箱向固定游戏服务取得当下事实，再交真实Agent表达与统一播放队列。入房／出招与wait_event消费去重，旧局、失效或取消信号不播，不重做游戏动作。忙碌、真实说话、输入或隐藏时让路；语音效果仍需平台与真人试听验收。

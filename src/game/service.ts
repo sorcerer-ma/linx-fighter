@@ -3,7 +3,7 @@ import { actionLabel } from './actions.js';
 import { isUltimateReady } from './rules.js';
 import type { PushKind } from './push.js';
 import { presentation, type Presentation } from './presentation.js';
-import type { AttributionMode } from '../config.js';
+import { WAIT_EVENT_TIMEOUT_MS_MAX, type AttributionMode } from '../config.js';
 import type { Logger } from '../log.js';
 import type { BattleStore } from '../store/battles.js';
 import { EchoStore } from '../store/echoes.js';
@@ -1135,7 +1135,9 @@ export class GameService {
           || this.factQueue.get(sessionKey)?.battleId === originalId || current.waiting() !== initialWaiting) done();
       };
       const abort = () => done(true);
-      const timer = setTimeout(() => done(false, true), Math.max(0, Math.min(options.timeoutMs ?? 30000, 30000)));
+      // 上限与 WAIT_EVENT_TIMEOUT_MS 共用一个常量：平台先掐断时以平台为准，这里只兜底
+      const timeoutMs = Math.max(0, Math.min(options.timeoutMs ?? WAIT_EVENT_TIMEOUT_MS_MAX, WAIT_EVENT_TIMEOUT_MS_MAX));
+      const timer = setTimeout(() => done(false, true), timeoutMs);
       callbacks.add(check);
       options.signal?.addEventListener('abort', abort, { once: true });
       check();

@@ -3,8 +3,15 @@ import { fallbackSpeech, parseSpeechOutput, type SpeechPlan, type SpeechRejectio
 import { companionPrompt, resolveProfileId, type SpeechProfileId } from './profiles.js';
 import { OpenAiReplyModel } from './reply-model.js';
 import type { GameReply } from '../../src/game/protocol.js';
+import { WAIT_EVENT_TIMEOUT_MS_MAX } from '../../src/config.js';
 import { readFileSync } from 'node:fs';
 import type { SandboxAgentConfig } from '../config.js';
+
+/** 等待要能跑满服务端上限，传输层再留 5 秒收尾，不能被客户端先掐断 */
+export const WAIT_TRANSPORT_TIMEOUT_MS = WAIT_EVENT_TIMEOUT_MS_MAX + 5_000;
+
+/** 页面等 /api/wait 的预算：再宽一点，保证服务端的超时或唤醒事实先到，页面不抢着报连接中断 */
+export const PAGE_WAIT_TIMEOUT_MS = WAIT_TRANSPORT_TIMEOUT_MS + 5_000;
 
 const NOTIFICATION_INTENTS = {
   'opponent-move':'提醒对手已经锁定出招，仍待我应对，不能宣布命中。',
@@ -43,11 +50,11 @@ export class SandboxAgent {
     const signal = options.signal;
     return this.express('game_say', await tools.callTool('game_say', { text }, {signal}), {signal,profileId});
   }
-  // MCP waits at most 30s; transport allowance must outlast that server limit.
+  // 平台侧同样要等满服务端上限，传输超时比 service 的挂起上限再长一点。
   async wait(tools: AgentTools, options: AgentRequestOptions = {}): Promise<AgentOutcome> {
     const profileId = resolveProfileId(options.profileId);
     const signal = options.signal;
-    return this.express('wait_event', await tools.callTool('wait_event', {}, {signal, timeoutMs:35_000}), {signal,profileId});
+    return this.express('wait_event', await tools.callTool('wait_event', {}, {signal, timeoutMs:WAIT_TRANSPORT_TIMEOUT_MS}), {signal,profileId});
   }
   /** Notification facts are read-only; this path cannot invoke a game tool. */
   async notify(result: {reply:GameReply;isError:boolean;battleId?:string|null}, options:AgentRequestOptions & {notificationKind?:keyof typeof NOTIFICATION_INTENTS} = {}):Promise<AgentOutcome> {

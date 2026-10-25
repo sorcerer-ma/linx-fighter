@@ -443,7 +443,9 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     if (turn !== turnSequence || document.hidden) return;
     const abort = new AbortController();
     waitAbort = abort;
-    const timeout = setTimeout(function () { abort.abort(); }, 40000);
+    // 等待预算由沙箱下发（服务端挂起上限加收尾余量），取不到配置时退回 40 秒
+    const budget = Number(config && config.waitTimeoutMs) || 40000;
+    const timeout = setTimeout(function () { abort.abort(); }, budget);
     const revision = state.revision;
     try {
       const res = await fetch('/api/wait', {

@@ -18,7 +18,7 @@ function registerWith(service:GameService, logger=createLogger('error')) {
   }} as unknown as McpServer;
   const ctx=createDeviceContext('conn-tools');
   applyRequestContext(ctx,{'x-linx-device-id':'dev-tools','x-linx-agent-id':'agent-tools'});
-  registerGameTools(server,{service,logger,ctx});
+  registerGameTools(server,{service,logger,ctx,waitTimeoutMs:300_000});
   return {handlers,definitions,ctx};
 }
 const success={text:'兼容内部文案',battle:null,reply:{v:2,ok:true,phase:'idle',need:'none',events:[],say:'我在。'}};
@@ -74,7 +74,7 @@ describe('v2 工具层',()=>{
   });
   it('声纹只取本次参数或请求头，冲突与缺失不继承旧值',async()=>{
     const heard:Array<string|undefined>=[];
-    const service={say:(_key:string,_text:string,options:{speaker?:string})=>{heard.push(options.speaker);return success;},waitEvent:(_key:string,options:{speaker?:string;timeoutMs?:number})=>{heard.push(options.speaker);assert.equal(options.timeoutMs,30000);return success;}} as unknown as GameService;
+    const service={say:(_key:string,_text:string,options:{speaker?:string})=>{heard.push(options.speaker);return success;},waitEvent:(_key:string,options:{speaker?:string;timeoutMs?:number})=>{heard.push(options.speaker);assert.equal(options.timeoutMs,300_000);return success;}} as unknown as GameService;
     const {handlers,ctx}=registerWith(service);
     await handlers.get('game_say')!({text:'普攻',speaker:'阿澈'});
     await handlers.get('game_say')!({text:'普攻'});

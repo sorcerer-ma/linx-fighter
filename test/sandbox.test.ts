@@ -90,6 +90,7 @@ describe('沙箱服务', () => {
       defaultDeviceId: string;
       voice: { lang: string };
       agentMode: string;
+      waitTimeoutMs: number;
     };
 
     assert.equal(body.ok, true);
@@ -100,6 +101,8 @@ describe('沙箱服务', () => {
     assert.match(body.defaultDeviceId, /^web-/);
     assert.equal(body.voice.lang, 'zh-CN');
     assert.equal(body.agentMode, 'compatibility');
+    // 页面的等待预算要盖住服务端 5 分钟挂起，不能让页面先报连接中断
+    assert.ok(body.waitTimeoutMs > 300_000);
     assert.ok(!('apiKey' in body) && !('promptPath' in body) && !('agent' in body));
   });
 

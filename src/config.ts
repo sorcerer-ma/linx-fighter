@@ -14,6 +14,11 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 /** 座位归属策略：off 保持原行为；strict 时双人房按座位口令过滤原话 */
 export type AttributionMode = 'off' | 'strict';
 
+/** wait_event 服务端挂起上限（毫秒）：默认就是 5 分钟，环境变量只能往下调 */
+export const WAIT_EVENT_TIMEOUT_MS_MAX = 5 * 60 * 1000;
+/** 下限：太短会在对手还没反应时就把请求放回去，留 1 秒兜底 */
+export const WAIT_EVENT_TIMEOUT_MS_MIN = 1_000;
+
 export interface AppConfig {
   /** HTTP 监听端口，默认 8000 */
   port: number;
@@ -66,7 +71,7 @@ export interface AppConfig {
    * 避免环境里其他人声、噪声误触发对局。为空表示不限制。
    */
   speakers: string[];
-  /** wait_event 最多挂多久（毫秒）：平台先掐断连接时以平台为准，这里只是服务端上限 */
+  /** wait_event 最多挂多久（毫秒，默认与上限都是 5 分钟）：平台先掐断连接时以平台为准，这里只是服务端上限 */
   waitEventTimeoutMs: number;
 }
 
@@ -131,6 +136,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
     speakers: parseSpeakers(env.ALLOWED_SPEAKERS),
-    waitEventTimeoutMs: Math.max(1000, Math.min(30000, parseInteger(env.WAIT_EVENT_TIMEOUT_MS, 30000))),
+    waitEventTimeoutMs: Math.max(
+      WAIT_EVENT_TIMEOUT_MS_MIN,
+      Math.min(WAIT_EVENT_TIMEOUT_MS_MAX, parseInteger(env.WAIT_EVENT_TIMEOUT_MS, WAIT_EVENT_TIMEOUT_MS_MAX)),
+    ),
   };
 }
