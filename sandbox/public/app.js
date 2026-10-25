@@ -1,3 +1,4 @@
+import { wantsWait, runWaitLoop } from './wait-loop.js';
 import { BackendRecognition } from './backend-recognition.js';
 import { backendPlayback } from './playback.js';
 import { diagnosticText } from './speech-diagnostic.js';
@@ -315,7 +316,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   /* ---------------- 发送 ---------------- */
 
-  // 每条输入最多等待一次。新输入、停止或离开页面使旧响应失效。
+  // 同一输入代次串行续等；新输入、停止或离开页面使旧等待链失效。
   function resumeListeningIfIdle() {
     if (listener && listener.enabled && !document.hidden && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
   }
@@ -408,11 +409,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     }
   }
 
-  function wantsWait(data) {
-    return !data.silent && data.protocol &&
-      (data.protocol.need === 'wait_guest' || data.protocol.need === 'wait_foe');
-  }
-
   function showOutcome(data, turn, revision, profileId) {
     if (turn !== turnSequence || document.hidden) return Promise.resolve('cancelled');
     if (data.profileId !== undefined && data.profileId !== profileId) {
@@ -441,29 +437,43 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   async function waitForOpponent(turn, profileId) {
     if (turn !== turnSequence || document.hidden) return;
+    if (waitAbort) waitAbort.abort();
     const abort = new AbortController();
-    waitAbort = abort;
-    // 等待预算由沙箱下发（服务端挂起上限加收尾余量），取不到配置时退回 40 秒
-    const budget = Number(config && config.waitTimeoutMs) || 40000;
-    const timeout = setTimeout(function () { abort.abort(); }, budget);
-    const revision = state.revision;
+    waitAbort = abort; // Own the whole chain, including playback and gaps between requests.
+    const current = () => waitAbort === abort && turn === turnSequence &&
+      profileId === selectedSpeechProfile && !abort.signal.aborted && !document.hidden;
+    let revision = state.revision;
     try {
-      const res = await fetch('/api/wait', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ deviceId: deviceId, profileId: profileId }), signal: abort.signal
+      await runWaitLoop({
+        isCurrent: current,
+        request: async () => {
+          revision = state.revision;
+          const budget = Number(config && config.waitTimeoutMs) || 315000;
+          const timeout = setTimeout(() => abort.abort(), budget);
+          try {
+            const res = await fetch('/api/wait', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ deviceId, profileId }), signal: abort.signal
+            });
+            const data = await res.json();
+            if (!res.ok || !data) throw new Error('bad wait response');
+            return data;
+          } finally { clearTimeout(timeout); }
+        },
+        present: async data => {
+          const playback = await showOutcome(data, turn, revision, profileId);
+          if (current() && ['ended', 'displayed'].includes(playback)) resumeListeningIfIdle();
+          return playback;
+        }
       });
-      const data = await res.json();
-      if (abort.signal.aborted || turn !== turnSequence) return;
-      if (!res.ok || !data) throw new Error('bad wait response');
-      await showOutcome(data, turn, revision, profileId);
     } catch (error) {
-      if (abort.signal.aborted || turn !== turnSequence) return;
-      pushReply('等待连接中断，未重复执行任何行动；可以询问战况。', 'warn');
+      if (current()) pushReply('等待连接中断，未重复执行任何行动；可以询问战况。', 'warn');
     } finally {
-      clearTimeout(timeout);
-      if (waitAbort === abort) waitAbort = null;
-      drainNotification();
-      if (turn === turnSequence && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
+      if (waitAbort === abort) {
+        waitAbort = null;
+        drainNotification();
+        if (turn === turnSequence && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
+      }
     }
   }
 

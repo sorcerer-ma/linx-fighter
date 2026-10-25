@@ -92,7 +92,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
   };
   server.registerTool('game_say', {
     title: '玩家说了什么',
-    description: '玩家每句话原样交给游戏，不改字、不分类、不补上下文。服务端理解并执行，返回 v2 JSON 事实；只依据事实演绎，不念 JSON。silent=true 不出声；need 为 wait_guest 或 wait_foe 时，先播完即时回复，再最多调用一次 wait_event。',
+    description: '玩家每句话原样交给游戏，不改字、不分类、不补上下文。服务端理解并执行，返回 v2 JSON 事实；只依据事实演绎，不念 JSON。silent=true 不出声；need 为 wait_guest 或 wait_foe 时，先播完即时回复，再按 need 串行持续调用 wait_event；纯超时无声续等，silent或取消停止。',
     inputSchema: sayInput,
   }, async ({ text, speaker }) => invoke('game_say', { text, speaker }, (key, currentSpeaker) => {
     if (!text.trim() || [...text].length > 200) return service.invalidInput(key, {speaker:currentSpeaker});
@@ -100,7 +100,7 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
   }));
   server.registerTool('wait_event', {
     title: '等待对手',
-    description: '仅上一条 need 为 wait_guest 或 wait_foe 时，在即时话术播放完成后调用；每轮最多一次。speaker 仅为本次平台声纹元数据，不自行编造；等待对手进房或出招；超时、取消不执行游戏动作。返回与 game_say 相同的 v2 JSON。',
+    description: '仅上一条 need 为 wait_guest 或 wait_foe 时，在即时话术播放完成后调用；仍需等待时串行续挂，同身份最多一个在途请求；纯正常timeout不发声，silent、取消或未知错误停止。speaker 仅为本次平台声纹元数据，不自行编造；等待对手进房或出招；超时、取消不执行游戏动作。返回与 game_say 相同的 v2 JSON。',
     inputSchema: z.object({speaker:speakerField}).strict(),
   }, async ({speaker}, extra) => invoke('wait_event', { speaker }, (key, currentSpeaker) => service.waitEvent(key, {
     signal: extra?.signal, speaker:currentSpeaker, timeoutMs:deps.waitTimeoutMs,

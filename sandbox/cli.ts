@@ -123,7 +123,7 @@ async function main(argv: string[]): Promise<number> {
     if (command === 'say') console.log(`玩家 ${deviceId}：${text}`);
     console.log(result.silent ? '（静默，不播报）' : `伙伴：${result.reply}`);
     if (result.protocol?.need === 'wait_guest' || result.protocol?.need === 'wait_foe') {
-      console.log('（需要等待：读完本句后可运行 wait；每次输入最多等待一次）');
+      console.log('（需要等待：读完本句后可运行 wait；CLI wait读取一次；持续串行续挂由Agent或页面负责）');
     }
     if (display === 'voice') console.log('（模拟无屏硬件：补账播报开启）');
     console.log(`局面：${describeState(result.state)}`);

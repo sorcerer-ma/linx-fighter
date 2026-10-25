@@ -9,11 +9,11 @@
 | `game_say` | 任何一句原话 | `text`（1–200 字，原话不动）、`speaker`? | 唯一输入入口：识别招式、战况、玩法、开局、发起挑战、接受挑战与规则外问答，返回 v2 事实 |
 | `wait_event` | 不需要玩家原话 | `speaker`? | 把这次请求挂在服务端，等对手进房或出招；轮到自己出招、对手已出招等自己应招、单人局、无进行中对局或对局已结束时立刻返回 |
 
-- 平台固定只调用 `game_say`；`need` 为 `wait_guest` 或 `wait_foe` 时，先播完即时话术，再最多调用一次 `wait_event`。旧 `game_start`、`game_action`、`game_status`、`game_help` 不再注册。
+- 平台固定只调用 `game_say`；`need` 为 `wait_guest` 或 `wait_foe` 时，先播完即时话术，再按 need 串行持续调用 `wait_event`。旧 `game_start`、`game_action`、`game_status`、`game_help` 不再注册。
 - 两个工具都只带本次平台声纹元数据 `speaker`（≤20 字）。配置 `ALLOWED_SPEAKERS` 后未登记的说话人静默；参数与 `X-Linx-Speaker-Name` 冲突时静默，不沿用旧身份。`speaker` 不参与招式裁决与对局归属。
 - `text` 为空或超过 200 字返回 `ok:false/reason:"unclear"`，不截断、不执行。工具不自行分类、归一化或补上下文。
 - 每次工具调用都打一条 `工具调用` 日志，带本次的原话 `text`、生效的 `speaker` 与 `speakerSource`（`argument` 表示平台填进了工具参数，`header` 表示来自请求头，`conflict` 表示两边不一致、本次静默）；超过 200 字的非法原话在日志里截断并标出真实字数，交给服务的原话不截断。日志只用于核对平台实际交了什么，不参与裁决。
-- 挂起上限由 `WAIT_EVENT_TIMEOUT_MS` 控制（默认 300000，即 5 分钟，夹在 1000～300000 毫秒），客户端留 305 秒；唤醒、超时与平台取消返回同一外形，挂起期间不占对局事务。
+- 挂起上限由 `WAIT_EVENT_TIMEOUT_MS` 控制（默认 290000，即 290 秒，夹在 1000～300000 毫秒），沙箱wait工具传输预算300秒、页面外层315秒；唤醒、超时与平台取消返回同一外形，挂起期间不占对局事务。
 - 返回的 `content` 只有一条 `text` 块，`_meta["linx/battleId"]` 是对局 id（没有对局时为 `null`）。
 
 ## HTTP 入口

@@ -126,14 +126,14 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
   "agentId": "linx-sandbox",
   "defaultDeviceId": "web-7f3a",
   "voice": { "lang": "zh-CN" },
-  "waitTimeoutMs": 310000
+  "waitTimeoutMs": 315000
 }
 ```
 
 - `eventsUrl` 是页面直接连游戏服务的状态流地址（按访问页面的 Host 推导，端口取 `upstream` 的端口）。
 - 页面是 HTTPS 而服务端是 HTTP 时，`eventsUrl` 会退化成同源代理 `/api/events`（浏览器不允许混合内容）。
 - `defaultDeviceId` 只在页面没带 `?player=` 且 sessionStorage 里也没有身份时用一次。
-- `waitTimeoutMs` 是页面等 `/api/wait` 的预算：服务端挂起上限（默认 5 分钟）加收尾余量，页面按它设断路，不再写死 40 秒。
+- `waitTimeoutMs` 是页面等 `/api/wait` 的预算：工具传输300秒加表达与收尾15秒，页面按它设断路，不再写死 40 秒。
 
 ### POST /api/say
 
@@ -323,7 +323,7 @@ data: {"type":"push","device":"web-p1","agent":"linx-sandbox","kind":"opponent-m
 
 表达模型自由组织完整句子，不是选择固定候选或按旧播报数字集合改写。数值、归属、先手、胜负和明确阶段矛盾仍被检查；自然邀请不强制“听你指挥”等固定关键词。validationReason 为固定拒绝码（如 number、event_start、stage），不保存候选、用户全文或凭据。有限检查不能证明任意自然语言都正确。
 
-即时话术播放完成后才调用独立 /api/wait；每条玩家指令最多一次。播放取消／失败／超时不触发等待，新输入、隐藏、手动停止或换局会取消旧等待，迟到旧局回复不播放。SSE 只画界面。浏览器 ASR final 才提交动作，用户持续聆听意图与真实收音状态分离，终局表情优先于聆听。
+即时话术实际播放完成后调用独立 /api/wait，need仍等待则串行续挂；纯空timeout不表达不TTS直接续等。播放取消／失败／超时不触发等待，新输入、隐藏、手动停止或换局会取消旧等待，迟到旧局回复不播放。SSE state只画界面，push仅作取事实信号，与wait去重后经Agent和统一播放队列表达。浏览器 ASR final 才提交动作，用户持续聆听意图与真实收音状态分离，终局表情优先于聆听。
 
 提示词从 config/linx-agent-prompt.md 启动读取，修改需安全重载沙箱。模型服务地址和实际可用性以本地配置及本轮授权实测为准；密钥不进模板、页面或日志。MCP 游戏服务与沙箱表达配置独立，专用 Provider Key 不跨域回退。
 
@@ -350,7 +350,7 @@ SANDBOX_HOST=127.0.0.1 SANDBOX_PORT=18483 SANDBOX_UPSTREAM=http://127.0.0.1:1848
 
 ### 说话人与页面提醒边界
 
-`game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。等待服务端最多5分钟、客户端留305秒，取消静默且不消费事实。
+`game_say` 与 `wait_event` 只接受本次平台声纹元数据。参数和姓名请求头不一致时静默拒绝，不沿用旧身份；白名单与对局席位校验独立于音色profile。默认等待290秒、wait工具传输预算300秒、网页外层315秒；其他接入长等待上限保留5分钟但须配置更长传输预算。取消静默，不消费仍挂起的旧请求之后的新事实；无ACK不能保证网络交付后重放。
 
 手机页面保留七类主动提醒：对手出招、对手接受挑战、大招资源就绪、主动／响应空闲、等待对手、等待接受挑战。SSE push是带身份／对局／一次性ID的信号，不是直接可播台词；沙箱向固定游戏服务取得当下事实，再交真实Agent表达与统一播放队列。入房／出招与wait_event消费去重，旧局、失效或取消信号不播，不重做游戏动作。忙碌、真实说话、输入或隐藏时让路；语音效果仍需平台与真人试听验收。
 

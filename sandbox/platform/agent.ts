@@ -2,16 +2,16 @@ import { replyRejectionReason, type ReplyRejectionReason } from './reply-check.j
 import { fallbackSpeech, parseSpeechOutput, type SpeechPlan, type SpeechRejectionReason } from './speech.js';
 import { companionPrompt, resolveProfileId, type SpeechProfileId } from './profiles.js';
 import { OpenAiReplyModel } from './reply-model.js';
-import type { GameReply } from '../../src/game/protocol.js';
-import { WAIT_EVENT_TIMEOUT_MS_MAX } from '../../src/config.js';
+import { isEmptyWaitTimeout, type GameReply } from '../../src/game/protocol.js';
+import { WAIT_EVENT_TIMEOUT_MS_DEFAULT } from '../../src/config.js';
 import { readFileSync } from 'node:fs';
 import type { SandboxAgentConfig } from '../config.js';
 
-/** 等待要能跑满服务端上限，传输层再留 5 秒收尾，不能被客户端先掐断 */
-export const WAIT_TRANSPORT_TIMEOUT_MS = WAIT_EVENT_TIMEOUT_MS_MAX + 5_000;
+/** 默认290秒等待配合300秒工具HTTP预算；平台实际设置仍须独立核实 */
+export const WAIT_TRANSPORT_TIMEOUT_MS = WAIT_EVENT_TIMEOUT_MS_DEFAULT + 10_000;
 
-/** 页面等 /api/wait 的预算：再宽一点，保证服务端的超时或唤醒事实先到，页面不抢着报连接中断 */
-export const PAGE_WAIT_TIMEOUT_MS = WAIT_TRANSPORT_TIMEOUT_MS + 5_000;
+/** 页面外层315秒：工具传输300秒之外，给表达模型、快照查询和收尾另留15秒 */
+export const PAGE_WAIT_TIMEOUT_MS = WAIT_TRANSPORT_TIMEOUT_MS + 15_000;
 
 const NOTIFICATION_INTENTS = {
   'opponent-move':'提醒对手已经锁定出招，仍待我应对，不能宣布命中。',
@@ -65,6 +65,7 @@ export class SandboxAgent {
     const sourceText = facts.silent ? '' : facts.text ?? facts.say ?? '这一手结果未确认，我先核实局面。';
     const original = { tool, profileId:options.profileId, text: sourceText, sourceText, reply: facts, battleId:result.isError ? undefined : result.battleId, isError: result.isError, silent: facts.silent === true, speech:fallbackSpeech(sourceText) };
     if (facts.silent) return { ...original, rewriteStatus: 'silent' };
+    if (tool === 'wait_event' && !result.isError && isEmptyWaitTimeout(facts)) return { ...original, text:'', silent:true, speech:fallbackSpeech(''), rewriteStatus:'wait-timeout' };
     if (options.signal?.aborted) return { ...original, text:'', silent:true, speech:fallbackSpeech(''), rewriteStatus:'cancelled' };
     if (!this.model || result.isError || facts.reason === 'unknown') return { ...original, rewriteStatus: 'original' };
     try {

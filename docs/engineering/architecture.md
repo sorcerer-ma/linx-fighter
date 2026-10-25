@@ -4,7 +4,7 @@
 
 目标链路：ASR → 平台／沙箱Agent原话固定调用game_say → 服务端理解、校验与裁决，返回单行v2事实JSON → Agent按事实与人设表达 → TTS。提示词与伙伴设定见[项目配置](../../config/linx-agent-prompt.md)。
 
-v2事实协议已实现：公开工具只有game_say与wait_event，旧game_start/game_action/game_status/game_help不再注册；工具content[].text是一行JSON，不依赖structuredContent。平台Agent先播即时话术，need为wait_guest/wait_foe时再最多调用一次wait_event；等待不改变游戏规则。事实生成、等待与表达的分工见[MCP协议v2](mcp-protocol.md)，迁移记录见[实施说明](mcp-v2-migration.md)。
+v2事实协议已实现：公开工具只有game_say与wait_event，旧game_start/game_action/game_status/game_help不再注册；工具content[].text是一行JSON，不依赖structuredContent。平台Agent先播即时话术，need为wait_guest/wait_foe时再按need串行持续调用wait_event；等待不改变游戏规则。事实生成、等待与表达的分工见[MCP协议v2](mcp-protocol.md)，迁移记录见[实施说明](mcp-v2-migration.md)。
 
 以下是游戏服务真实执行链路，Agent不在调用前自主选游戏工具：
 
@@ -177,7 +177,7 @@ GET 建连时平台可能还没带设备头，POST 调用一定带，所以上�
 
 双人局里 A 出招后，A 的播报只能停在「等对手应对」；B 的应对在 B 自己的回合结算，那一声只念给 B。平台语音链路没有服务端主动播报能力，所以这段对 A 是静音。
 
-v2 用两条路补：`wait_event` 让平台把一次请求挂在服务端，对手进房或出招时唤醒并返回新事实；没有挂起请求时，遗漏事件留在 `EchoStore`，下一次 `game_say` 或状态查询消费。等待返回、查询与页面 `state` 消费同一批事实，取走即清空、不重复交付；换局退房一起清理。挂起上限由 `WAIT_EVENT_TIMEOUT_MS` 控制（默认 300000，即 5 分钟，夹在 1000～300000 毫秒，环境变量只能往下调）；轮到自己出招、单人局、没有进行中对局或对局已结束时立刻返回；平台先掐断连接时按取消收尾。日志记录挂起、唤醒、超时与取消，带 `reason` 和实际等待的 `ms`。这条链路的前提是平台不掐断长请求，目前只有本机与沙箱验证，真机未验收。
+v2 用两条路补：`wait_event` 让平台把一次请求挂在服务端，对手进房或出招时唤醒并返回新事实；没有挂起请求时，遗漏的v2事件留在每身份的事实队列，下一次 `game_say` 或状态查询消费。等待返回、主动通知和查询消费同一批事实；页面 `state` 只读快照、不消费事实，取走即清空、不重复交付；换局退房一起清理。挂起上限由 `WAIT_EVENT_TIMEOUT_MS` 控制（默认 290000，即 290 秒，夹在 1000～300000 毫秒，其他预算更大的接入可配置到5分钟；300秒平台保持等待低于HTTP预算）；轮到自己出招、单人局、没有进行中对局或对局已结束时立刻返回；平台先掐断连接时按取消收尾。日志记录挂起、唤醒、超时与取消，带 `reason` 和实际等待的 `ms`。这条链路的前提是平台不掐断长请求，目前只有本机与沙箱验证，真机未验收。
 
 页面 `push` 只服务有屏页面：对手进房、对手锁定招式、大招就绪、该玩家行动却久未开口，以及等待太久时发提醒信号，不重播已由行动回复说过的结算。没有屏幕、也收不到页面推送的终端仍走补账；有屏终端确认 `push` 后走 `POST /notification`，服务端核对身份、对局、一次性 `pushId` 与局面指纹，返回同形事实，不重放旧提醒。
 
