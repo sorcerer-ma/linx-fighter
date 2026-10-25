@@ -12,7 +12,7 @@ import { RoomStore } from '../src/store/rooms.js';
 
 /**
  * Streamable HTTP 版 MCP 端到端测试。
- * 灵犀平台（新版客户端）直接 POST JSON-RPC 到 /mcp，不先建 SSE 连接，
+ * 灵矽平台（新版客户端）直接 POST JSON-RPC 到 /mcp，不先建 SSE 连接，
  * 每次 POST 都带 X-Linx-Device-Id / X-Linx-Agent-Id 头，因此服务端必须按无状态方式处理。
  */
 

@@ -18,7 +18,7 @@ import { loadSandboxConfig, SANDBOX_VERSION, type SandboxConfig } from './config
 import { SandboxClient, NOTIFICATION_KINDS, type NotificationSignal } from './platform/client.js';
 
 /**
- * 沙箱 HTTP 服务：给浏览器一个「灵犀设备」页面，同时把页面上的输入转成 MCP 调用。
+ * 沙箱 HTTP 服务：给浏览器一个「灵矽设备」页面，同时把页面上的输入转成 MCP 调用。
  *
  * 职责边界：
  * - 页面只认 /api/*，不直接碰游戏服务（除了状态流可能在页面里直连，见 eventsUrl）；
