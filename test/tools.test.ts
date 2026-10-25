@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { GameService } from '../src/game/service.js';
-import { createLogger } from '../src/log.js';
+import { createLogger, type Logger } from '../src/log.js';
 import { applyRequestContext, createDeviceContext } from '../src/mcp/context.js';
 import { registerGameTools } from '../src/mcp/tools.js';
 
@@ -103,5 +103,39 @@ describe('v2 工具层',()=>{
       assert.deepEqual(result._meta,{'linx/battleId':null});
       assert.doesNotMatch(result.content[0]!.text,/sensitive/);assert.match(reply.say,/不要重复出招/);
     }
+  });
+  it('工具调用日志带上原话与说话人，并标明 speaker 来自参数还是请求头',async()=>{
+    const calls:Array<Record<string,unknown>|undefined>=[];
+    const logger={debug:()=>{},info:(message:string,fields?:Record<string,unknown>)=>{if(message==='工具调用') calls.push(fields);},warn:()=>{},error:()=>{}} as unknown as Logger;
+    const {handlers,ctx}=registerWith({say:()=>success,waitEvent:()=>success} as unknown as GameService,logger);
+    await handlers.get('game_say')!({text:'  普攻  ',speaker:'阿澈'});
+    ctx.speakerName='阿岚';
+    await handlers.get('wait_event')!({speaker:'阿岚'});
+    await handlers.get('game_say')!({text:'普攻'});
+    ctx.speakerName='';
+    await handlers.get('game_say')!({text:'普攻'});
+    assert.deepEqual(calls.map(call=>[call!.text,call!.speaker,call!.speakerSource]),[
+      ['  普攻  ','阿澈','argument'],
+      [undefined,'阿岚','argument'],
+      ['普攻','阿岚','header'],
+      ['普攻',undefined,undefined],
+    ]);
+  });
+  it('speaker 与请求头冲突时记一条警告，本次仍然静默',async()=>{
+    const warnings:Array<Record<string,unknown>|undefined>=[];
+    const logger={debug:()=>{},info:()=>{},warn:(_message:string,fields?:Record<string,unknown>)=>{warnings.push(fields);},error:()=>{}} as unknown as Logger;
+    const {handlers,ctx}=registerWith({waitEvent:()=>success} as unknown as GameService,logger);
+    ctx.speakerName='阿岚';
+    const result=await handlers.get('wait_event')!({speaker:'阿澈'});
+    assert.equal(JSON.parse(result.content[0]!.text).silent,true);
+    assert.deepEqual(warnings,[{tool:'wait_event',sessionKey:'dev-tools#agent-tools',argumentSpeaker:'阿澈',headerSpeaker:'阿岚'}]);
+  });
+  it('超长原话只在日志里截断并标出字数，交给服务的原话不变',async()=>{
+    const texts:string[]=[];
+    const logger={debug:()=>{},info:(message:string,fields?:Record<string,unknown>)=>{if(message==='工具调用') texts.push(fields!.text as string);},warn:()=>{},error:()=>{}} as unknown as Logger;
+    const {handlers}=registerWith({invalidInput:()=>success} as unknown as GameService,logger);
+    const long='啊'.repeat(250);
+    await handlers.get('game_say')!({text:long});
+    assert.equal(texts[0],[...long].slice(0,200).join('')+'…（共 250 字）');
   });
 });

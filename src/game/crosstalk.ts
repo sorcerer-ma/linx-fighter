@@ -22,7 +22,8 @@ import { narrateEcho } from './narrator.js';
 const NUM = '[0-9一二两三四五六七八九十百]+';
 
 /** 房间号同理：播报念的是数字，转写可能是阿拉伯数字也可能是汉字 */
-const CODE = '[0-9零〇一幺二两三四五六七八九]{4}';
+// Broadcast signature only; full input boundaries are enforced in pvp.ts.
+const CODE = '[0-9０-９零〇一幺二两三四五六七八九]{4}';
 
 /** 极短应答本句的规则名：应答被再收一遍时不再开口，见 echoAck */
 const ACK_RULE = 'ack';
@@ -59,7 +60,7 @@ export const ECHO_RULES: readonly EchoRule[] = [
   // 回合提示只认播报的完整说法：裸「轮到我」也是玩家常说的（「轮到我了，普攻」），不能算回灌
   { name: 'turn-hint', pattern: /该我出招|轮到我出招|轮到你出招|轮到我们/ },
   // —— 不生效的说明：这些解释只有播报会说 ——
-  { name: 'action-blocked', pattern: /没打出去|两种招式/ },
+  { name: 'action-blocked', pattern: /没打出去|两种招式|不止一个操作或编号|请先明确一个/ },
   { name: 'unheard', pattern: /没听清这一手/ },
   { name: 'not-responded', pattern: /我还没(应对|出招)/ },
   { name: 'stale', pattern: /局面已经变了|这一手没生效/ },
@@ -83,7 +84,7 @@ export const ECHO_RULES: readonly EchoRule[] = [
     name: 'room-legacy',
     // 旧版房间播报：历史设备或回放里还可能念到，不能把「我进了房间1234」读成加入指令
     pattern: new RegExp(
-      `房间(?:${CODE})(?:开好了|还等着|已经满员)|进了房间(?:${CODE})|没找到房间(?:${CODE})|房间号要.{0,2}四位|把房间号告诉另一位玩家|换一个房间号`,
+      `房间(?:${CODE})(?:开好了|还等着|已经满员)|进了房间(?:${CODE})(?![0-9０-９零〇一幺二两三四五六七八九十百千万萬壹贰貳叁參肆伍陆陸柒捌玖拾佰仟兩])|没找到房间(?:${CODE})(?![0-9０-９零〇一幺二两三四五六七八九十百千万萬壹贰貳叁參肆伍陆陸柒捌玖拾佰仟兩])|房间号要.{0,2}四位|把房间号告诉另一位玩家|换一个房间号`,
     ),
   },
   { name: 'catchup', pattern: /刚才那一手/ },
