@@ -132,7 +132,7 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
 | 对手已出招、等我应对 | `battle` | `respond` | 直接说，让玩家选 `choices` |
 | 我已出招等对手 / 双人轮对手 | `battle` | `wait_foe` | 说一声等着，再调 `wait_event` |
 | 对局结束 | `victory` / `defeat` | `none` | 直接说，邀新局 |
-| 门禁静默 | 任意 | 无 | 只输出零宽空格 |
+| 门禁静默 | 任意 | 无 | 完全无输出，不发送零宽字符或占位符 |
 
 `need` 是唯一决定「要不要再调工具」的字段，映射固定，不需要推理。
 
