@@ -107,4 +107,45 @@ describe('说话人校验与轮次归属', () => {
     const mine = await service.say(HOST, '普攻', { speaker: '阿澈' });
     assert.notEqual(mine.text, SILENT, '轮到自己要说得出话');
   });
+
+  it('同一台设备换人重开：新局重新认领座位，上一局的人被挡下', async () => {
+    const { service } = setup(['阿澈', '阿岚']);
+    await service.start(HOST, { speaker: '阿澈' });
+    // 同一台设备换人重开：座位绑定要跟着新局走，不能还认上一局的阿澈
+    await service.start(HOST, { speaker: '阿岚' });
+
+    const replacer = await service.say(HOST, '普攻', { speaker: '阿岚' });
+    assert.notEqual(replacer.text, SILENT, '新局由阿岚认领座位，应该正常播报');
+    assertSilent((await service.say(HOST, '大招', { speaker: '阿澈' })).text, '上一局的阿澈不该再被认');
+  });
+
+  it('房间号复用不继承上一局席位：新局两位说话人都能重新认领', async () => {
+    const { service } = setup(['阿澈', '阿岚', '阿远', '阿宁']);
+    await service.start(HOST, { mode: 'pvp', speaker: '阿澈' });
+    const code = service.status(HOST, { speaker: '阿澈' }).text.match(/房间(\d{4})/)![1]!;
+    await service.start(GUEST, { room: code, speaker: '阿岚' });
+
+    // 房主带人重开：旧房被撤，random 固定为 0，新房间还是同一个号码
+    await service.start(HOST, { mode: 'pvp', speaker: '阿远' });
+    const reused = service.status(HOST, { speaker: '阿远' }).text.match(/房间(\d{4})/)![1]!;
+    assert.equal(reused, code, '房间号应被复用');
+    await service.start(GUEST, { room: reused, speaker: '阿宁' });
+
+    // 房主先手：上一局的阿澈、阿岚已作废，这一局的两个人都要正常播报
+    const first = await service.say(HOST, '普攻', { speaker: '阿远' });
+    assert.notEqual(first.text, SILENT, '新局房主出招要正常播报');
+    const second = await service.say(GUEST, '格挡', { speaker: '阿宁' });
+    assert.notEqual(second.text, SILENT, '新局加入者应对要正常播报');
+  });
+
+  it('空设备自动开局：第一句话的人绑定座位，第二个人抢不走', async () => {
+    const { service } = setup(['阿澈', '阿岚']);
+    const started = await service.say(HOST, '普攻', { speaker: '阿澈' });
+    assert.notEqual(started.text, SILENT, '自动开局的一手要正常播报');
+
+    assertSilent((await service.say(HOST, '格挡', { speaker: '阿岚' })).text, '自动开局后另一个人说话不该认领座位');
+
+    const again = await service.say(HOST, '格挡', { speaker: '阿澈' });
+    assert.notEqual(again.text, SILENT, '开局人应招要正常播报');
+  });
 });

@@ -148,6 +148,18 @@ export type SpokenMatcher = (text: string, stage?: SpokenStage) => SpokenMatch |
 const DEFAULT_SPOKEN_MATCHER: SpokenMatcher = (text, stage) => matchSpokenAction(text, stage);
 
 /**
+ * 一局里两个座位分别绑着谁的声音。
+ *
+ * 绑定跟着 battle.id 走：同一台设备换人重开、房间号被复用都会换一局，
+ * 换局后旧绑定在下一次访问时作废，不能被新局沿用。
+ */
+interface SeatBindings {
+  battleId: string;
+  player?: string;
+  enemy?: string;
+}
+
+/**
  * 游戏服务：MCP 工具只做参数解析，业务编排都在这里。
  * 开局、出招、应对、战况与说明都从这里进出；结算在 engine，播报在 narrator。
  *
@@ -171,8 +183,8 @@ export class GameService {
   private readonly fuzzy: SpokenMatcher | null;
   /** 已登记的说话人；未登记的不回应，避免旁人声音误触发；为空表示不限制 */
   private readonly speakers: string[];
-  /** 每个座位绑定的是谁的声音；键是桌子的存储键（单人局玩家键，双人局 pvp:房间号） */
-  private readonly seatSpeakers = new Map<string, { player?: string; enemy?: string }>();
+  /** 每个座位绑定的是谁的声音；键是桌子的存储键（单人局玩家键，双人局 pvp:房间号），记着是哪一局的席位 */
+  private readonly seatSpeakers = new Map<string, SeatBindings>();
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
   /** 桌子要用到的存储，构造一张桌子的入口参数 */
@@ -239,6 +251,8 @@ export class GameService {
       // 房间还在但基准对局没了：这间房已经废了
       if (table.room) {
         this.rooms.remove(table.room);
+        // 对局过期，席位跟着那局一起作废
+        this.seatSpeakers.delete(pvpBattleKey(table.room));
         return { text: narrateRoomMissing(table.room), battle: null };
       }
       return { text: narrateNoBattle(), battle: null, presentation:presentation('status',null) };
@@ -496,6 +510,8 @@ export class GameService {
       // 房间里没有基准对局：这间房已经废了
       if (table.room) {
         this.rooms.remove(table.room);
+        // 对局过期，席位跟着那局一起作废
+        this.seatSpeakers.delete(pvpBattleKey(table.room));
         this.logger.warn('房间对局已过期', { sessionKey, room: table.room });
         return { text: `${catchUp}${narrateRoomMissing(table.room)}`, battle: null };
       }
@@ -514,6 +530,9 @@ export class GameService {
       }
       canonical = spawned;
       prefix = narrateAutoStart(spawned);
+      // 开局这一手就是说话人本人的：立刻把座位绑给他。
+      // 等下一句再认领的话，先开口的另一个人会把座位抢走，开局人反而被静默。
+      this.bindSeat(sessionKey, options.speaker);
       this.logger.info('对局自动开始', {
         sessionKey,
         battleId: spawned.id,
@@ -629,7 +648,7 @@ export class GameService {
     const seat = table.seat(sessionKey);
     if (!battle || !seat) return 'pass';
 
-    const owner = this.seatSpeakers.get(table.key)?.[seat];
+    const owner = this.seatsFor(table, battle)?.[seat];
     if (owner && owner !== name) {
       this.logger.info('这一手不是本机玩家说的，保持静默', { sessionKey, seat, owner, speaker: name });
       return 'silent';
@@ -653,14 +672,33 @@ export class GameService {
     return 'pass';
   }
 
-  /** 把这次说话人绑到他坐的那一边；已经绑了别人就不覆盖，避免串音改掉座位 */
+  /**
+   * 取这一局已登记的座位绑定。
+   *
+   * 换局、对局过期或撤房后，旧绑定在下一次访问时作废：按未绑定处理，
+   * 新一局可以重新认领座位，不会被上一局的声音挡住。
+   */
+  private seatsFor(table: Table, battle: Battle | null): SeatBindings | null {
+    const seats = this.seatSpeakers.get(table.key);
+    if (!seats) return null;
+    if (!battle || seats.battleId !== battle.id) {
+      this.seatSpeakers.delete(table.key);
+      return null;
+    }
+    return seats;
+  }
+
+  /** 把这次说话人绑到他坐的那一边；同一局里已经绑了别人就不覆盖，避免串音改掉座位 */
   private bindSeat(sessionKey: string, speaker?: string): void {
     const name = (speaker ?? '').trim();
     if (!name) return;
     const table = tableFor(this.tables, sessionKey);
     const seat = table.seat(sessionKey);
     if (!seat) return;
-    const seats = this.seatSpeakers.get(table.key) ?? {};
+    const battle = table.battle();
+    if (!battle) return;
+    // 换局后 seatsFor 会先把旧绑定丢掉，这里拿到的只可能是这一局的席位
+    const seats = this.seatsFor(table, battle) ?? { battleId: battle.id };
     if (seats[seat] === name) return;
     if (seats[seat]) {
       this.logger.warn('座位已经绑定了别的说话人', {
@@ -728,7 +766,11 @@ export class GameService {
 
     // 单人重新开局：撤掉仍在的房间，避免对手对着已失效的局面出招
     const existing = this.rooms.byPlayer(sessionKey);
-    if (existing) dropRoom(this.tables, existing, '重新开局');
+    if (existing) {
+      dropRoom(this.tables, existing, '重新开局');
+      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
+      this.seatSpeakers.delete(pvpBattleKey(existing.code));
+    }
 
     const battle = await this.spawnSolo(opponent);
 
@@ -766,7 +808,11 @@ export class GameService {
         presentation:presentation('status',this.store.get(pvpBattleKey(existing.code)) ?? null,{waiting:true}),
       };
     }
-    if (existing) dropRoom(this.tables, existing, '重新开局');
+    if (existing) {
+      dropRoom(this.tables, existing, '重新开局');
+      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
+      this.seatSpeakers.delete(pvpBattleKey(existing.code));
+    }
     // 从单人局切到联机时把旧对局清掉，避免退出房间后还对着过期局面出招
     this.store.delete(sessionKey);
     return this.startPvp(sessionKey);
@@ -833,6 +879,8 @@ export class GameService {
     const canonical = this.store.get(pvpBattleKey(code));
     if (!canonical) {
       this.rooms.remove(code);
+      // 这间房的对局过期了，它的席位也一并作废，房间号复用时不继承
+      this.seatSpeakers.delete(pvpBattleKey(code));
       this.logger.warn('房间存在但对局已过期', { sessionKey, room: code });
       return { text: narrateRoomMissing(code), battle: fallback };
     }
@@ -848,7 +896,11 @@ export class GameService {
     }
 
     // 席位已经归到新房，旧房连着那局对局与补账一起撤掉
-    if (claimed.previous) dropRoom(this.tables, claimed.previous, '换房');
+    if (claimed.previous) {
+      dropRoom(this.tables, claimed.previous, '换房');
+      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
+      this.seatSpeakers.delete(pvpBattleKey(claimed.previous.code));
+    }
 
     const view = viewAs(canonical, 'enemy');
     this.store.delete(sessionKey);
