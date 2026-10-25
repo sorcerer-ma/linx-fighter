@@ -66,6 +66,15 @@ export function replyRejectionReason(candidate: string, facts: GameReply): Reply
   for (const n of referenceText.match(/\d+/g) ?? []) allowed.add(Number(n));
   const factualText = text.replace(/再(?:告诉我|说|讲|重复)(?:1次|一遍)/g, '重说');
   for (const match of factualText.matchAll(/\d+/g)) if (!allowed.has(Number(match[0]))) return 'number';
+  const forfeit = facts.events?.find((e):e is Extract<ProtocolEvent,{t:'end'}>=>e.t==='end' && e.cause==='forfeit');
+  const escapeClaims = text.replace(/(?:没有|没|并未|未|不)(?:逃跑|逃走|认输)/g,'');
+  if (/逃跑|逃走|认输/.test(escapeClaims)) {
+    if (!forfeit) return 'event_end';
+    for (const match of escapeClaims.matchAll(/(我|对手)(?:(?!我|对手|你)[^，。！？;；]){0,10}(?:逃跑|逃走|认输)/g)) {
+      if ((match[1]==='我'?'you':'foe') === forfeit.win) return 'ownership';
+    }
+  }
+  if (forfeit && /击倒|打倒/.test(escapeClaims)) return 'event_end';
   const expectedWinner = facts.phase === 'victory' ? 'you' : facts.phase === 'defeat' ? 'foe' : undefined;
   if (expectedWinner ? winner(text) !== expectedWinner : winner(text) !== undefined) return 'winner';
   // “我掉了3点生命值” is damage, not a claim about remaining hp.
