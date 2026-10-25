@@ -286,7 +286,7 @@ export class GameService {
         return { text: echoAck(sessionKey, raw, this.now()), battle: this.viewFor(sessionKey) };
       case 'join-room': {
         const joined = this.joinRoom(sessionKey, command.code);
-        if (joined.battle || this.tables.get(sessionKey)?.room) this.bindSeat(sessionKey, options.speaker);
+        if (joined.battle) this.bindSeat(sessionKey, options.speaker);
         return joined;
       }
       case 'open-room': {
