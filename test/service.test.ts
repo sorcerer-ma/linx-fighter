@@ -594,7 +594,8 @@ describe('异步与状态的边界', () => {
 
     const asked = await service.say(KEY, '怎么出招');
     assert.match(asked.text, /普攻/);
-    assert.equal(asked.battle, null);
+    assert.equal(asked.battle?.id, before?.id);
+    assert.ok(asked.reply?.text);
     assert.equal(store.get(KEY), before);
   });
 

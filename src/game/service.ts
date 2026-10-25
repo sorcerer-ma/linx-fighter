@@ -9,7 +9,7 @@ import type { Room, RoomStore } from '../store/rooms.js';
 import { matchSpokenAction, type SpokenMatch, type SpokenStage } from './asr.js';
 import type { ChatAnswerer } from './chat.js';
 import { readCommand, type Command, type RefuseReason, type TurnIntent } from './command.js';
-import { echoAck, matchEchoRule } from './crosstalk.js';
+import { matchEchoRule } from './crosstalk.js';
 import { advanceBattle, createBattle, resolveTurn } from './engine.js';
 import {
   narrateActionBlocked,
@@ -260,16 +260,18 @@ export class GameService {
     raw = screened.text;
 
     switch (command.kind) {
-      // 归属分支：疑似自家播报回灌，只回极短应答，不推进对局（判定规则见 crosstalk.ts）
+      // 归属分支：疑似自家播报回灌，v2 完全静默，不推进对局（判定规则见 crosstalk.ts）
       case 'echo':
         this.logger.info('疑似播报回灌', { sessionKey, chars: raw.length, rule: matchEchoRule(raw) });
-        return { text: echoAck(sessionKey, raw, this.now()), battle: this.viewFor(sessionKey), protocol: { silent: true, consume: false } };
+        return { text: '', battle: this.viewFor(sessionKey), protocol: { silent: true, consume: false } };
       case 'join-room':
         return this.joinRoom(sessionKey, command.code);
       case 'open-room':
         return this.openRoom(sessionKey, routed);
-      case 'help':
-        return { text: narrateHelp(), battle: null, reply: protocolReply(this.viewFor(sessionKey), { room: table.room, waiting: table.waiting(), text: narrateHelp() }) };
+      case 'help': {
+        const battle = this.viewFor(sessionKey);
+        return { text: narrateHelp(), battle, reply: protocolReply(battle, { room: table.room, waiting: table.waiting(), text: narrateHelp() }) };
+      }
       case 'status':
         return this.statusInternal(sessionKey, options);
       case 'start':

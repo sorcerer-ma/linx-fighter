@@ -11,11 +11,11 @@ function normalize(text: string, facts: GameReply): string {
     });
 }
 function asserted(text: string, pattern: RegExp): boolean {
-  return pattern.test(text.replace(/(?:没能|没有|不能|未能|没|未|不)(?:命中|击中|打中|挡住|躲开|闪开|获胜|赢了|释放|生效)/g, ''));
+  return pattern.test(text.replace(/(?:没能|没有|不能|未能|没|未|不)(?:命中|击中|打中|挡住|躲开|闪开|获胜|赢了|放出去|放出|释放|出手|生效)/g, ''));
 }
 function winner(text: string): 'you' | 'foe' | undefined {
   if (/我(?:输了|败了|失败)|对手(?:赢了|获胜|胜利)|我被(?:击倒|打败)/.test(text)) return 'foe';
-  if (/我(?:赢了|赢啦|获胜|胜利)|我(?:把|将)?对手(?:击倒|打倒|击败)|我(?:击倒|打倒|击败)了?对手/.test(text)) return 'you';
+  if (/对手(?:输了|败了|失败|认输)|我(?:赢了|赢啦|获胜|胜利)|我(?:把|将)?对手(?:击倒|打倒|击败)|我(?:击倒|打倒|击败)了?对手/.test(text)) return 'you';
 }
 function numbers(value: unknown, result = new Set<number>()): Set<number> {
   if (typeof value === 'number') result.add(value);
@@ -30,7 +30,7 @@ function eventKept(event: ProtocolEvent, text: string): boolean {
     case 'charge': return new RegExp(actor + '.{0,14}(?:蓄力|能量)').test(text) && text.includes(String(event.ap));
     case 'hit': {
       const defender = event.by === 'you' ? '对手' : '我';
-      if (!text.includes(String(event.dmg))) return false;
+      if (!(event.dmg === 0 && event.miss) && !text.includes(String(event.dmg))) return false;
       if (!new RegExp(actor + '.{0,12}(?:攻|打|击|冲击)|' + defender + '.{0,12}(?:挨|受|掉|伤|躲|闪|挡)').test(text)) return false;
       if (event.crit && !/暴击/.test(text)) return false;
       if (event.r === 'guard' && !/格挡|挡下|挡住|举盾/.test(text)) return false;
@@ -76,6 +76,10 @@ export function replyRejectionReason(candidate: string, facts: GameReply): Reply
   }
   const hits = (facts.events ?? []).filter((event): event is Extract<ProtocolEvent,{t:'hit'}> => event.t === 'hit');
   if (!hits.some(event => event.crit) && /暴击/.test(text) && !/没有暴击|没暴击|不算暴击/.test(text)) return 'event_hit';
+  for (const match of text.matchAll(/(我|对手)(?:的)?(?:现在|目前)?(生命值|能量)(?:现在|目前)?(?:是|为|有|剩下|还有|还剩)?\s*(\d+)点?/g)) {
+    const unit = match[1] === '我' ? facts.you : facts.foe;
+    if (!unit || Number(match[3]) !== (match[2] === '能量' ? unit.ap : unit.hp)) return 'ownership';
+  }
   for (const match of text.matchAll(/(我|对手)(?:的)?(?:(普攻|普通攻击|强攻|强化攻击|大招|共鸣冲击))?(?:打中|击中|命中|攻击|打)(了)?(我|对手)/g)) {
     const by = match[1] === '我' ? 'you' : 'foe';
     const target = match[4] === '我' ? 'you' : 'foe';
@@ -92,7 +96,7 @@ export function replyRejectionReason(candidate: string, facts: GameReply): Reply
     const target = match[1] === '我' ? 'you' : 'foe';
     if (!hits.some(event => event.by !== target && event.dmg === Number(match[2]))) return 'ownership';
   }
-  if (facts.ok === false && asserted(text, /命中|击中|打中|释放了|出手了|生效了/)) return 'certainty';
+  if (facts.ok === false && asserted(text, /命中|击中|打中|放出去|放出|释放了|出手了|生效了/)) return 'certainty';
   if (facts.pending && !hits.length && asserted(text, /命中|击中|打中|击倒/)) return 'pending';
   if (facts.need === 'wait_guest' && /开打|对决开始|轮到我|我该怎么做/.test(text)) return 'stage';
   if (facts.need === 'wait_foe' && /轮到我|该我出招|我该怎么做/.test(text)) return 'stage';

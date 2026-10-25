@@ -27,6 +27,7 @@ export class SandboxAgent {
   async run(text: string, tools: AgentTools, options: { signal?: AbortSignal } = {}): Promise<AgentOutcome> {
     return this.express('game_say', await tools.callTool('game_say', { text }, options), options);
   }
+  // MCP waits at most 30s; transport allowance must outlast that server limit.
   async wait(tools: AgentTools, options: { signal?: AbortSignal } = {}): Promise<AgentOutcome> {
     return this.express('wait_event', await tools.callTool('wait_event', {}, { ...options, timeoutMs: 35_000 }), options);
   }

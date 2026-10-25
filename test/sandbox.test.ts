@@ -233,3 +233,12 @@ it('表达过程中换局，旧话术被丢弃，不与新快照一起播出',as
  release('教头来了，我先手，告诉我怎么出招！');
  const result=await old;assert.equal(result.silent,true);assert.equal(result.reply,'');assert.equal(result.rewriteStatus,'stale');assert.notEqual(result.sourceBattleId,result.state?.battle?.battleId);
 });
+
+it('review: 对局中问玩法保留同局身份并显示回复，不误判stale或消费补账',async()=>{
+ const device='qa-help-v2';const opening=await say(device,'开始');
+ const help=await say(device,'怎么玩');
+ assert.equal(help.ok,true);assert.equal(help.silent,false);assert.notEqual(help.rewriteStatus,'stale');
+ assert.ok(help.reply.length>0);assert.equal(help.protocol.v,2);assert.ok(help.protocol.text);
+ assert.equal(help.sourceBattleId,opening.sourceBattleId);assert.equal(help.state.battle.battleId,opening.sourceBattleId);
+ assert.deepEqual(help.protocol.events,[]);
+});

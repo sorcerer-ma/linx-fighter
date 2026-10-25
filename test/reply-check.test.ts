@@ -47,3 +47,14 @@ it('受伤不当成剩余生命值，交错两次攻击按各自归属校验',()
  assert.equal(checkReply('我普攻打中对手，对手掉了5点；对手强攻击中我，我挨了3点。',facts),false);
  assert.equal(checkReply('我普攻暴击打中对手，对手掉了3点；对手强攻击中我，我挨了5点。',facts),false);
 });
+it('review: 明确拒绝不说已放出，正确胜负/零伤闪避不误拒，资源是为句式保归属',()=>{
+ const denied:GameReply={...battle,ok:false,reason:'no_ap',deny:{mv:'ult',need:4,short:1}};
+ assert.equal(replyRejectionReason('大招放出去了！',denied),'certainty');
+ assert.equal(checkReply('没能放出大招，还差1点能量。',denied),true);
+ const won:GameReply={...battle,phase:'victory',need:'none',events:[{t:'end',win:'you'}]};
+ assert.equal(checkReply('对手输了，这一局归我！',won),true);
+ const dodge:GameReply={...battle,events:[{t:'hit',by:'you',mv:'light',r:'dodge',dmg:0,miss:true}]};
+ assert.equal(checkReply('对手闪开了我这一拳。',dodge),true);
+ for(const text of ['对手的生命值是14点','对手目前生命值为14点','我现在能量是5点'])assert.equal(replyRejectionReason(text,battle),'ownership',text);
+ assert.equal(checkReply('对手的生命值是18点，我的能量为3点。',battle),true);
+});
