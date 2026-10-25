@@ -24,10 +24,18 @@ export interface AppConfig {
   battleTtlMs: number;
   /** 是否暴露 /debug/* 调试端点，生产环境建议关闭 */
   enableDebugEndpoints: boolean;
-  /** 模型网关 API Key；为空时不启用命令路由与规则外问答，只用规则匹配 */
+  /** 旧共享 API Key；仅未设置专用地址时允许回退，避免跨 provider 使用 */
   apiKey?: string;
-  /** 模型网关根地址；换代理、自建网关或换厂商时覆盖 */
+  /** 旧共享根地址；专用地址未配置时回退 */
   baseUrl?: string;
+  /** 决策 provider 密钥；非空时启用命令路由和 JEV 对手 */
+  decisionApiKey?: string;
+  /** 决策 provider 地址，独立于聊天 provider */
+  decisionBaseUrl?: string;
+  /** 聊天 provider 密钥；非空时启用规则外问答 */
+  chatApiKey?: string;
+  /** 聊天 provider 地址，独立于决策 provider */
+  chatBaseUrl?: string;
   /** 决策模型路径，默认 /systemone */
   decisionPath?: string;
   /** 语言模型路径，默认 /chat/completions */
@@ -91,6 +99,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableDebugEndpoints: parseBoolean(env.ENABLE_DEBUG_ENDPOINTS, env.NODE_ENV !== 'production'),
     apiKey: env.API_KEY?.trim() || undefined,
     baseUrl: env.BASE_URL?.trim() || undefined,
+    decisionApiKey: env.DECISION_API_KEY?.trim() || (env.DECISION_BASE_URL?.trim() ? undefined : env.API_KEY?.trim() || undefined),
+    decisionBaseUrl: env.DECISION_BASE_URL?.trim() || env.BASE_URL?.trim() || undefined,
+    chatApiKey: env.CHAT_API_KEY?.trim() || (env.CHAT_BASE_URL?.trim() ? undefined : env.API_KEY?.trim() || undefined),
+    chatBaseUrl: env.CHAT_BASE_URL?.trim() || env.BASE_URL?.trim() || undefined,
     decisionPath: env.DECISION_PATH?.trim() || undefined,
     chatPath: env.CHAT_PATH?.trim() || undefined,
     decisionModel: env.DECISION_MODEL?.trim() || DEFAULT_DECISION_MODEL,

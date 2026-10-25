@@ -80,8 +80,10 @@ curl http://127.0.0.1:8000/health
 运行配置（`/etc/linx-fighter.env`）：
 
 ```bash
-BASE_URL=https://api.modelink.ai/v1
-API_KEY=...
+DECISION_BASE_URL=https://api.modelink.ai/v1
+DECISION_API_KEY=<决策 provider 密钥>
+CHAT_BASE_URL=https://api.qnaigc.com/v1
+CHAT_API_KEY=<聊天 provider 密钥>
 DECISION_PATH=/systemone
 CHAT_PATH=/chat/completions
 DECISION_MODEL=typesafe/jev-1.14
@@ -89,7 +91,7 @@ CHAT_MODEL=deepseek/deepseek-v4-flash
 CHAT_REASONING=off
 ```
 
-换别的 OpenAI 兼容网关时改 `BASE_URL` 与两条路径；密钥只放运行环境，不进仓库。推理模型要 `CHAT_REASONING=off`（发 `thinking:{"type":"disabled"}`），否则 token 可能全花在思考上、正文为空。
+换不同网关时分别改 `DECISION_BASE_URL` / `CHAT_BASE_URL` 与各自路径；密钥只放运行环境，不进仓库。推理模型要 `CHAT_REASONING=off`（发 `thinking:{"type":"disabled"}`），否则 token 可能全花在思考上、正文为空。
 
 另外这台机器没有可用的 IPv6 出网，Node 默认会先试 IPv6，表现为请求在连接阶段快速失败（`fetch failed` / `ETIMEDOUT`，约 0.5 s）。`NODE_OPTIONS` 里的 `--dns-result-order=ipv4first` 不生效，必须写进 systemd 的命令行，并关掉 happy-eyeballs：
 
@@ -205,3 +207,11 @@ v2 实现与验收完成前，不将 JSON 提示词应用到当前文本服务�
 
 **服务重启后玩家对局没了**
 对局存在进程内存里（`src/store/battles.ts`），重启即丢。需要保留就换 Redis 存储，接口不变。
+
+### MCP 模型 provider 独立配置
+
+命令路由与 JEV 对手决策使用 `DECISION_API_KEY`、`DECISION_BASE_URL`、`DECISION_PATH`；DeepSeek 规则外问答使用 `CHAT_API_KEY`、`CHAT_BASE_URL`、`CHAT_PATH`。两方地址、密钥和路径互不借用，模型名仍分别用 `DECISION_MODEL` / `CHAT_MODEL`。
+
+迁移时分别填写两方 provider 的地址与密钥，路径按各自协议设置（默认 `/systemone` 与 `/chat/completions`）。地址优先级是非空专用变量 → 旧 `BASE_URL` → 默认地址。密钥优先使用专用变量；仅未设置对应专用地址时允许回退旧 `API_KEY`，否则缺少专用密钥就禁用对应能力。空白值视为未设置。路径原本已独立，无共享路径回退。旧配置继续有效，但拆分 provider 后建议移除共享变量，避免一方误用旧密钥。只有决策密钥时仅启用路由/对手决策；只有聊天密钥时仅启用规则外问答，另一方保持本地或固定话术回退。密钥仅放运行环境。
+
+显式配置专用地址后，应由用户核对 provider 并填写对应专用密钥，不自动搬移旧密钥。非秘密示例为决策 `https://api.modelink.ai/v1`、聊天 `https://api.qnaigc.com/v1`。
