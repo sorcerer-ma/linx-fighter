@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import { checkReply, replyRejectionReason } from '../sandbox/platform/reply-check.js';
 import type { GameReply } from '../src/game/protocol.js';
+import { narrateHelp } from '../src/game/narrator.js';
 const battle:GameReply={v:2,ok:true,phase:'battle',need:'none',you:{hp:14,maxHp:14,ap:3,maxAp:5,ult:1},foe:{name:'教头',hp:18,maxHp:18,ap:3,ult:1},events:[]};
 it('自由邀请不要求关键词白名单，不强制复读快照；错误数字归属受控拒绝',()=>{
  for(const candidate of ['我精神十足，告诉我怎么出招！','嘿嘿，告诉我打哪招？','轻松一点，怎么打？'])assert.equal(checkReply(candidate,{...battle,need:'move'}),true,candidate);
@@ -57,4 +58,20 @@ it('review: 明确拒绝不说已放出，正确胜负/零伤闪避不误拒，�
  assert.equal(checkReply('对手闪开了我这一拳。',dodge),true);
  for(const text of ['对手的生命值是14点','对手目前生命值为14点','我现在能量是5点'])assert.equal(replyRejectionReason(text,battle),'ownership',text);
  assert.equal(checkReply('对手的生命值是18点，我的能量为3点。',battle),true);
+});
+
+it('玩法规则中的中文次数与候选对称归一，原文和正确改写不误拦',()=>{
+ const facts:GameReply={v:2,ok:true,phase:'idle',need:'none',events:[],text:narrateHelp()};
+ assert.equal(replyRejectionReason(facts.text!,facts),undefined);
+ for(const text of ['大招要四点能量，每局一次，我记牢啦！','大招要4点能量，每局1次，等你指挥！'])assert.equal(replyRejectionReason(text,facts),undefined,text);
+ assert.equal(replyRejectionReason('大招要5点能量，每局一次。',facts),'number');
+ assert.equal(replyRejectionReason('大招要4点能量，每局两次。',facts),'number');
+ assert.equal(replyRejectionReason('大招要四点能量，我记牢啦！',facts),'text');
+});
+it('规则中文数字可换表达，但不能绕过资源归属或已结算战果',()=>{
+ const facts:GameReply={...battle,text:'大招每局一次。',events:[{t:'hit',by:'you',mv:'light',r:'take',dmg:3}]};
+ assert.equal(replyRejectionReason('大招每局一次。我普攻打中对手，掉了3点，真痛快！',facts),undefined);
+ assert.equal(replyRejectionReason('大招每局一次。我18点生命值，我普攻打中对手，掉了3点。',facts),'ownership');
+ assert.equal(replyRejectionReason('大招每局一次。我强攻打中对手，掉了3点。',facts),'ownership');
+ assert.equal(replyRejectionReason('大招每局一次。我普攻打中对手，真痛快！',facts),'event_hit');
 });

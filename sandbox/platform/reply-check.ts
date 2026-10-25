@@ -60,7 +60,10 @@ export function replyRejectionReason(candidate: string, facts: GameReply): Reply
   const text = normalize(candidate, facts);
   const allowed = numbers({ you:facts.you, foe:facts.foe, round:facts.round, pending:facts.pending, deny:facts.deny, events:facts.events });
   if (facts.room) allowed.add(Number(facts.room));
-  for (const n of facts.text?.match(/\d+/g) ?? []) allowed.add(Number(n));
+  // Normalize rule text and the candidate symmetrically: ‘每局一次’ is the
+  // same authoritative count as ‘每局1次’, not an invented resource.
+  const referenceText = normalize(facts.text ?? '', facts);
+  for (const n of referenceText.match(/\d+/g) ?? []) allowed.add(Number(n));
   const factualText = text.replace(/再(?:告诉我|说|讲|重复)(?:1次|一遍)/g, '重说');
   for (const match of factualText.matchAll(/\d+/g)) if (!allowed.has(Number(match[0]))) return 'number';
   const expectedWinner = facts.phase === 'victory' ? 'you' : facts.phase === 'defeat' ? 'foe' : undefined;
@@ -106,7 +109,7 @@ export function replyRejectionReason(candidate: string, facts: GameReply): Reply
   if (facts.reason === 'unknown' && /没生效|没打出去|再(?:说|来|试).*(?:招|攻击)/.test(text)) return 'certainty';
   if (facts.reason === 'unclear' && !/没听清|没听懂|重说|再说|再告诉|没认出/.test(text)) return 'certainty';
   for (const event of facts.events ?? []) if (!eventKept(event, text)) return eventReason[event.t];
-  if (facts.text) for (const value of facts.text.match(/\d+/g) ?? []) if (!text.includes(value)) return 'text';
+  if (facts.text) for (const value of referenceText.match(/\d+/g) ?? []) if (!text.includes(value)) return 'text';
   return undefined;
 }
 export function checkReply(candidate: string, facts: GameReply): boolean {
