@@ -61,6 +61,7 @@ const service = new GameService({
   chat,
   echo: echoes,
   attribution: config.attribution,
+  speakers: config.speakers,
 });
 const app = createApp({ config, logger, store, rooms, service });
 
@@ -75,6 +76,7 @@ const server = app.listen(config.port, config.host, () => {
     enemyAi: ai ? `jev(${config.decisionModel})` : 'local',
     chatModel: chat ? config.chatModel : 'disabled',
     attribution: config.attribution,
+    speakers: config.speakers,
   });
 });
 
