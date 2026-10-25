@@ -16,10 +16,10 @@ const logger = createLogger(config.logLevel);
 const store = new BattleStore({ ttlMs: config.battleTtlMs });
 const rooms = new RoomStore({ ttlMs: config.battleTtlMs });
 // 配了模型 Key 才启用模型层；没配时规则认不出就回「没听清」
-const router = config.apiKey
+const router = config.decisionApiKey
   ? createCommandRouter({
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
+      apiKey: config.decisionApiKey,
+      baseUrl: config.decisionBaseUrl,
       decisionPath: config.decisionPath,
       model: config.decisionModel,
       timeoutMs: config.routerTimeoutMs,
@@ -28,10 +28,10 @@ const router = config.apiKey
   : undefined;
 // 对手决策同样走决策模型；失败/超时由 AI 自己回退本地模型
 const ai =
-  config.apiKey && config.enemyAi === 'jev'
+  config.decisionApiKey && config.enemyAi === 'jev'
     ? createJevEnemyAI({
-        apiKey: config.apiKey,
-        baseUrl: config.baseUrl,
+        apiKey: config.decisionApiKey,
+        baseUrl: config.decisionBaseUrl,
         decisionPath: config.decisionPath,
         model: config.decisionModel,
         timeoutMs: config.enemyTimeoutMs,
@@ -39,10 +39,10 @@ const ai =
       })
     : undefined;
 // 规则外的问题交给语言模型：只答闲聊与常识，不碰对局数值
-const chat = config.apiKey
+const chat = config.chatApiKey
   ? createChatAnswerer({
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
+      apiKey: config.chatApiKey,
+      baseUrl: config.chatBaseUrl,
       chatPath: config.chatPath,
       model: config.chatModel,
       reasoning: config.chatReasoning,

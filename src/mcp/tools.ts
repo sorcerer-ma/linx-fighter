@@ -1,3 +1,4 @@
+import { presentation } from '../game/presentation.js';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Logger } from '../log.js';
@@ -107,7 +108,8 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
           ? `${result.battle.pending.actor}:${result.battle.pending.move}`
           : null,
       });
-      return { content: [{ type: 'text' as const, text: result.text }] };
+      const details=result.presentation ?? presentation('other',result.battle);
+      return { content: [{ type: 'text' as const, text: result.text }], structuredContent:{presentation:{...details,renderings:[...new Set([result.text,...details.renderings])]}} };
     } catch (error) {
       logger.error('工具调用失败', {
         tool,
@@ -115,8 +117,9 @@ export function registerGameTools(server: McpServer, deps: ToolDependencies): vo
         error: error instanceof Error ? error.message : String(error),
       });
       return {
-        content: [{ type: 'text' as const, text: '服务出了点问题，这一手没有生效，请再说一次。' }],
+        content: [{ type: 'text' as const, text: '服务出了点问题，刚才的结果还未确认，请先核实战况。' }],
         isError: true,
+        structuredContent:{presentation:presentation('error',null)},
       };
     }
   };

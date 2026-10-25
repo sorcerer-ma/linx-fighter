@@ -80,8 +80,10 @@ curl http://127.0.0.1:8000/health
 运行配置（`/etc/linx-fighter.env`）：
 
 ```bash
-BASE_URL=https://api.modelink.ai/v1
-API_KEY=...
+DECISION_BASE_URL=https://api.modelink.ai/v1
+DECISION_API_KEY=<决策 provider 密钥>
+CHAT_BASE_URL=https://api.qnaigc.com/v1
+CHAT_API_KEY=<聊天 provider 密钥>
 DECISION_PATH=/systemone
 CHAT_PATH=/chat/completions
 DECISION_MODEL=typesafe/jev-1.14
@@ -89,7 +91,7 @@ CHAT_MODEL=deepseek/deepseek-v4-flash
 CHAT_REASONING=off
 ```
 
-换别的 OpenAI 兼容网关时改 `BASE_URL` 与两条路径；密钥只放运行环境，不进仓库。推理模型要 `CHAT_REASONING=off`（发 `thinking:{"type":"disabled"}`），否则 token 可能全花在思考上、正文为空。
+换不同网关时分别改 `DECISION_BASE_URL` / `CHAT_BASE_URL` 与各自路径；密钥只放运行环境，不进仓库。推理模型要 `CHAT_REASONING=off`（发 `thinking:{"type":"disabled"}`），否则 token 可能全花在思考上、正文为空。
 
 另外这台机器没有可用的 IPv6 出网，Node 默认会先试 IPv6，表现为请求在连接阶段快速失败（`fetch failed` / `ETIMEDOUT`，约 0.5 s）。`NODE_OPTIONS` 里的 `--dns-result-order=ipv4first` 不生效，必须写进 systemd 的命令行，并关掉 happy-eyeballs：
 
@@ -127,7 +129,7 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 
 - 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
 - 地址填到 `/mcp` 即可。服务端同时支持两种传输：平台若走 Streamable HTTP 会直接 `POST /mcp`（实测就是这样），若走老式 SSE 会先 `GET /mcp` 再由 `endpoint` 事件下发 POST 地址，控制台不用区分。
-- 配好后控制台通常有「测试/校验」按钮，能看到 5 个工具（`game_say`、`game_start`、`game_action`、`game_status`、`game_help`）即说明连通。推荐只把 `game_say` 当主入口。
+- 配好后控制台通常有「测试/校验」按钮，当前应看到 5 个工具（`game_say`、`game_start`、`game_action`、`game_status`、`game_help`），这只能证明当前工具清单连通。固定使用 `game_say` 传原话；v2 两工具清单尚未实现，不能据此判断当前服务故障。
 
 ## 4. 控制台：配置智能体
 
@@ -169,37 +171,15 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 已知未验证：两个智能体能否同时指向同一个自建 MCP（平台文档没写），演示前用控制台的「测试」按钮各点一次确认。平台侧语音能力（热词、透传、声纹接口边界）的调研结论见 [平台语音能力](platform-voice-capabilities.md)。
 
-## 6. 智能体提示词模板
+## 6. 智能体提示词与协议切换
 
-直接粘贴到智能体的提示词里，按需微调：
+本分支保留五工具、可朗读 text 和兼容的 structuredContent.presentation；平台／沙箱 Agent 每条原话固定调用一次 game_say，理解和执行由服务端负责。沙箱已有整句表达与有限事实检查，失败采用工具原文，不再次执行游戏；这不是 v2 JSON 事实协议。
 
-```text
-你是「灵犀对决」的对战主持，陪玩家打回合制对决。
+沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
 
-【人格】
-语气干脆、带一点江湖气；每次只说一两句话，适合语音朗读。
+表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；旧平台是否消费 presentation 仍需验证，不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
 
-【工具】
-玩家说的每一句话都调用 game_say，text 填玩家原话，一字不改。
-
-不要在调用前自己判断这句话是出招、查战况、问玩法还是开房——那是服务端的工作。你只负责把原话递过去，再把返回的 text 念出来。
-
-只有当 game_say 返回 isError、或你明确知道它在处理某个操作上失败了，才考虑用兜底工具：
-- game_start：确知要重开一局、或用 pvp / room / opponent 指定明确参数时。
-- game_action：确知要直接指定某一招时。
-- game_status：确知要查战况、而 game_say 不可用时。
-- game_help：确知要玩法说明、而 game_say 不可用时。
-
-【双人联机】
-房主先调用 game_start 并 mode=pvp，把返回里的四位房间号念给玩家（开房阶段只报房间号，对手进来后才播「对决开始」）；另一位玩家用同一个智能体说「加入房间 1234」。房间号只在本服务实例有效，没有对手时先用 AI 打，随时可开新局。
-
-【播报】
-把工具返回的 text 用口语念给玩家，不要念 JSON、不要提工具名，也不要自己补充数值。
-
-【防护栏】
-生命值、能量、回合数、胜负一律以工具返回为准。
-工具返回 isError 或提示没听清时，告诉玩家「这一手没生效，再说一次」，不要编造结果，也不要自己替玩家补一招。
-```
+v2 目标见 [协议](mcp-protocol.md#7-智能体提示词)，实施与验收见 [迁移说明](mcp-v2-migration.md)。两工具、wait_event 与 content 文本块内 JSON 尚未实现。MCP_PROTOCOL=text|json 目前只是迁移建议，不能仅设置环境变量或换提示词就当作切换完成；JSON 服务与文本模板也不能错配。
 
 ## 常见问题
 
@@ -221,3 +201,11 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 **服务重启后玩家对局没了**
 对局存在进程内存里（`src/store/battles.ts`），重启即丢。需要保留就换 Redis 存储，接口不变。
+
+### MCP 模型 provider 独立配置
+
+命令路由与 JEV 对手决策使用 `DECISION_API_KEY`、`DECISION_BASE_URL`、`DECISION_PATH`；DeepSeek 规则外问答使用 `CHAT_API_KEY`、`CHAT_BASE_URL`、`CHAT_PATH`。两方地址、密钥和路径互不借用，模型名仍分别用 `DECISION_MODEL` / `CHAT_MODEL`。
+
+迁移时分别填写两方 provider 的地址与密钥，路径按各自协议设置（默认 `/systemone` 与 `/chat/completions`）。地址优先级是非空专用变量 → 旧 `BASE_URL` → 默认地址。密钥优先使用专用变量；仅未设置对应专用地址时允许回退旧 `API_KEY`，否则缺少专用密钥就禁用对应能力。空白值视为未设置。路径原本已独立，无共享路径回退。旧配置继续有效，但拆分 provider 后建议移除共享变量，避免一方误用旧密钥。只有决策密钥时仅启用路由/对手决策；只有聊天密钥时仅启用规则外问答，另一方保持本地或固定话术回退。密钥仅放运行环境。
+
+显式配置专用地址后，应由用户核对 provider 并填写对应专用密钥，不自动搬移旧密钥。非秘密示例为决策 `https://api.modelink.ai/v1`、聊天 `https://api.qnaigc.com/v1`。

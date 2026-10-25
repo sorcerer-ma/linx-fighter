@@ -171,3 +171,9 @@ describe('一句话里的招式集合', () => {
     }
   });
 });
+
+
+it('强化攻击长别名占用整个词，不被其中攻击误算成第二招',()=>{
+ assert.deepEqual(matchAction('强化攻击'),{id:'heavy'});
+ assert.deepEqual(matchActionIds('我要强化攻击'),['heavy']);
+});
