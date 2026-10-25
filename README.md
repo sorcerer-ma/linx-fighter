@@ -14,7 +14,7 @@
 
 双人局的补账播报：A 出招后，B 的应对在 B 自己的回合结算，A 当场听不到这一手的结果。当前没有 `wait_event`，也没有无请求主动播报通道，服务端等 A 下一次行动或查询战况时补上——播报最前面会多一句「刚才那一手。我强攻，对手格挡，掉3点生命值，剩15。」，再播当前这一回合。补过一次不重复，换局即清。这是给没有屏幕的终端准备的：客户端带 `X-Linx-Display: screen`（沙箱页面就是这样）就不念补账，自己去画局面。
 
-已合并 [MCP v2 事实协议](docs/engineering/mcp-protocol.md)，**尚未实现**：目标是服务端返回事实、Agent 演绎，再播放最终话术。下述工具与链路描述当前 main；两工具、JSON 事实与 `wait_event` 均不能当作已运行能力。当前文本兼容沙箱与目标协议的切换依赖及验收见 [迁移实施说明](docs/engineering/mcp-v2-migration.md)。
+本分支在持久目录重建 [MCP v2 事实协议](docs/engineering/mcp-protocol.md)：原话固定调用 game_say，服务返回 JSON 事实，Agent 生成最终话术；播放完成后按 need 等待一次。代码与本地验证须和部署／平台验收区分，迁移见 [实施说明](docs/engineering/mcp-v2-migration.md)。
 
 ## 产品定位与体验目标
 
@@ -102,12 +102,9 @@ open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开
 | 工具 | 玩家说法 | 说明 |
 | --- | --- | --- |
 | `game_say` | 玩家的任何一句话 | **统一入口**：把原话一字不改放进 `text`，服务端自己判断是出招、查战况、看玩法还是开局；平台侧模型不用做选择 |
-| `game_start` | 「开始游戏」「来一局」「联机」「加入房间1234」 | 开一局新对局，覆盖未结束的旧对局；`mode: "pvp"` 建房，`room` 加入房间，`text` 可放玩家原话由服务端兜底识别，`opponent` 指定单人对手 |
-| `game_action` | 「强攻」「格挡」「闪避」「共鸣斩破军」 | 识别招式并推进一个阶段，返回播报 |
-| `game_status` | 「战况如何」「我的生命值还剩多少」 | 播报双方生命值、能量、大招剩余次数与当前阶段 |
-| `game_help` | 「怎么玩」 | 播报玩法说明 |
+| `wait_event` | 无参数 | need 为 wait_guest / wait_foe 时，先播完即时回复，再挂起等待一次；不推进游戏 |
 
-此表是当前五工具清单。平台固定使用 `game_say` 传原话，其余工具保留为已有接入的兼容能力，不能在一次结果未知后自动换工具重试。v2 目标清单为 `game_say` 与 `wait_event`，尚未注册，不能按目标数量验收当前服务。
+公开工具仅上述两个。原话 1～200 个 Unicode 字符，超长明确拒绝，不截断执行。content 文本块是 v:2 JSON，silent 真正静默，表达失败用 say/text；未知结果不自动重试行动。
 
 ### 端点
 
@@ -138,13 +135,10 @@ open 'http://localhost:8100/?player=2'   # 说「加入房间XXXX」，两人开
 ### 返回
 
 ```json
-{
-  "content": [{ "type": "text", "text": "我强攻，对手格挡，掉3点生命值，剩15。对手强攻还没结算，我该格挡、闪避，还是承受？" }],
-  "isError": false
-}
+{"content":[{"type":"text","text":"{\"v\":2,\"ok\":true,\"silent\":true}"}]}
 ```
 
-`text` 就是念给玩家的话。工具不抛异常：业务错误统一转成 `isError: true` + 一句玩家能听懂的中文。
+外层是 MCP 结果，文本块内才是事实 JSON。业务拒绝走 ok:false/reason，服务故障才 isError:true；结果未知须核实，不能断言未执行。单个 JSON 文本块 UTF-8 上限 16 KiB，超限返回有界 unknown，不截断事实或重做行动。该上限是项目选择，尚未验证灵矽平台容量。
 
 ## 语音容错
 
@@ -220,8 +214,8 @@ flowchart TB
 3. `GameService.say()` 先用 `readCommand` 把原话读成一条命令：房间管理、玩法、战况直接回，招式进对局流水线（认不出时再问命令路由模型）；
 4. 这一手交给所在的桌子结算：单人局用自己的对局键、双人局用房间号取事务锁，换回自己的视角再进引擎；模型返回后确认还是同一局、同一座位才写回；
 5. 规则层 `resolveTurn` 推进一个阶段并返回新状态与事件；认不出招式时**不推进回合**，只提示当前可用的说法；
-6. 表现层把事件拼成最多两句中文，双人局顺带把出手方错过的结算记进补账队列，然后原样作为 `content[].text` 返回，由平台 TTS 念给玩家；
-7. 旁路：页面用 `EventSource` 订阅 `GET /events` 拿只读局面，脚本用 `GET /state` 拿同一份快照——两者都不参与判断。
+6. 编排从真实事件生成 JSON，遗漏事件按身份／局号一次消费；Agent 依据事实表达，TTS 只播放最终 reply；
+7. 即时话术播放完成后，按 need 等待一次；取消、超时不推进游戏。旁路：页面用 `EventSource` 订阅 `GET /events` 拿只读局面，脚本用 `GET /state` 拿同一份快照——两者都不参与判断。
 
 ### 对局状态机
 
@@ -243,7 +237,7 @@ flowchart TB
 | 1 | Streamable HTTP 与 SSE 两套传输并存 | 平台实测走 `POST /mcp`，早期文档描述的是 SSE；两套共用存储，按方法分流 |
 | 2 | 对局键 = `deviceId#agentId` | 会话每轮都变，按会话存会让玩家「失忆」 |
 | 3 | 存储用内存 + TTL，接口保持可替换 | 单实例够用；换 Redis 时只替换构造，`GameService` 不动 |
-| 4 | 工具返回纯文本，不返回 `structuredContent` | 现阶段没有设备动作，纯文本对平台侧模型最稳 |
+| 4 | 工具在文本块内返回 JSON，不返回 `structuredContent` | 事实与最终话术分离，音频由平台或沙箱播放 |
 | 5 | 随机数全部由对局 seed 派生 | 同一 seed 逐位复现，256,000 局对拍才有意义 |
 | 6 | 双人用视角镜像，不复制引擎 | 结算逻辑只有一份，`viewAs` / `canonicalize` 负责换视角与写回 |
 | 7 | 认不出招式不消耗回合 | 语音误识别是常态，凭空损失生命值比重说一次更糟 |
@@ -412,7 +406,7 @@ docker run -d --name linx-fighter -p 8000:8000 linx-fighter
 | [docs/engineering/architecture.md](docs/engineering/architecture.md) | 逐条设计决策的来龙去脉、替代方案与扩展指引（总览见上文「架构设计」） |
 | [docs/product/multi-device-attribution.md](docs/product/multi-device-attribution.md) | 多设备归属：房间座位、回灌判定与平台侧声纹的配合 |
 | [docs/engineering/command-routing.md](docs/engineering/command-routing.md) | 命令路由：规则快路径 + 端侧同音 + 模型兜底的评测方法、方案对比与取舍 |
-| [docs/engineering/mcp-protocol.md](docs/engineering/mcp-protocol.md) | MCP v2 目标协议：两工具、JSON 事实、Agent 演绎（尚未实现） |
+| [docs/engineering/mcp-protocol.md](docs/engineering/mcp-protocol.md) | MCP v2 协议：两工具、JSON 事实、Agent 演绎 |
 | [docs/engineering/mcp-v2-migration.md](docs/engineering/mcp-v2-migration.md) | 当前实现、迁移依赖、协议待澄清项与验收顺序 |
 | [docs/engineering/platform-voice-capabilities.md](docs/engineering/platform-voice-capabilities.md) | 平台语音能力调研：热词、透传、声纹的实际边界与待确认清单 |
 | [docs/references/voice-attribution-research.md](docs/references/voice-attribution-research.md) | 声源与说话人识别方案对比，以及本项目的取舍 |

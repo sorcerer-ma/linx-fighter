@@ -129,7 +129,7 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 
 - 设备、智能体、会话三个 `X-Linx-*` 请求头由平台**自动注入**，控制台不用填（服务端在 `src/mcp/context.ts` 读取）。
 - 地址填到 `/mcp` 即可。服务端同时支持两种传输：平台若走 Streamable HTTP 会直接 `POST /mcp`（实测就是这样），若走老式 SSE 会先 `GET /mcp` 再由 `endpoint` 事件下发 POST 地址，控制台不用区分。
-- 配好后控制台通常有「测试/校验」按钮，当前应看到 5 个工具（`game_say`、`game_start`、`game_action`、`game_status`、`game_help`），这只能证明当前工具清单连通。固定使用 `game_say` 传原话；v2 两工具清单尚未实现，不能据此判断当前服务故障。
+- 配好后控制台通常有「测试/校验」按钮，本分支应看到 game_say 与 wait_event 两工具；仍需验证事实 JSON、表达、静默和等待顺序。线上旧服务可能尚未切换。
 
 ## 4. 控制台：配置智能体
 
@@ -149,7 +149,7 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 
 服务端做不到、必须靠平台侧的：
 
-- 说话人身份要「先要」才「再给」：MCP 请求头里只有 Device / Agent / Session 三个 `X-Linx-*` 头，不带说话人；但**在工具的 `inputSchema` 里声明了 `speaker` 参数之后，平台会把声纹识别出的名字填进这个参数**（平台支持侧的说明；真机待验）。五个工具都声明了它，服务端只拿它记日志、写回 `DeviceContext.speakerName`，不参与招式裁决与座位归属。
+- 说话人身份要「先要」才「再给」：MCP 请求头里只有 Device / Agent / Session 三个 `X-Linx-*` 头，不带说话人；但**在工具的 `inputSchema` 里声明了 `speaker` 参数之后，平台会把声纹识别出的名字填进这个参数**（平台支持侧的说明；真机待验）。game_say 声明了它，服务端只拿它记日志、写回 `DeviceContext.speakerName`，不参与招式裁决与座位归属。
 - 请求头里如果也带了 `X-Linx-Speaker-Name` / `X-Linx-Speaker-Id` 会一并接住（同样只进日志），并且每个进程第一次见到某种请求头组合时会打一条 `请求身份头快照`，把平台实际下发的自定义头列出来（`authorization`、`cookie` 之类按名字打码）。确认办法：`journalctl -u linx-fighter --no-pager -o cat --since "10 min ago" | grep -E '工具调用|请求身份头快照'`，看 `speaker` 字段有没有值。
 - 平台的声纹开关（控制台「声纹功能：只回应指定的人」）是**内部门禁**：命中就转发、不命中设备直接不吭声。它要求**每台设备绑各自的智能体**，否则两台设备在平台眼里是同一个主人，声纹也分不开。
 - 换设备所属智能体有官方接口（`PUT /v1/devices/{mac_address}/agent/{agent_id}`，原文「将设备切换到目标智能体」）：
@@ -173,13 +173,12 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 
 ## 6. 智能体提示词与协议切换
 
-本分支保留五工具、可朗读 text 和兼容的 structuredContent.presentation；平台／沙箱 Agent 每条原话固定调用一次 game_say，理解和执行由服务端负责。沙箱已有整句表达与有限事实检查，失败采用工具原文，不再次执行游戏；这不是 v2 JSON 事实协议。
-
+本分支只注册 game_say 与 wait_event，content 内返回 v:2 JSON，不依赖 structuredContent。Agent 依据事实生成人设话术，失败采用 say/text；玩家原话只执行一次，不自动重做行动。
 沙箱从 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md) 启动读取模板，修改后需重新加载服务才生效；平台实际提示词在控制台手动配置并按平台流程生效。二者需同步调用规则、字段解释、静默、确定性和等待边界，人格可以不同，不宣称仓库自动同步平台。不恢复 Agent 自主选工具或结果未知时换工具重试，也不在无人加入的双人房补 AI。
 
 表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；旧平台是否消费 presentation 仍需验证，不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
 
-v2 目标见 [协议](mcp-protocol.md#7-智能体提示词)，实施与验收见 [迁移说明](mcp-v2-migration.md)。两工具、wait_event 与 content 文本块内 JSON 尚未实现。MCP_PROTOCOL=text|json 目前只是迁移建议，不能仅设置环境变量或换提示词就当作切换完成；JSON 服务与文本模板也不能错配。
+字段见 [协议](mcp-protocol.md#7-智能体提示词)，验收见 [迁移说明](mcp-v2-migration.md)。未新增 MCP_PROTOCOL 开关或协议猜测；发布前必须配对更新平台提示词，旧文本模板不得直接朗读 JSON。仓库模板不会自动同步平台。
 
 ## 常见问题
 

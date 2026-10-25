@@ -1,6 +1,6 @@
 # MCP 协议 v2：事实通道与智能体演绎
 
-> 状态：**设计稿，尚未实现**。服务端当前实现是 v1：一个动作一个工具，返回可直接朗读的中文；挂起等对手的 `wait_event` 在 `feat/wait-event` 分支上，尚未合入 `main`。本文描述目标协议与配套提示词，落地范围见第 9 节；当前 main、PR #16 待合并成果、实施依赖及待澄清项见 [迁移说明](mcp-v2-migration.md)。设计合并不代表两工具、JSON 或等待已运行。
+> 状态：本分支在持久目录重建 v2；本地验证、真实模型和平台／真机验收分别记录。不是恢复原临时目录的提交或沿用旧测试。见 [迁移说明](mcp-v2-migration.md)。
 > 相关：[架构与决策](architecture.md)、[接入灵犀平台](linx-integration.md)。
 
 ## 1. 一句话
@@ -37,7 +37,7 @@
 - 身份与载体能力仍走请求头（`X-Linx-Device-Id` / `-Agent-Id` / `-Session-Id` / `x-linx-display`），不进工具入参。
 - 返回固定为 `content: [{type: "text", text: "<JSON>"}]`，一个 JSON 对象，不缩进、不包代码块、不带任何前后文案。不使用 `image`、`audio`、`structuredContent`。
 - `isError` 只表示服务自身故障（进程异常、依赖不可用）；业务上的「这一手没生效」一律走 `ok: false` + `reason`，智能体不需要区分两条错误通道。
-- 单次出参控制在 600 字节内（约 150 token），`wait_event` 唤醒时同样。
+- 单个 JSON 文本块 UTF-8 上限为 **16 KiB（16,384 字节）**，wait_event 相同。这是项目上限，尚未证实灵矽平台容量。超限不截断 JSON／事实，返回有界 isError:true、reason:unknown，不能重复行动。
 - 入参 `text` 长度 1~200 字；超长按没听清处理（`reason: "unclear"`），不截断执行。
 - 沙箱、`GET /state`、`GET /events` 不受影响，仍是 v1 快照；沙箱发现代链路问题时先看这里。
 
@@ -120,7 +120,7 @@ v2 只有两个工具。v1 的 `game_start`、`game_action`、`game_status`、`g
 
 `deny` 的理由和 `choices` 一样：能量缺口由服务端算好，模型不碰算术。
 
-`failed` 只用于能够确认未执行的失败；执行可能已发生而结果无法确认时才用 `unknown`，不能仅按是否写库机械分类。已经能够确认成功时不能改说失败。可取得的最新局面与 `say` 用于核实；快照也不可取得时的最小返回尚需按[迁移说明](mcp-v2-migration.md#实施前需收敛的协议问题)明确，不能伪造状态。网络或服务异常时先核实局面、不把重复攻击当通用恢复方式是产品要求（[语音与信息反馈](../product/voice-and-feedback.md)、[玩家旅程](../product/player-journey.md)）。
+`failed` 只用于能够确认未执行的失败；执行可能已发生而结果无法确认时才用 `unknown`，不能仅按是否写库机械分类。已经能够确认成功时不能改说失败。可取得的最新局面与 `say` 用于核实；快照也不可取得时的最小返回尚需按[迁移说明](mcp-v2-migration.md#具体边界)明确，不能伪造状态。网络或服务异常时先核实局面、不把重复攻击当通用恢复方式是产品要求（[语音与信息反馈](../product/voice-and-feedback.md)、[玩家旅程](../product/player-journey.md)）。
 
 ### 6.2 `phase` × `need`
 

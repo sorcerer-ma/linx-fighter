@@ -1,6 +1,6 @@
 # 沙箱：灵犀设备模拟器
 
-本机跑一个「假灵犀平台」：浏览器页面提供语音／文字输入，原话经 `/api/say` → MCP `game_say` 进入真实服务；本分支经 Agent 转发与可选表达后形成最终 reply，局面经长连接只读同步。已合并的 v2 协议尚未实现，未来由 Agent 依据事实形成最终话术，再交语音播放。迁移与验收见 [实施说明](../engineering/mcp-v2-migration.md)。
+本机跑一个「假灵犀平台」：浏览器页面提供语音／文字输入，原话经 `/api/say` → MCP `game_say` 进入真实服务；本分支经 Agent 转发与可选表达后形成最终 reply，局面经长连接只读同步。本分支持久重建 v2，由 Agent 依据事实形成最终话术，再交语音播放；不能用旧版测试或 mock 声称真实模型通过。迁移与验收见 [实施说明](../engineering/mcp-v2-migration.md)。
 
 本分支已包含双视图、持续聆听、伙伴表达与提示词配置；这些文本兼容实现不代表 v2 已交付。ASR/TTS 适配层与 MCP 协议独立，不因语音替换而改变游戏裁决或重做行动。
 
@@ -279,18 +279,13 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 
 单源提示词为 [config/linx-agent-prompt.md](../../config/linx-agent-prompt.md)，`startSandbox` 在服务端启动时读取一次。`sandbox/config.ts` 的 `agent` 组读取 `SANDBOX_AGENT_MODEL`、`SANDBOX_AGENT_BASE_URL`、`SANDBOX_AGENT_API_KEY`，不继承游戏服务模型或密钥；不自动读取.env，模型名和服务商没有默认值。提示词路径按项目位置解析，不随启动工作目录改变。缺失或空提示词报错。
 
-`SandboxAgent`每条原话只调用一次game_say，由服务端理解与执行。工具文本/isError及sourceReply保留，reply是页面实际展示和朗读的文字。MCP新增兼容字段structuredContent.presentation（version=1）：kind、certainty、facts和renderings。facts包括真实双方资源、轮次阶段、裁决events、下一步与明确拒绝原因；来自ServiceResult、Battle和引擎事件，不解析播报。等待朋友加入时不伪造对手资源；异常确定性为unknown，不能说未执行。
+`SandboxAgent` 每条原话只调用一次 game_say，服务端负责理解和裁决。文本块解析为 v:2 事实，reply 是实际展示和播放的话术，sourceReply 只是 say/text 退路。silent 不调用模型、不生成伙伴气泡、不播放音频。未知结果、表达失败不重做游戏。
 
-战况与已提交的行动结果提供由同一事实生成的完整句子候选；补账、唤出词与必要前缀完整保留。已确认开局（含开房等待／加入）、战况、明确重说与拒绝均可整句人设表达；重说和拒绝标为not-applied，不得说已经出手。未覆盖的帮助、闲聊、归属静默和结果未知异常仍使用原文。服务端默认text保持兼容；异常文案改为结果未确认、先核实战况，避免泛化“没生效，再说一次”。
+表达模型自由组织完整句子，不是选择固定候选或按旧播报数字集合改写。数值、归属、先手、胜负和明确阶段矛盾仍被检查；自然邀请不强制“听你指挥”等固定关键词。validationReason 为固定拒绝码（如 number、event_start、stage），不保存候选、用户全文或凭据。有限检查不能证明任意自然语言都正确。
 
-用户允许整句人设表达，模型可自由生成完整话术，不限服务端renderings；该字段保留兼容参考，表达请求不发送它作为菜单。reply-check.ts进行有限启发式检查：数值及可识别的“我／对手”归属、明显胜负、单次闪避／格挡、待应对与下一步矛盾；同义词和句序变化可以通过，不使用完整句式白名单。数字归属或语义不易判定时可能保守回原文；检查也可能漏掉未覆盖的自然语言矛盾，不保证彻底验证所有语义，仍需人审与真实场景测试。
+即时话术播放完成后才调用独立 /api/wait；每条玩家指令最多一次。播放取消／失败／超时不触发等待，新输入、隐藏、手动停止或换局会取消旧等待，迟到旧局回复不播放。SSE 只画界面。浏览器 ASR final 才提交动作，用户持续聆听意图与真实收音状态分离，终局表情优先于聆听。
 
-事实未知、未覆盖回复类型、模型异常或检查失败时采用已有工具原文，永不重试game_say。rewriteStatus区分rewritten、original、fallback-invalid、fallback-error；受控expressionError只含HTTP状态或通用不可用提示，不含认证头与响应正文。沙箱转发日志记录随机requestId、rewriteStatus和受控expressionError，不再记录原话或回复片段；可据此区别跳过表达、校验回退与模型请求失败。
-
-表达适配器采用非流式OpenAI兼容Chat Completions，不提供游戏工具。服务商地址和模型由本地环境变量指定，实际可用性以获授权目的地的本轮验证为准。提示词启动读取一次，密钥仅通过用户本地受忽略.env和Node --env-file加载，不能source、入库、返浏览器或记录。游戏服务不继承沙箱表达密钥。
-
-模型参数未配时是原话直连，不声称已有人设模型；不完整配置报错，完整配置创建表达层。当前运行进程不会热加载服务端改动，重启前须确认进程归属和无待保护的活动对局。实际模型服务可用性、平台结构化返回消费、真实ASR／TTS与手机体验须按本轮实测报告判断，不能用离线假模型通过代替。
-
+提示词从 config/linx-agent-prompt.md 启动读取，修改需安全重载沙箱。模型服务地址和实际可用性以本地配置及本轮授权实测为准；密钥不进模板、页面或日志。MCP 游戏服务与沙箱表达配置独立，专用 Provider Key 不跨域回退。
 
 ### 页面对话记录
 
@@ -298,6 +293,17 @@ data: {"type":"state","device":"web-p1","agent":"linx-sandbox","revision":3,"upd
 
 ## v2 联调边界
 
-v2 尚未交付，不能用当前文本回包证明 v2 通过。实施后分别验证：原话只执行一次、JSON 编解码与未知版本、`silent` 零话术／零播放、表达成功与 `say` 兜底、`failed/unknown` 恢复、等待取消／超时／换局、等待与查询不重复消费战果。`/state` 和 `/events` 仍是视觉快照，不另起原文播报。
+本分支重建后必须重新验证：原话只执行一次、JSON 编解码与未知版本、`silent` 零话术／零播放、表达成功与 `say` 兜底、`failed/unknown` 恢复、等待取消／超时／换局、等待与查询不重复消费战果。`/state` 和 `/events` 仍是视觉快照，不另起原文播报。
 
 页面只把最终伙伴话术加入伙伴日志并播放，玩家输入与系统错误分开；部分识别不调用游戏，TTS 失败只处理播放，不重做 MCP。音频开始、结束和取消必须来自实际播放器事件，不能以合成完成替代播完。脚本记录应区分协议事实与最终话术，历史记录保留版本，不能改写旧录制冒充新协议验证。
+
+## 独立真实 v2 本地测试
+
+在持久重建目录使用已有依赖，分别启动以下两个前台进程。命令直接加载原项目已有 .env，不复制密钥；只覆盖非秘密端口／身份，不改原 8000/8100 或独立语音服务。
+
+```bash
+HOST=127.0.0.1 PORT=18482 LOG_LEVEL=info node --env-file=/Users/mayiqing/qiniu/hack1024/linx-fighter/.env --import tsx src/index.ts
+SANDBOX_HOST=127.0.0.1 SANDBOX_PORT=18483 SANDBOX_UPSTREAM=http://127.0.0.1:18482 SANDBOX_AGENT_ID=linx-v2-real LOG_LEVEL=info node --env-file=/Users/mayiqing/qiniu/hack1024/linx-fighter/.env --import tsx sandbox/server.ts
+```
+
+入口为 http://127.0.0.1:18483/?player=1 和 ?player=2。开房／加入通过文字或语音原话完成；麦克风依浏览器权限与能力，文字输入无需麦克风。页面 relay 只证明表达适配器已装配，真实调用、校验回退与实际播放须分别检查。最终音频仍为浏览器能力，独立云语音未在本次重建自动整合。停止仅针对本人确认的进程，不结束其他服务。
