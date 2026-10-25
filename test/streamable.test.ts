@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
+import type { GameReply } from '../src/game/protocol.js';
 import { loadConfig } from '../src/config.js';
 import { GameService } from '../src/game/service.js';
 import { createApp } from '../src/http/app.js';
@@ -76,7 +77,7 @@ async function notify(method: string, params?: unknown) {
   return post({ jsonrpc: '2.0', method, params });
 }
 
-async function callTool(name: string, args: Record<string, unknown> = {}): Promise<string> {
+async function callTool(name: string, args: Record<string, unknown> = {}): Promise<GameReply> {
   const result = await rpc('tools/call', { name, arguments: args });
   assert.equal(result.status, 200, `tools/call ${name} 应返回 200，实际 ${result.status}：${result.text}`);
   const payload = JSON.parse(result.text) as {
@@ -84,7 +85,7 @@ async function callTool(name: string, args: Record<string, unknown> = {}): Promi
   };
   const text = payload.result?.content?.[0]?.text ?? '';
   assert.notEqual(payload.result?.isError, true, `工具 ${name} 不应报错：${text}`);
-  return text;
+  return JSON.parse(text) as GameReply;
 }
 
 describe('Streamable HTTP 通道', () => {
@@ -100,23 +101,25 @@ describe('Streamable HTTP 通道', () => {
     assert.equal(payload.result?.serverInfo?.name, 'linx-fighter');
   });
 
-  it('tools/list 能列出五个工具', async () => {
+  it('tools/list 能列出两个 v2 工具', async () => {
     const result = await rpc('tools/list');
     const payload = JSON.parse(result.text) as { result?: { tools?: Array<{ name: string }> } };
     const names = (payload.result?.tools ?? []).map((tool) => tool.name).sort();
-    assert.deepEqual(names, ['game_action', 'game_help', 'game_say', 'game_start', 'game_status']);
+    assert.deepEqual(names, ['game_say', 'wait_event']);
   });
 
   it('工具调用在多次 POST 之间共享对局状态', async () => {
-    const started = await callTool('game_start', { opponent: '练功木人' });
-    assert.match(started, /练功木人/);
-
-    const acted = await callTool('game_action', { action: '普攻' });
-    assert.match(acted, /我普攻，对手格挡，掉1点生命值/);
-    assert.match(acted, /对手普攻还没结算，我该格挡、闪避，还是承受/);
-
-    const status = await callTool('game_status');
-    assert.match(status, /第1轮/);
+    const started = await callTool('game_say', { text: '开始' });
+    assert.equal(started.v, 2);
+    assert.equal(started.phase, 'battle');
+    assert.ok(started.events?.some(event => event.t === 'start'));
+    const acted = await callTool('game_say', { text: '普攻' });
+    assert.ok(acted.events?.some(event => event.t === 'hit' && event.by === 'you'));
+    assert.equal(acted.pending?.by, 'foe');
+    assert.equal(acted.need, 'respond');
+    const status = await callTool('game_say', { text: '战况如何' });
+    assert.equal(status.round, 1);
+    assert.deepEqual(status.you, acted.you);
   });
 
   it('会话结束的 DELETE 请求被礼貌接受', async () => {

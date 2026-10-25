@@ -20,7 +20,7 @@ function print(label: string, text: string): void {
   console.log(`\n=== ${label} ===\n${text}`);
 }
 
-print('开局', (await service.start(key)).text);
+print('开局事实', JSON.stringify((await service.say(key, '开始')).reply));
 
 for (const command of ['攻击', '闪避', '蓄力', 'attack', '随便说一句']) {
   print(`玩家：${command}`, (await service.say(key, command)).text);
@@ -30,7 +30,7 @@ for (const command of ['攻击', '闪避', '蓄力', 'attack', '随便说一句'
 const host = 'demo-host#local';
 const guest = 'demo-guest#local';
 print('房主开房', (await service.start(host, { mode: 'pvp' })).text);
-const roomCode = service.status(host).text.match(/房间(\d{4})/)?.[1] ?? '';
+const roomCode = service.status(host).reply?.room ?? '';
 print('对手加入', (await service.start(guest, { room: roomCode })).text);
 print('房主出招', (await service.say(host, '强攻')).text);
 print('对手应对', (await service.say(guest, '格挡')).text);
