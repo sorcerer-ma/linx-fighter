@@ -167,6 +167,7 @@ export class GameService {
   private readonly tables: TableDeps;
   private readonly factQueue = new Map<string, { battleId: string; events: ProtocolEvent[]; at: number }>();
   private readonly waiters = new Map<string, Set<() => void>>();
+  private readonly activeWaits = new Map<string, { cancel: () => void }>();
 
   constructor(deps: GameServiceDeps) {
     this.store = deps.store;
@@ -277,6 +278,9 @@ export class GameService {
     if (screened.kind === 'silent') return { text: '', battle: this.viewFor(sessionKey), protocol: { silent: true, consume: false } };
     if (screened.kind === 'say') return { text: screened.text, battle: this.viewFor(sessionKey), protocol: { text: true, consume: false } };
     command = screened.command;
+    // Only a validated current input may supersede this identity's old read.
+    // Router completions and broadcast echoes must not cancel a newer wait.
+    if (!routed && command.kind !== 'echo' && this.readerAllowed(sessionKey, options.speaker)) this.cancelActiveWait(sessionKey);
     // 座位口令只是归属标签：摘掉之后的原话才是要理解的那句（「红方，开大」按「开大」认）
     raw = screened.text;
 
@@ -1065,12 +1069,17 @@ export class GameService {
     };
   }
 
+  private cancelActiveWait(sessionKey: string): void {
+    this.activeWaits.get(sessionKey)?.cancel();
+  }
+
   /** A bounded read: it never advances the game or retries an action. */
   async waitEvent(
     sessionKey: string,
     options: { signal?: AbortSignal; timeoutMs?: number; speaker?: string } = {},
   ): Promise<ServiceResult> {
-    if (!this.readerAllowed(sessionKey, options.speaker)) return this.silentResult(sessionKey);
+    if (!this.readerAllowed(sessionKey, options.speaker) || options.signal?.aborted) return this.silentResult(sessionKey);
+    this.cancelActiveWait(sessionKey);
     const initial = tableFor(this.tables, sessionKey);
     const originalId = initial.battle()?.id ?? null;
     // RoomStore updates its room object in place, so capture this value rather than its closure.
@@ -1088,14 +1097,6 @@ export class GameService {
         && !(queued?.battleId===view.id && queued.events.length>0)) return this.silentResult(sessionKey);
       return this.finish(sessionKey, this.statusInternal(sessionKey, { catchUp: true }));
     };
-    if (options.signal?.aborted) {
-      return {
-        text: '', battle: initial.view(sessionKey),
-        reply: protocolReply(initial.view(sessionKey), {
-          room: initial.room, waiting: initialWaiting, silent: true,
-        }),
-      };
-    }
     if (!waiting || this.factQueue.get(sessionKey)?.battleId === originalId) return result();
     return new Promise<ServiceResult>((resolve) => {
       let settled = false;
@@ -1110,7 +1111,9 @@ export class GameService {
         if (!callbacks.size) this.waiters.delete(sessionKey);
         const current = tableFor(this.tables, sessionKey);
         const view = current.view(sessionKey);
-        if (cancelled || current.key !== initial.key || (view?.id ?? null) !== originalId) {
+        const currentOwner = this.activeWaits.get(sessionKey) === owner;
+        if (currentOwner) this.activeWaits.delete(sessionKey);
+        if (cancelled || !currentOwner || options.signal?.aborted || current.key !== initial.key || (view?.id ?? null) !== originalId) {
           resolve({
             text: '', battle: view,
             reply: protocolReply(view, {
@@ -1138,6 +1141,8 @@ export class GameService {
       // 上限与 WAIT_EVENT_TIMEOUT_MS 共用一个常量：平台先掐断时以平台为准，这里只兜底
       const timeoutMs = Math.max(0, Math.min(options.timeoutMs ?? WAIT_EVENT_TIMEOUT_MS_MAX, WAIT_EVENT_TIMEOUT_MS_MAX));
       const timer = setTimeout(() => done(false, true), timeoutMs);
+      const owner = { cancel: () => done(true) };
+      this.activeWaits.set(sessionKey, owner);
       callbacks.add(check);
       options.signal?.addEventListener('abort', abort, { once: true });
       check();

@@ -57,14 +57,15 @@ describe('v2 bounded event waiting', () => {
     assert.equal(results.flatMap(result => result.reply?.events ?? []).filter(event => event.t === 'start').length, 1);
   });
 
-  it('returns new state without consuming new facts when old battle changes', async () => {
+  it('new input cancels the old wait before changing battle, without stealing new facts', async () => {
     const service = setup();
     await service.say('host', '开房');
     const waiting = service.waitEvent('host', { timeoutMs: 100 });
     const next = await service.say('host', '开始');
     const old = await waiting;
     assert.deepEqual(old.reply, {v:2,ok:true,silent:true});
-    assert.equal(old.battle?.id, next.battle?.id);
+    assert.notEqual(old.battle?.id, next.battle?.id);
+    assert.equal(service.snapshot('host')?.state?.battleId, next.battle?.id);
   });
 
   it('does not consume pending facts for invalid input', async () => {

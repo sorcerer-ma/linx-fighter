@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { it } from 'node:test';
 import vm from 'node:vm';
 
+const { wantsWait, runWaitLoop } = await import(new URL('../sandbox/public/wait-loop.js', import.meta.url).href);
 const script = readFileSync(new URL('../sandbox/public/app.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise<void>(resolve => setImmediate(resolve)); };
 const outcome = (reply: string, need = 'move') => ({ ok: true, isError: false, reply, silent: false, protocol: { v: 2, ok: true, need, phase: 'battle', events: [] } });
@@ -49,7 +50,7 @@ function harness(audio = true, cloud = false, configOverrides: Record<string, un
     return promise;
   };
   vm.runInContext(script, vm.createContext({ window, document, fetch, EventSource, AbortController, URLSearchParams, Uint8Array,
-    BackendRecognition: class BackendRecognition {},
+    BackendRecognition: class BackendRecognition {}, wantsWait, runWaitLoop,
     backendPlayback(item: any, signal: AbortSignal, onEmotion: any) {
       return new Promise((resolve, reject) => {
         cloudItems.push({ item, signal, finish() { onEmotion({requested:item.emotion,applied:item.emotion,control:'instruction',profileId:item.profileId,speaker:'speaker-' + item.profileId}); resolve(undefined); }, fail() { reject(new Error('synthesis_failed')); } });
@@ -77,7 +78,7 @@ function harness(audio = true, cloud = false, configOverrides: Record<string, un
   };
 }
 
-it('播完即时话术后只等待一次；等待期间恢复持续聆听，等待结果不递归', async () => {
+it('播完事实后按need串行续等，轮到自己时停止', async () => {
   const h = harness(); await h.ready(); h.input(' 开房间 ');
   assert.equal(JSON.parse(h.calls[0].init.body).text, ' 开房间 ');
   h.calls[0].respond(outcome('房间4821，我准备好了！', 'wait_guest')); await flush();
@@ -85,7 +86,9 @@ it('播完即时话术后只等待一次；等待期间恢复持续聆听，等�
   h.utterances[0].onend(); await flush();
   assert.equal(h.calls[1].url, '/api/wait'); assert.equal(h.listener.paused, false);
   h.calls[1].respond(outcome('还在等对手。', 'wait_guest')); await flush();
-  h.utterances[1].onend(); await flush(); assert.equal(h.calls.length, 2);
+  h.utterances[1].onend(); await flush(); assert.equal(h.calls.length, 3);
+  assert.equal(h.calls[2].url, '/api/wait');
+  h.calls[2].respond(outcome('该我出招了！', 'move')); await flush();h.utterances[2].onend();await flush();assert.equal(h.calls.length,3);
 });
 it('静默不显示伙伴气泡、不合成、不挂起；SSE仅更新视觉', async () => {
   const h = harness(); await h.ready(); h.input('原话');
@@ -354,13 +357,14 @@ it('通知播放失败不继续剩余分段或排队通知；非法kind、局号
   assert.equal(h.cloudItems.length, 1); assert.equal(h.calls.length, 1);
 });
 
-it('wait模型回复的云音频播完后恢复麦克风，不被通知通道再次等待', async () => {
+it('wait云音频播完后恢复麦克风并串行续等，不用通知通道另等', async () => {
   const h = harness(true, true); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
   h.input('攻击'); h.calls[0].respond({ ...notified('等他应对。', 'wait_foe') }); await flush(); h.cloudItems[0].finish(); await flush();
   assert.equal(h.calls[1].url, '/api/wait');
-  h.calls[1].respond(notified('轮到你指挥我啦。', 'wait_foe')); await flush();
+  h.calls[1].respond(notified('还在等对手下一手。', 'wait_foe')); await flush();
   assert.equal(h.listener.paused, true); h.cloudItems[1].finish(); await flush();
-  assert.equal(h.listener.paused, false); assert.equal(h.calls.length, 2);
+  assert.equal(h.listener.paused, false); assert.equal(h.calls.length, 3);
+  h.calls[2].respond(notified('我该怎么应对？', 'respond'));await flush();h.cloudItems[2].finish();await flush();assert.equal(h.calls.length,3);
 });
 it('通知播放中切profile取消余段和排队信号，不播放旧profile也不调用wait', async () => {
   const h = harness(true, true); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
@@ -408,4 +412,15 @@ it('pending say切换profile后丢弃旧回复，清除busy后恢复用户持续
   assert.equal(h.messages.some(item => item.text === '灿灿的旧回复'), false); assert.equal(h.utterances.length, 0);
   h.input('新的战况'); assert.equal(h.calls.length, 2); assert.equal(JSON.parse(h.calls[1].init.body).profileId, 'qingcang');
   assert.equal(h.listener.paused, true);
+});
+
+it('continuous wait empty timeouts create no bubbles or TTS, real events still play before next wait',async()=>{
+  const h=harness();await h.ready();h.input('开房');h.calls[0].respond(outcome('等伙伴来！','wait_guest'));await flush();h.utterances[0].onend();await flush();
+  const quiet={...outcome('','wait_guest'),silent:true,rewriteStatus:'wait-timeout',protocol:{v:2,ok:true,phase:'room',need:'wait_guest',events:[{t:'timeout',what:'guest'}]}};
+  h.calls[1].respond(quiet);await flush();h.calls[2].respond(quiet);await flush();
+  assert.equal(h.calls.length,4);assert.equal(h.utterances.length,1);assert.equal(h.messages.filter(m=>m.role==='partner').length,1);
+  h.calls[3].respond(outcome('对手来了，我先等他出招！','wait_foe'));await flush();assert.equal(h.calls.length,4);
+  h.utterances[1].onend();await flush();assert.equal(h.calls.length,5);
+  h.stop();assert.equal(h.calls[4].init.signal.aborted,true);
+  h.calls[4].respond(outcome('不应播放的迟到话'));await flush();assert.equal(h.utterances.length,2);
 });

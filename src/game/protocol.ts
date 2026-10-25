@@ -127,3 +127,12 @@ export function protocolReply(battle: Battle | null, options: ReplyOptions = {})
   }
   return reply;
 }
+
+/** Only a successful empty long-poll timeout may continue without speech.
+ * A timeout mixed with a real event is never discarded. */
+export function isEmptyWaitTimeout(reply: GameReply): boolean {
+  return reply.v === 2 && reply.ok && !reply.silent && !reply.text
+    && (reply.need === 'wait_guest' || reply.need === 'wait_foe')
+    && !!reply.events?.length && reply.events.every(event => event.t === 'timeout'
+      && event.what === (reply.need === 'wait_guest' ? 'guest' : 'foe'));
+}
