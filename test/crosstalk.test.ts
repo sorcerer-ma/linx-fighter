@@ -554,13 +554,14 @@ describe('他机指令降噪', () => {
 });
 
 describe('串音落地到对局', () => {
-  it('回灌原话不推进对局、不消耗资源，只答一个字', async () => {
+  it('回灌原话不推进对局、不消耗资源，v2完全静默', async () => {
     const { service } = setup();
     const started = await service.start(SOLO);
     assert.ok(started.battle);
 
     const echoed = await service.say(SOLO, '对手一记普攻');
-    assert.equal(echoed.text, '嗯。');
+    assert.equal(echoed.text, '');
+    assert.equal(echoed.reply?.silent, true);
     assert.deepEqual(echoed.battle, started.battle);
     assert.equal(echoed.battle?.history.length, 0);
 
@@ -578,7 +579,8 @@ describe('串音落地到对局', () => {
 
     // 这就是漏判时最贵的一句：读成出招会扣能量、耗掉本局大招、推进轮次
     const echoed = await service.say(SOLO, '我出大招，接招！');
-    assert.equal(echoed.text, '嗯。');
+    assert.equal(echoed.text, '');
+    assert.equal(echoed.reply?.silent, true);
     assert.deepEqual(echoed.battle, before);
     assert.equal(echoed.battle?.player.ap, before.player.ap);
     assert.equal(echoed.battle?.player.ultLeft, before.player.ultLeft);
@@ -588,7 +590,8 @@ describe('串音落地到对局', () => {
   it('房间播报回灌不会替玩家发起挑战，也不会自己加入自己的房间', async () => {
     const { service, rooms } = setup();
     const echoed = await service.say(HOST, narrateRoomCreated('1234'));
-    assert.equal(echoed.text, '嗯。');
+    assert.equal(echoed.text, '');
+    assert.equal(echoed.reply?.silent, true);
     assert.equal(echoed.battle, null);
     assert.equal(rooms.size, 0);
   });
@@ -602,7 +605,8 @@ describe('串音落地到对局', () => {
     const hostBefore = service.status(HOST).battle;
     assert.ok(hostBefore);
     const echoed = await service.say(HOST, '对手这一手还没结算，我只能格挡、闪避或承受');
-    assert.equal(echoed.text, '嗯。');
+    assert.equal(echoed.text, '');
+    assert.equal(echoed.reply?.silent, true);
     assert.deepEqual(echoed.battle, hostBefore);
   });
 

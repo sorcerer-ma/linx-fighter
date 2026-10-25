@@ -1,5 +1,8 @@
-import type { SandboxAgent } from './agent.js';
-import { randomUUID } from 'node:crypto';
+import { SandboxAgent, type ExpressionValidationReason } from './agent.js';
+import { resolveProfileId, type SpeechProfileId } from './profiles.js';
+import { fallbackSpeech, type SpeechPlan } from './speech.js';
+import type { GameReply } from '../../src/game/protocol.js';
+import { randomUUID, createHash } from 'node:crypto';
 import type { BattleState } from '../../src/game/state.js';
 import type { Logger } from '../../src/log.js';
 import { LinxMcpClient, UpstreamError, type McpDisplay, type McpTrace, type ToolInfo } from './mcp.js';
@@ -32,7 +35,13 @@ export interface BattleSnapshot {
 }
 
 export interface SayResult {
+  profileId: SpeechProfileId;
   ok: boolean;
+  protocol?: GameReply;
+  sourceBattleId?: string | null;
+  silent: boolean;
+  validationReason?: ExpressionValidationReason;
+  speech: SpeechPlan;
   reply: string;
   isError: boolean;
   tool: string;
@@ -47,59 +56,73 @@ export interface SayResult {
   error?: string;
 }
 
+export const NOTIFICATION_KINDS = ['opponent-move','opponent-joined','ult-ready','idle-turn','idle-respond','wait-opponent','wait-guest'] as const;
+export interface NotificationSignal {kind:typeof NOTIFICATION_KINDS[number];battleId:string;pushId:string}
+
 export class SandboxClient {
   constructor(private readonly options: SandboxClientOptions) {}
 
   get agentMode(): 'relay' | 'compatibility' { return this.options.agent ? 'relay' : 'compatibility'; }
 
-  /** ASR text is forwarded unchanged; expression never executes another turn. */
-  async say(deviceId: string, text: string): Promise<SayResult> {
+  /** No protocol interpretation or tool selection occurs before game_say. */
+  async say(deviceId: string, text: string, options: { signal?: AbortSignal; profileId?: string } = {}): Promise<SayResult> {
+    return this.invoke(deviceId, 'game_say', text, options);
+  }
+  async wait(deviceId: string, options: { signal?: AbortSignal; profileId?: string } = {}): Promise<SayResult> {
+    return this.invoke(deviceId, 'wait_event', '', options);
+  }
+  async notify(deviceId:string, notice:NotificationSignal, options:{signal?:AbortSignal;profileId?:string}={}):Promise<SayResult> {
+    return this.invoke(deviceId,'notification','',{...options,notice});
+  }
+  private async invoke(deviceId: string, tool: 'game_say' | 'wait_event' | 'notification', text: string, options: { signal?: AbortSignal; profileId?: string; notice?:NotificationSignal }): Promise<SayResult> {
+    const profileId = resolveProfileId(options.profileId);
+    const request = {signal:options.signal,profileId};
     const sessionId = `s-${randomUUID().slice(0, 8)}`;
     const mcp = new LinxMcpClient({
-      upstream: this.options.upstream,
-      deviceId,
-      agentId: this.options.agentId,
-      sessionId,
-      timeoutMs: this.options.timeoutMs,
-      logger: this.options.logger,
-      display: this.options.display,
+      upstream: this.options.upstream, deviceId, agentId: this.options.agentId,
+      sessionId, timeoutMs: this.options.timeoutMs, logger: this.options.logger, display: this.options.display,
     });
-
-    const base = { tool: this.options.agent ? 'agent' : 'game_say', deviceId, agentId: this.options.agentId, sessionId };
+    const base = { tool, profileId, deviceId, agentId: this.options.agentId, sessionId };
+    let notificationStage:string | undefined;
     try {
-      await mcp.initialize();
-      const outcome = this.options.agent
-        ? await this.options.agent.run(text, mcp)
-        : await mcp.callTool('game_say',{text}).then(result=>({tool:'game_say',...result,sourceText:result.text,rewriteStatus:'original',expressionError:undefined}));
-      const { text: reply, isError } = outcome;
-      // 局面只是展示用：查不到不影响这一句播报
+      request.signal?.throwIfAborted();
+      if (tool !== 'notification') await mcp.initialize({signal:request.signal});
+      const agent = this.options.agent ?? new SandboxAgent('');
+      let outcome;
+      if(tool === 'notification') {
+        const response=await fetch(new URL('/notification',this.options.upstream),{
+          method:'POST',headers:{'Content-Type':'application/json','X-Linx-Device-Id':deviceId,'X-Linx-Agent-Id':this.options.agentId},
+          body:JSON.stringify(options.notice),signal:options.signal ? AbortSignal.any([options.signal,AbortSignal.timeout(this.options.timeoutMs)]) : AbortSignal.timeout(this.options.timeoutMs),
+        });
+        if(!response.ok)throw new Error('NotificationUnavailable');
+        const value=await response.json() as {reply:GameReply;battleId?:string|null;stage?:string};
+        if(value.reply?.v!==2 || (!value.reply.silent && typeof value.stage!=='string'))throw new Error('NotificationProtocol');
+        notificationStage=value.stage;
+        outcome=await agent.notify({...value,isError:false},{...request,notificationKind:options.notice!.kind});
+      } else outcome = tool === 'wait_event' ? await agent.wait(mcp, request) : await agent.run(text, mcp, request);
       const state = await this.state(deviceId).catch(() => null);
+      const cancelled = request.signal?.aborted === true;
+      const stale = (state !== null && outcome.battleId !== undefined && outcome.battleId !== (state.battle?.battleId ?? null))
+        || (tool==='notification' && notificationStage!==undefined && (state===null || notificationStage!==createHash('sha256').update(JSON.stringify(state.battle)).digest('hex')));
       const trace = mcp.takeTrace();
+      const validationReason = 'validationReason' in outcome ? outcome.validationReason : undefined;
+      const rewriteStatus = cancelled ? 'cancelled' : stale ? 'stale' : outcome.rewriteStatus;
+      const speech = cancelled || stale ? fallbackSpeech('') : outcome.speech;
       this.options.logger.info('沙箱转发', {
-        deviceId,
-        requestId: sessionId,
-        rewriteStatus: outcome.rewriteStatus,
+        deviceId, profileId, requestId: sessionId, rewriteStatus, validationReason, speechSource:speech.source, speechSegments:speech.segments.length,
         expressionError: 'expressionError' in outcome ? outcome.expressionError : undefined,
-        isError,
-        round: state?.battle?.round ?? 0,
-        room: state?.room,
-        tool: outcome.tool,
-        ms: trace.ms,
+        isError: outcome.isError, round: state?.battle?.round ?? 0, room: state?.room, tool, ms: trace.ms,
       });
-      return { ok: true, reply, isError, ...base, tool:outcome.tool, sourceReply:outcome.sourceText, rewriteStatus:outcome.rewriteStatus, expressionError:'expressionError' in outcome && typeof outcome.expressionError === 'string' ? outcome.expressionError : undefined, state, trace };
-    } catch (error) {
-      const message = error instanceof UpstreamError ? error.message : error instanceof Error ? error.message : String(error);
-      const trace = mcp.takeTrace();
-      this.options.logger.warn('沙箱Agent或工具调用失败', { deviceId, error: message, ms: trace.ms });
-      return {
-        ok: false,
-        reply: this.options.agent ? 'Agent或工具调用失败，结果未确认，请先核实战况。' : `沙箱连不上游戏服务（${this.options.upstream}），先确认那边在跑。`,
-        isError: true,
-        ...base,
-        state: null,
-        trace,
-        error: this.options.agent ? 'agent_or_tool_failed' : 'upstream_unreachable',
-      };
+      return { ok: true, ...base, reply: stale || cancelled ? '' : outcome.text, protocol: outcome.reply,
+        sourceBattleId:outcome.battleId, silent:outcome.silent || stale || cancelled, validationReason, speech,
+        isError: outcome.isError, sourceReply:outcome.sourceText, rewriteStatus,
+        expressionError:'expressionError' in outcome && typeof outcome.expressionError === 'string' ? outcome.expressionError : undefined, state, trace };
+    } catch {
+      const cancelled = request.signal?.aborted === true;
+      this.options.logger.warn('沙箱工具结果未确认', { deviceId, requestId:sessionId, tool, cancelled });
+      const reply = cancelled ? '' : '这一手结果未确认，我先核实局面。';
+      return { ok:false, ...base, silent:cancelled, reply, speech:fallbackSpeech(reply),
+        isError:true, state:null, trace:mcp.takeTrace(), error:cancelled ? 'cancelled' : 'upstream_unreachable' };
     }
   }
 

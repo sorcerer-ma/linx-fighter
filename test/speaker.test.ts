@@ -12,7 +12,7 @@ import { RoomStore } from '../src/store/rooms.js';
 
 const HOST = 'device-a#agent-1';
 const GUEST = 'device-b#agent-2';
-const SILENT = '\u200b';
+const SILENT = '';
 
 function setup(speakers: string[]) {
   let now = 1_000_000;
@@ -29,7 +29,7 @@ function setup(speakers: string[]) {
   return { service, store, rooms };
 }
 
-/** 静默就是什么也不播：回包只留一个读不出来的零宽字符 */
+/** 静默就是什么也不播：v2 回包由 silent 事实明确表示，不生成零宽台词 */
 function assertSilent(text: string, hint: string): void {
   assert.equal(text, SILENT, `${hint}：应静默（实际「${text}」）`);
 }

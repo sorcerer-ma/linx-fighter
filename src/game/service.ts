@@ -1,3 +1,7 @@
+import { protocolReply, protocolEvents, protocolSide, type GameReply, type ProtocolEvent, type ProtocolReason } from './protocol.js';
+import { actionLabel } from './actions.js';
+import { isUltimateReady } from './rules.js';
+import type { PushKind } from './push.js';
 import { presentation, type Presentation } from './presentation.js';
 import type { AttributionMode } from '../config.js';
 import type { Logger } from '../log.js';
@@ -7,7 +11,7 @@ import type { Room, RoomStore } from '../store/rooms.js';
 import { matchSpokenAction, type SpokenMatch, type SpokenStage } from './asr.js';
 import type { ChatAnswerer } from './chat.js';
 import { readCommand, type Command, type RefuseReason, type TurnIntent } from './command.js';
-import { echoAck, matchEchoRule } from './crosstalk.js';
+import { matchEchoRule } from './crosstalk.js';
 import { advanceBattle, createBattle, resolveTurn } from './engine.js';
 import {
   narrateActionBlocked,
@@ -19,7 +23,6 @@ import {
   narrateHelp,
   narrateNoBattle,
   narrateOpening,
-  narrateOpponentJoined,
   narrateOutsideUnavailable,
   narrateRejection,
   narrateRoomCreated,
@@ -32,10 +35,6 @@ import {
   narrateTurn,
   narrateUnknownAction,
   narrateWaitingRoom,
-  narrateWaitRespond,
-  narrateWaitTimeout,
-  narrateWaitTurn,
-  narrateWake,
 } from './narrator.js';
 import { mirrorEvents, normalizeRoomCode, pvpBattleKey, viewAs } from './pvp.js';
 import type { CommandRouter, RouterStage } from './router.js';
@@ -43,10 +42,17 @@ import { screenSeat } from './seat.js';
 import { BattleTransactions, type BattleTx } from './serialize.js';
 import { battleState, type BattleState } from './state.js';
 import { dropRoom, tableFor, type Table, type TableDeps } from './table.js';
-import { otherSide, type Battle, type BattleAI, type BattleEvent, type Side } from './types.js';
+import { otherSide, type Battle, type BattleAI, type BattleEvent, type Side, type ActionId } from './types.js';
 
 /** 一次工具调用的结果：可直接朗读的文本 + 当前玩家视角的最新对局状态 */
 export interface ServiceResult {
+  reply?: GameReply;
+  /** Internal narration metadata; facts are never reconstructed from text. */
+  protocol?: {
+    reason?: ProtocolReason; action?: ActionId; events?: ProtocolEvent[];
+    text?: boolean; silent?: boolean; consume?: boolean;
+    currentSay?: string; terminalNarration?: boolean;
+  };
   presentation?: Presentation;
   text: string;
   battle: Battle | null;
@@ -67,7 +73,6 @@ export interface StartOptions {
   room?: string;
   /** 玩家原话：平台模型不确定结构化参数时塞进来，服务端兜底识别「发起挑战 / 接受挑战」 */
   text?: string;
-  /** 这一次是谁在说（平台声纹给的名字） */
   speaker?: string;
 }
 
@@ -80,22 +85,6 @@ export interface StartOptions {
 export interface SayOptions {
   /** 默认 true，保持硬件端的原有体验；有屏客户端传 false */
   catchUp?: boolean;
-  /** 这一次是谁在说，由平台声纹给出；用来判断是不是已登记的人 */
-  speaker?: string;
-}
-
-/**
- * 挂起等对手的参数。
- *
- * 平台模型调用 wait_event 后这次请求先不返回，就在这里停住：对手应招、
- * 进房间都会把它叫醒（见 GameService.wait 与 EchoStore.wait）。
- */
-export interface WaitOptions {
-  /** 最多挂多久（毫秒）：平台自己可能收掉连接，到点按「对手还没动静」收尾 */
-  timeoutMs: number;
-  /** 平台断开这次请求时提前收摊，别把等待位一直占着 */
-  signal?: AbortSignal;
-  /** 这一次是谁在等：未登记的声音不挂、也不回应 */
   speaker?: string;
 }
 
@@ -113,8 +102,7 @@ interface RoutedHand {
   battleId: string | null;
 }
 
-/** 不回应时返回的文本：零宽字符，平台念出来是空的，也不会把设备叫醒 */
-const SILENT_TEXT = '\u200b';
+interface SeatBindings { battleId: string; player?: string; enemy?: string; }
 
 export interface GameServiceDeps {
   store: BattleStore;
@@ -135,7 +123,6 @@ export interface GameServiceDeps {
   attribution?: AttributionMode;
   /** 端侧同音纠错；不传用 asr.ts 的实现，传 null 关掉这一层 */
   fuzzy?: SpokenMatcher | null;
-  /** 已登记的说话人，用来挡掉环境里其他人的声音；空数组表示不限制 */
   speakers?: string[];
 }
 
@@ -146,18 +133,6 @@ export interface GameServiceDeps {
 export type SpokenMatcher = (text: string, stage?: SpokenStage) => SpokenMatch | null;
 
 const DEFAULT_SPOKEN_MATCHER: SpokenMatcher = (text, stage) => matchSpokenAction(text, stage);
-
-/**
- * 一局里两个座位分别绑着谁的声音。
- *
- * 绑定跟着 battle.id 走：同一台设备换人重开、房间号被复用都会换一局，
- * 换局后旧绑定在下一次访问时作废，不能被新局沿用。
- */
-interface SeatBindings {
-  battleId: string;
-  player?: string;
-  enemy?: string;
-}
 
 /**
  * 游戏服务：MCP 工具只做参数解析，业务编排都在这里。
@@ -181,14 +156,16 @@ export class GameService {
   private readonly echo: EchoStore;
   private readonly attribution: AttributionMode;
   private readonly fuzzy: SpokenMatcher | null;
-  /** 已登记的说话人；未登记的不回应，避免旁人声音误触发；为空表示不限制 */
   private readonly speakers: string[];
-  /** 每个座位绑定的是谁的声音；键是桌子的存储键（单人局玩家键，双人局 pvp:房间号），记着是哪一局的席位 */
   private readonly seatSpeakers = new Map<string, SeatBindings>();
+  private readonly delivered = new Map<string, string>();
+  private readonly notificationIds = new Map<string, {battleId:string;stage:string;ids:Set<string>}>();
   /** 对局事务：排队、读快照、校验、写回都收在这里，业务层不再直接读写存储的对局 */
   private readonly battles: BattleTransactions;
   /** 桌子要用到的存储，构造一张桌子的入口参数 */
   private readonly tables: TableDeps;
+  private readonly factQueue = new Map<string, { battleId: string; events: ProtocolEvent[]; at: number }>();
+  private readonly waiters = new Map<string, Set<() => void>>();
 
   constructor(deps: GameServiceDeps) {
     this.store = deps.store;
@@ -214,46 +191,36 @@ export class GameService {
    * 「发起挑战 / 接受挑战，编号1234」这类说法和服务端自己的识别保持同一套规则。
    */
   async start(sessionKey: string, options: StartOptions = {}): Promise<ServiceResult> {
-    if (!this.speakerListed(options.speaker)) {
-      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
-    }
+    if (!this.speakerListed(options.speaker)) return this.silentResult(sessionKey);
     const phrase = [options.opponent, options.text].filter(Boolean).join(' ');
     const command = options.room
       ? ({ kind: 'join-room', code: options.room } as const)
       : phrase
         ? readCommand(phrase)
         : null;
-    if (command?.kind === 'join-room') {
-      const joined = this.joinRoom(sessionKey, command.code);
-      this.bindSeat(sessionKey, options.speaker);
-      return joined;
-    }
-    if (options.mode === 'pvp' || command?.kind === 'open-room') {
-      const opened = this.openRoom(sessionKey);
-      this.bindSeat(sessionKey, options.speaker);
-      return opened;
-    }
-    return this.startSolo(sessionKey, options.opponent).then((started) => {
-      this.bindSeat(sessionKey, options.speaker);
-      return started;
-    });
+    const result = command?.kind === 'join-room' ? this.joinRoom(sessionKey, command.code)
+      : options.mode === 'pvp' || command?.kind === 'open-room' ? this.openRoom(sessionKey)
+      : await this.startSolo(sessionKey, options.opponent);
+    if (result.battle && !result.protocol?.reason) this.bindSeat(sessionKey, options.speaker);
+    return this.finish(sessionKey, result);
   }
 
   /** 查看当前战况 */
   /** 查看当前战况：等待中的房间先把房间号说一遍 */
   status(sessionKey: string, options: SayOptions = {}): ServiceResult {
-    if (!this.speakerListed(options.speaker)) {
-      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
-    }
+    if (!this.speakerListed(options.speaker)) return this.silentResult(sessionKey);
+    return this.finish(sessionKey, this.statusInternal(sessionKey, options));
+  }
+
+  private statusInternal(sessionKey: string, options: SayOptions = {}): ServiceResult {
     const table = tableFor(this.tables, sessionKey);
     const battle = table.battle();
     if (!battle) {
       // 房间还在但基准对局没了：这间房已经废了
       if (table.room) {
         this.rooms.remove(table.room);
-        // 对局过期，席位跟着那局一起作废
         this.seatSpeakers.delete(pvpBattleKey(table.room));
-        return { text: narrateRoomMissing(table.room), battle: null };
+        return { text: narrateRoomMissing(table.room), battle: null, protocol: { reason: 'room_missing' } };
       }
       return { text: narrateNoBattle(), battle: null, presentation:presentation('status',null) };
     }
@@ -263,13 +230,14 @@ export class GameService {
     const waiting = table.waiting();
     const head = waiting ? `${narrateWaitingRoom(table.room ?? '')}。` : '';
     return { text: `${catchUp}${head}${narrateStatus(view, { waiting })}`, battle: view,
+      protocol: { currentSay: `${head}${narrateStatus(view, { waiting })}`, terminalNarration: view.phase !== 'battle' },
       presentation: presentation('status', view, {waiting,renderings:[`${catchUp}${head}${narrateStatus(view,{waiting,expressive:true})}`]}) };
   }
 
   /** 玩法说明，用于玩家不知道说什么的场景 */
   help(options: SayOptions = {}): ServiceResult {
-    if (!this.speakerListed(options.speaker)) return { text: SILENT_TEXT, battle: null };
-    return { text: narrateHelp(), battle: null };
+    if (!this.speakerListed(options.speaker)) return {text:'',battle:null,reply:{v:2,ok:true,silent:true}};
+    return { text: narrateHelp(), battle: null, reply: protocolReply(null, { text: narrateHelp() }) };
   }
 
   /**
@@ -279,93 +247,9 @@ export class GameService {
    * 之后每个分支都不再回头解析这句话。
    */
   async say(sessionKey: string, text: string, options: SayOptions = {}): Promise<ServiceResult> {
-    return this.execute(sessionKey, readCommand(text), text, options);
-  }
-
-  /**
-   * 等对手这一手：平台模型把请求挂在这里，对手一动就带着结果回话。
-   *
-   * 平台没有反向推送通道，只能在对话轮次里由模型调 wait_event 把请求挂住，
-   * 服务端不主动去连设备。挂着的这段时间里，对手出招、应招、进房间都会叫醒
-   * 这次请求；醒来后按局面决定说什么：
-   * - 本来就没可等的事（轮到自己、单人局对手立刻应招）立即返回，不占着连接；
-   * - 等到攒下的补账就念补账（见 narrateWake），这是最常走的一条；
-   * - 只是局面有动静、还没有播报（对手刚锁定攻击）就提醒该玩家应招；
-   * - 超时或被取消回一句「对手还没动静」，让玩家知道这一手确实没有结果。
-   */
-  async wait(sessionKey: string, options: WaitOptions): Promise<ServiceResult> {
-    if (!this.speakerListed(options.speaker)) {
-      this.logger.info('说话人不在名单里，保持静默', {
-        sessionKey,
-        speaker: (options.speaker ?? '').trim() || null,
-      });
-      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
-    }
-    const table = tableFor(this.tables, sessionKey);
-    const battle = table.view(sessionKey);
-    if (!battle) return { text: narrateNoBattle(), battle: null };
-    if (battle.phase !== 'battle') {
-      // 对局已经结束也先把补账取走：和下面立即返回的分支同一口径，别把旧结算留在队列里。
-      // 这里一律朗读（true）：wait_event 只服务无屏语音链路，有屏端走 game_say，补账由 SayOptions.catchUp 控制。
-      return { text: `${this.drainCatchUp(sessionKey, true)}${narrateEnded(battle)}`, battle };
-    }
-
-    // 房间里还没等到第二位玩家：挂着等对手进房间
-    const waitingForGuest = table.waiting();
-    // 自己刚出招还没应招，或者轮到对手先动：这两种才值得挂
-    const waitingForOpponent = battle.pending ? battle.pending.actor === 'player' : battle.active === 'enemy';
-    if (!waitingForGuest && !waitingForOpponent) {
-      // 对手已经出招等这边应招，或者正轮到这边出招：立刻回，不必挂。
-      // 但立刻回也要先补账：对手上一手可能已经结算完，不取走就要等玩家再开口才听得到。
-      const catchUp = this.drainCatchUp(sessionKey, true);
-      return { text: `${catchUp}${battle.pending ? narrateWaitRespond() : narrateWaitTurn()}`, battle };
-    }
-
-    const reason = waitingForGuest ? 'guest' : 'opponent';
-    const startedAt = this.now();
-    this.logger.info('挂起等待对手', {
-      sessionKey,
-      room: table.room,
-      battleId: battle.id,
-      reason,
-      timeoutMs: options.timeoutMs,
-    });
-
-    const lines = await this.echo.wait(sessionKey, options);
-    const elapsed = this.now() - startedAt;
-    const view = this.viewFor(sessionKey);
-
-    if (lines === null) {
-      // 平台收掉了连接，或者已经等满服务端给的上限：这一手没有结果，别让玩家干等
-      this.logger.info(options.signal?.aborted ? '等待被取消' : '等待超时', {
-        sessionKey,
-        room: table.room,
-        battleId: battle.id,
-        reason,
-        ms: elapsed,
-      });
-      return { text: view ? narrateWaitTimeout(reason) : narrateNoBattle(), battle: view };
-    }
-
-    this.logger.info('等待被唤醒', {
-      sessionKey,
-      room: table.room,
-      reason,
-      ms: elapsed,
-      lines: lines.length,
-    });
-    if (lines.length > 0) {
-      // 叫醒这一手的应招可能已经打完：只念过程不给胜负，玩家就不知道该不该再来一局
-      const ended = view && view.phase !== 'battle' ? narrateEnded(view) : '';
-      return { text: `${narrateWake(lines)}${ended}`, battle: view };
-    }
-
-    // 只是局面有动静、没有攒下播报：照醒来时的最新局面说该做什么，不复述旧账
-    if (!view) return { text: narrateNoBattle(), battle: null };
-    if (view.phase !== 'battle') return { text: narrateEnded(view), battle: view };
-    if (view.pending?.actor === 'enemy') return { text: narrateWaitRespond(), battle: view };
-    if (!view.pending && view.active === 'player') return { text: narrateWaitTurn(), battle: view };
-    return { text: narrateWaitTimeout(reason), battle: view };
+    if (!this.speakerListed(options.speaker)) return this.silentResult(sessionKey);
+    if (!text.trim() || [...text].length > 200) return this.invalidInput(sessionKey, options);
+    return this.finish(sessionKey, await this.execute(sessionKey, readCommand(text), text, options));
   }
 
   /**
@@ -384,44 +268,42 @@ export class GameService {
     options: SayOptions,
     routed?: RoutedHand,
   ): ServiceResult | Promise<ServiceResult> {
-    // 说话人闸门：名单外的人、没轮到自己的人都不回应
-    if (this.speakerGate(sessionKey, command, options.speaker) === 'silent') {
-      return { text: SILENT_TEXT, battle: this.viewFor(sessionKey) };
-    }
-
+    if (this.speakerGate(sessionKey, command, options.speaker) === 'silent') return this.silentResult(sessionKey);
     // 座位归属（ATTRIBUTION_MODE=strict）：不是冲本机说的、或只报了座位号，到这里就收住。
     // 单人局没有房间也没有对方座位，seat 传 null 让它原样放行
     const table = tableFor(this.tables, sessionKey);
     const screened = screenSeat(this.attribution, table.room ? table.seat(sessionKey) : null, raw, command);
-    if (screened.kind === 'silent') return { text: '', battle: this.viewFor(sessionKey) };
-    if (screened.kind === 'say') return { text: screened.text, battle: this.viewFor(sessionKey) };
+    if (screened.kind === 'silent') return { text: '', battle: this.viewFor(sessionKey), protocol: { silent: true, consume: false } };
+    if (screened.kind === 'say') return { text: screened.text, battle: this.viewFor(sessionKey), protocol: { text: true, consume: false } };
     command = screened.command;
     // 座位口令只是归属标签：摘掉之后的原话才是要理解的那句（「红方，开大」按「开大」认）
     raw = screened.text;
 
     switch (command.kind) {
-      // 归属分支：疑似自家播报回灌，只回极短应答，不推进对局（判定规则见 crosstalk.ts）
+      // 归属分支：疑似自家播报回灌，v2 完全静默，不推进对局（判定规则见 crosstalk.ts）
       case 'echo':
         this.logger.info('疑似播报回灌', { sessionKey, chars: raw.length, rule: matchEchoRule(raw) });
-        return { text: echoAck(sessionKey, raw, this.now()), battle: this.viewFor(sessionKey) };
+        return { text: '', battle: this.viewFor(sessionKey), protocol: { silent: true, consume: false } };
       case 'join-room': {
-        const joined = this.joinRoom(sessionKey, command.code);
-        if (joined.battle) this.bindSeat(sessionKey, options.speaker);
-        return joined;
+        const result = this.joinRoom(sessionKey, command.code);
+        if (result.battle && !result.protocol?.reason) this.bindSeat(sessionKey, options.speaker);
+        return result;
       }
       case 'open-room': {
-        const opened = this.openRoom(sessionKey, routed);
-        if (opened.battle) this.bindSeat(sessionKey, options.speaker);
-        return opened;
+        const result = this.openRoom(sessionKey, routed);
+        if (result.battle && !result.protocol?.reason) this.bindSeat(sessionKey, options.speaker);
+        return result;
       }
-      case 'help':
-        return this.help(options);
+      case 'help': {
+        const battle = this.viewFor(sessionKey);
+        return { text: narrateHelp(), battle, reply: protocolReply(battle, { room: table.room, waiting: table.waiting(), text: narrateHelp() }) };
+      }
       case 'status':
-        return this.status(sessionKey, options);
+        return this.statusInternal(sessionKey, options);
       case 'start':
-        return this.startSolo(sessionKey, undefined, routed).then((started) => {
-          if (started.battle) this.bindSeat(sessionKey, options.speaker);
-          return started;
+        return this.startSolo(sessionKey, undefined, routed).then(result => {
+          if (result.battle && !result.protocol?.reason) this.bindSeat(sessionKey, options.speaker);
+          return result;
         });
       case 'refused':
         return this.refuse(sessionKey, command.why, options);
@@ -442,16 +324,16 @@ export class GameService {
    */
   private async askOutside(sessionKey: string, question: string): Promise<ServiceResult> {
     const view = this.viewFor(sessionKey);
-    if (!this.chat) return { text: narrateOutsideUnavailable(), battle: view };
+    if (!this.chat) return { text: narrateOutsideUnavailable(), battle: view, protocol: { text: true, consume: false } };
     try {
       const answer = await this.chat.answer(question);
-      return { text: answer ?? narrateOutsideUnavailable(), battle: view };
+      return { text: answer ?? narrateOutsideUnavailable(), battle: view, protocol: { text: true, consume: false } };
     } catch (error) {
       this.logger.warn('规则外问答失败，回固定话术', {
         sessionKey,
         error: error instanceof Error ? error.message : String(error),
       });
-      return { text: narrateOutsideUnavailable(), battle: view };
+      return { text: narrateOutsideUnavailable(), battle: view, protocol: { text: true, consume: false } };
     }
   }
 
@@ -491,13 +373,13 @@ export class GameService {
       this.logger.debug('排到队时已经换桌', { sessionKey, from: queued.key, to: table.key });
       // 人还在别的房间：那句话说的是旧局面，让他重说；旧房彻底没了才报房间不在
       if (queued.room && !this.rooms.byPlayer(sessionKey)) {
-        return { text: narrateRoomMissing(queued.room), battle: null };
+        return { text: narrateRoomMissing(queued.room), battle: null, protocol: { reason: 'room_missing' } };
       }
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey), protocol: { reason: 'failed' } };
     }
 
     const seat = table.seat(sessionKey);
-    if (!seat) return { text: narrateRoomMissing(table.room ?? ''), battle: null };
+    if (!seat) return { text: narrateRoomMissing(table.room ?? ''), battle: null, protocol: { reason: 'room_missing' } };
 
     let canonical = tx.load();
     // 排到队时已经是另一局（这中间重开、换房或过期）：这一手说的是旧局面，
@@ -510,9 +392,10 @@ export class GameService {
         expected: routed.battleId,
         current: canonical?.id ?? null,
       });
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey), protocol: { reason: 'failed' } };
     }
 
+    if (this.speakerGate(sessionKey, direct ? {kind:'turn',...direct} : {kind:'route',question:false}, options.speaker) === 'silent') return this.silentResult(sessionKey);
     const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
     let prefix = '';
 
@@ -520,28 +403,25 @@ export class GameService {
       // 房间里没有基准对局：这间房已经废了
       if (table.room) {
         this.rooms.remove(table.room);
-        // 对局过期，席位跟着那局一起作废
         this.seatSpeakers.delete(pvpBattleKey(table.room));
         this.logger.warn('房间对局已过期', { sessionKey, room: table.room });
-        return { text: `${catchUp}${narrateRoomMissing(table.room)}`, battle: null };
+        return { text: `${catchUp}${narrateRoomMissing(table.room)}`, battle: null, protocol: { reason: 'room_missing', currentSay: narrateRoomMissing(table.room) } };
       }
       // 单人局：认不出招式就不自动开局，避免随便一句话就开一局
       if (!direct) {
         this.logger.debug('招式无法识别', { sessionKey, raw });
-        return { text: `${catchUp}${narrateUnknownAction(null)}`, battle: null, presentation:presentation('retry',null,{rejection:'unrecognized'}) };
+        return { text: `${catchUp}${narrateUnknownAction(null)}`, battle: null, protocol: { reason: 'unclear', currentSay: narrateUnknownAction(null) }, presentation:presentation('retry',null,{rejection:'unrecognized'}) };
       }
       const spawned = await this.spawnSolo();
       // 等对手先手的这段时间里玩家可能已经进了房间：这一手不另开
       if (this.rooms.byPlayer(sessionKey)) {
-        return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+        return { text: narrateStaleAction(), battle: this.viewFor(sessionKey), protocol: { reason: 'failed' } };
       }
       if (!tx.commit(spawned)) {
-        return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+        return { text: narrateStaleAction(), battle: this.viewFor(sessionKey), protocol: { reason: 'failed' } };
       }
       canonical = spawned;
       prefix = narrateAutoStart(spawned);
-      // 开局这一手就是说话人本人的：立刻把座位绑给他。
-      // 等下一句再认领的话，先开口的另一个人会把座位抢走，开局人反而被静默。
       this.bindSeat(sessionKey, options.speaker);
       this.logger.info('对局自动开始', {
         sessionKey,
@@ -553,18 +433,18 @@ export class GameService {
 
     const view = viewAs(canonical, seat);
     if (view.phase !== 'battle') {
-      return { text: `${catchUp}${prefix}${narrateEnded(view)}`, battle: view, presentation:presentation('status',view) };
+      return { text: `${catchUp}${prefix}${narrateEnded(view)}`, battle: view, protocol: { reason: 'ended', currentSay: `${prefix}${narrateEnded(view)}`, terminalNarration: true }, presentation:presentation('status',view) };
     }
 
     const match = direct;
     if (!match) {
       this.logger.debug('招式无法识别', { sessionKey, room: table.room, raw });
-      return { text: `${catchUp}${prefix}${narrateUnknownAction(view)}`, battle: view, presentation:presentation('retry',view,{waiting:table.waiting(),rejection:'unrecognized'}) };
+      return { text: `${catchUp}${prefix}${narrateUnknownAction(view)}`, battle: view, protocol: { reason: 'unclear', currentSay: `${prefix}${narrateUnknownAction(view)}` }, presentation:presentation('retry',view,{waiting:table.waiting(),rejection:'unrecognized'}) };
     }
 
     // 还在等对手进来：这一手不结算，先把房间号再说一遍
     if (table.waiting()) {
-      return { text: `${catchUp}${prefix}${narrateWaitingRoom(table.room ?? '')}`, battle: view, presentation:presentation('status',view,{waiting:true}) };
+      return { text: `${catchUp}${prefix}${narrateWaitingRoom(table.room ?? '')}`, battle: view, protocol: { reason: 'waiting', currentSay: `${prefix}${narrateWaitingRoom(table.room ?? '')}` }, presentation:presentation('status',view,{waiting:true}) };
     }
 
     // 模型回复期间局面可能已经变了：不是刚才那一局就丢弃这次识别
@@ -575,7 +455,7 @@ export class GameService {
         battleId: canonical.id,
         action: match.action,
       });
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey), protocol: { reason: 'failed' } };
     }
 
     const result = await resolveTurn(view, match.action, this.now(), { ai: this.ai });
@@ -589,13 +469,13 @@ export class GameService {
         action: match.action,
         reason: result.rejection.reason,
       });
-      return { text: `${catchUp}${prefix}${narrateRejection(result.battle, result.rejection)}`, battle: result.battle, presentation:presentation('rejected',result.battle,{rejection:result.rejection.reason}) };
+      return { text: `${catchUp}${prefix}${narrateRejection(result.battle, result.rejection)}`, battle: result.battle, protocol: { reason: rejectReason(result.rejection.reason), action: result.rejection.action, currentSay: `${prefix}${narrateRejection(result.battle, result.rejection)}` }, presentation:presentation('rejected',result.battle,{rejection:result.rejection.reason}) };
     }
 
     // 结算自己也 await 过对手决策：座位或对局变了就作废，别把旧快照盖回新局
     const written = table.canonical(result.battle, seat, canonical);
     if (!table.stillHere(sessionKey, seat) || !tx.commit(written)) {
-      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+      return { text: narrateStaleAction(), battle: this.viewFor(sessionKey), protocol: { reason: 'failed' } };
     }
     if (table.room) this.rooms.touch(table.room);
 
@@ -611,18 +491,16 @@ export class GameService {
       next: written.pending ? `${written.pending.actor} 待应对` : written.active,
     });
 
-    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口；
-    // 只是锁定了攻击就只叫醒他（挂着的请求不能干等到超时），补账留到应招之后
-    if (written.pending) {
-      const waitingKey = table.echoTo(seat);
-      if (waitingKey) this.echo.nudge(waitingKey);
-    } else {
-      this.recordCatchUp(table, seat, written, result.events);
-    }
+    // 这一轮真正结算完了，另一位玩家错过的结果记下来等他开口
+    if (!written.pending) this.recordCatchUp(table, seat, written, result.events);
+    const other = table.echoTo(seat);
+    if (other) this.enqueueFacts(other, written.id, protocolEvents(mirrorEvents(result.events)));
+    this.wakeTable(table);
 
     const chantLine = match.chant ? narrateChant(match.chant) : '';
     const body = narrateTurn(result.battle, result.events);
     return { text: `${catchUp}${prefix}${chantLine}${body}`, battle: result.battle,
+      protocol: { currentSay: `${prefix}${chantLine}${body}`, events: [...(prefix ? [this.startEvent(result.battle)] : []), ...(match.chant ? [{ t: 'chant' as const, text: match.chant }] : []), ...protocolEvents(result.events)] },
       presentation:presentation('turn',result.battle,{events:result.events,renderings:[`${catchUp}${prefix}${chantLine}${narrateTurn(result.battle,result.events,{expressive:true})}`]}) };
   }
 
@@ -736,10 +614,10 @@ export class GameService {
     if (room) {
       const catchUp = this.drainCatchUp(sessionKey, options.catchUp !== false);
       const view = this.viewFor(sessionKey);
-      return { text: `${catchUp}${narrateActionBlocked(why)}`, battle: view, presentation:presentation('rejected',view,{waiting:room.guestKey===null,rejection:why}) };
+      return { text: `${catchUp}${narrateActionBlocked(why)}`, battle: view, protocol: { reason: why, currentSay: narrateActionBlocked(why) }, presentation:presentation('rejected',view,{waiting:room.guestKey===null,rejection:why}) };
     }
     const battle = this.store.get(sessionKey) ?? null;
-    return { text: battle ? narrateActionBlocked(why) : narrateUnknownAction(null), battle, presentation:presentation('rejected',battle,{rejection:why}) };
+    return { text: battle ? narrateActionBlocked(why) : narrateUnknownAction(null), battle, protocol: { reason: why }, presentation:presentation('rejected',battle,{rejection:why}) };
   }
 
   /**
@@ -776,11 +654,7 @@ export class GameService {
 
     // 单人重新开局：撤掉仍在的房间，避免对手对着已失效的局面出招
     const existing = this.rooms.byPlayer(sessionKey);
-    if (existing) {
-      dropRoom(this.tables, existing, '重新开局');
-      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
-      this.seatSpeakers.delete(pvpBattleKey(existing.code));
-    }
+    if (existing) dropRoom(this.tables, existing, '重新开局');
 
     const battle = await this.spawnSolo(opponent);
 
@@ -789,13 +663,16 @@ export class GameService {
     if (room) return this.status(sessionKey);
 
     this.store.set(sessionKey, battle);
+    this.factQueue.delete(sessionKey);
+    this.wake(sessionKey);
+    if (existing) this.clearRoomFacts(existing);
     this.logger.info('对局开始', {
       sessionKey,
       battleId: battle.id,
       enemy: battle.enemy.name,
       firstMover: battle.firstMover,
     });
-    return { text: narrateOpening(battle), battle, presentation:presentation('opening',battle) };
+    return { text: narrateOpening(battle), battle, protocol: { events: [this.startEvent(battle)] }, presentation:presentation('opening',battle) };
   }
 
   /**
@@ -820,8 +697,7 @@ export class GameService {
     }
     if (existing) {
       dropRoom(this.tables, existing, '重新开局');
-      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
-      this.seatSpeakers.delete(pvpBattleKey(existing.code));
+      this.clearRoomFacts(existing);
     }
     // 从单人局切到联机时把旧对局清掉，避免退出房间后还对着过期局面出招
     this.store.delete(sessionKey);
@@ -837,7 +713,7 @@ export class GameService {
     // 开房时对手还没进来，不能提前播「对决开始」，否则玩家会以为已经有对手了
     return {
       text: `${narrateRoomCreated(room.code)}。`,
-      battle,
+      battle, protocol: { events: [{ t: 'room', code: room.code }] },
       presentation:presentation('opening',battle,{waiting:true}),
     };
   }
@@ -864,13 +740,13 @@ export class GameService {
     const code = normalizeRoomCode(rawRoom);
     if (!code) {
       this.logger.debug('房间号格式不对', { sessionKey, rawRoom });
-      return { text: narrateRoomInvalid(), battle: fallback };
+      return { text: narrateRoomInvalid(), battle: this.viewFor(sessionKey), protocol: { reason: 'room_bad' } };
     }
 
     const target = this.rooms.get(code);
     if (!target) {
       this.logger.info('房间加入失败', { sessionKey, room: code, reason: 'missing' });
-      return { text: narrateRoomMissing(code), battle: fallback };
+      return { text: narrateRoomMissing(code), battle: this.viewFor(sessionKey), protocol: { reason: 'room_missing' } };
     }
     // 房主自己拿房间号加入：不把它登记成加入者，只提示还在等人
     if (target.hostKey === sessionKey) {
@@ -882,35 +758,31 @@ export class GameService {
     }
     if (target.guestKey !== null && target.guestKey !== sessionKey) {
       this.logger.info('房间加入失败', { sessionKey, room: code, reason: 'full' });
-      return { text: narrateRoomFull(code), battle: fallback };
+      return { text: narrateRoomFull(code), battle: this.viewFor(sessionKey), protocol: { reason: 'room_full' } };
     }
 
     // 房间还在但对局已经过期：这间房废了，换掉它也不该顺手把玩家踢出原来的房间
     const canonical = this.store.get(pvpBattleKey(code));
     if (!canonical) {
       this.rooms.remove(code);
-      // 这间房的对局过期了，它的席位也一并作废，房间号复用时不继承
       this.seatSpeakers.delete(pvpBattleKey(code));
       this.logger.warn('房间存在但对局已过期', { sessionKey, room: code });
-      return { text: narrateRoomMissing(code), battle: fallback };
+      return { text: narrateRoomMissing(code), battle: this.viewFor(sessionKey), protocol: { reason: 'room_missing' } };
     }
 
+    const joining = target.guestKey === null;
     const claimed = this.rooms.claim(code, sessionKey);
     if (!claimed.ok) {
       // 上面刚验过，走到这里只可能是同一刻被撤房：原有房间保持不动
       this.logger.info('房间加入失败', { sessionKey, room: code, reason: claimed.reason });
       return {
         text: claimed.reason === 'full' ? narrateRoomFull(code) : narrateRoomMissing(code),
-        battle: fallback,
+        battle: this.viewFor(sessionKey), protocol: { reason: claimed.reason === 'full' ? 'room_full' : 'room_missing' },
       };
     }
 
     // 席位已经归到新房，旧房连着那局对局与补账一起撤掉
-    if (claimed.previous) {
-      dropRoom(this.tables, claimed.previous, '换房');
-      // 房间连着席位一起没了：房间号复用时不继承上一局认领的声音
-      this.seatSpeakers.delete(pvpBattleKey(claimed.previous.code));
-    }
+    if (claimed.previous) dropRoom(this.tables, claimed.previous, '换房');
 
     const view = viewAs(canonical, 'enemy');
     this.store.delete(sessionKey);
@@ -922,15 +794,15 @@ export class GameService {
       round: canonical.round,
       from: claimed.previous?.code ?? null,
     });
-    // 房主正挂着等对手：人一进来就叫醒他，别等他再开口才补上这局已经开打
-    if (this.echo.waitingOn(target.hostKey)) {
-      this.echo.push(target.hostKey, narrateOpponentJoined(canonical));
-    }
+    if (claimed.previous) this.clearRoomFacts(claimed.previous);
+    this.factQueue.delete(sessionKey);
+    if (joining) this.enqueueFacts(target.hostKey, canonical.id, [this.startEvent(canonical)]);
+    this.wake(target.hostKey);
     const fresh = view.history.length === 0 && view.round === 1 && !view.pending;
     const opening = fresh
       ? `${narrateRoomJoined(code)}。${narrateBattleStart(view)}`
       : `${narrateRoomJoined(code)}。${narrateStatus(view)}`;
-    return { text: opening, battle: view, presentation:presentation('opening',view) };
+    return { text: opening, battle: view, protocol: { events: joining ? [{ t: 'join', code }, ...(fresh ? [this.startEvent(view)] : [])] : [] }, presentation:presentation('opening',view) };
   }
 
   /**
@@ -985,7 +857,7 @@ export class GameService {
       return this.play(sessionKey, null, raw, options);
     }
     if (command.kind === 'turn') return this.play(sessionKey, command, raw, options, routed);
-    // 开局、发起挑战会改对局归属，也要带着当时那一局过去核对（见 discardIfStale）
+    // 开局、开房会改对局归属，也要带着当时那一局过去核对（见 discardIfStale）
     return this.execute(sessionKey, command, raw, options, routed);
   }
 
@@ -1011,7 +883,7 @@ export class GameService {
       expected: routed.battleId,
       current: battleId,
     });
-    return { text: narrateStaleAction(), battle: this.viewFor(sessionKey) };
+    return { text: narrateStaleAction(), battle: this.viewFor(sessionKey), protocol: { reason: 'failed' } };
   }
 
   /**
@@ -1040,6 +912,248 @@ export class GameService {
       (event) => event.type !== 'round-start' && event.type !== 'end',
     );
     this.echo.push(waitingKey, narrateTurn(viewAs(base, otherSide(seat)), missed, { hint: false }));
+  }
+
+  private startEvent(view: Battle): ProtocolEvent {
+    return { t: 'start', foe: view.enemy.name, first: protocolSide(view.firstMover) };
+  }
+
+  private finish(sessionKey: string, result: ServiceResult): ServiceResult {
+    if (result.reply) {
+      if(!result.reply.silent && (!result.reply.text || Boolean(result.reply.events?.length)) && result.battle) this.delivered.set(sessionKey,this.deliverySignature(sessionKey,result.battle));
+      return result;
+    }
+    const table = tableFor(this.tables, sessionKey);
+    const extra = result.protocol ?? {};
+    const missed = extra.consume === false || extra.silent
+      ? [] : this.takeFacts(sessionKey, result.battle?.id ?? null);
+    const hasMissedEnd = missed.some(event => event.t === 'end');
+    const currentSay = hasMissedEnd && extra.terminalNarration
+      ? '说「开始游戏」可以再来一局。' : extra.currentSay ?? result.text;
+    result.reply = protocolReply(result.battle, {
+      room: table.room, waiting: table.waiting(),
+      // Legacy text may already include narration catch-up; use only the explicit current part.
+      say: `${this.factualFallback(missed)}${currentSay}`,
+      ...(extra.text ? { text: result.text } : {}),
+      reason: extra.reason, action: extra.action, silent: extra.silent,
+      events: [...missed, ...(extra.events ?? protocolEvents(result.presentation?.facts.events ?? []))],
+    });
+    if(!result.reply.silent && (!result.reply.text || Boolean(result.reply.events?.length)) && result.battle) this.delivered.set(sessionKey,this.deliverySignature(sessionKey,result.battle));
+    return result;
+  }
+
+  /** The fallback is derived from the same facts as the Agent, never parsed from old speech. */
+  private factualFallback(events: ProtocolEvent[]): string {
+    return events.map(event => {
+      switch (event.t) {
+        case 'start': return `对决开始，对手是${event.foe}，${event.first === 'you' ? '我' : '对手'}先手。`;
+        case 'room': return `房间${event.code}已创建。`;
+        case 'join': return `已加入房间${event.code}。`;
+        case 'round': return event.bonus > 0 ? `第${event.n}轮，伤害加成${event.bonus}。` : '';
+        case 'charge': return `${event.by === 'you' ? '我' : '对手'}蓄力，能量${event.ap}。`;
+        case 'hit': {
+          const attacker = event.by === 'you' ? '我' : '对手';
+          const defender = event.by === 'you' ? '对手' : '我';
+          const response = event.r === 'dodge' ? (event.miss ? '闪避成功' : '闪避失败')
+            : event.r === 'guard' ? '格挡' : event.forced ? '没有能量，只能承受' : '承受';
+          return `${attacker}${actionLabel(event.mv)}，${defender}${response}${event.crit ? '，暴击' : ''}，受到${event.dmg}点伤害。`;
+        }
+        case 'end': return event.win === 'you' ? '我赢了。' : '我输了。';
+        case 'timeout': return event.what === 'guest' ? '对手还没加入。' : '对手还没出手。';
+        case 'chant': return `${event.text}。`;
+      }
+    }).join('');
+  }
+
+  private enqueueFacts(key: string, battleId: string, events: ProtocolEvent[]): void {
+    for (const [queuedKey, entry] of this.factQueue) {
+      if (this.now() - entry.at > 30 * 60 * 1000) this.factQueue.delete(queuedKey);
+    }
+    const previous = this.factQueue.get(key);
+    this.factQueue.set(key, {
+      battleId, events: [...(previous?.battleId === battleId ? previous.events : []), ...events], at: this.now(),
+    });
+    this.wake(key);
+  }
+
+  private takeFacts(key: string, battleId: string | null): ProtocolEvent[] {
+    const entry = this.factQueue.get(key);
+    // A delayed result from an old battle must not remove a newer battle's facts.
+    if (!entry || entry.battleId !== battleId) return [];
+    this.factQueue.delete(key);
+    return this.now() - entry.at <= 30 * 60 * 1000 ? entry.events : [];
+  }
+
+  private wake(key: string): void {
+    for (const callback of this.waiters.get(key) ?? []) callback();
+  }
+
+  private clearRoomFacts(room: Room): void {
+    this.seatSpeakers.delete(pvpBattleKey(room.code));
+    this.factQueue.delete(room.hostKey);
+    if (room.guestKey) this.factQueue.delete(room.guestKey);
+    this.wake(room.hostKey);
+    if (room.guestKey) this.wake(room.guestKey);
+  }
+
+  private wakeTable(table: Table): void {
+    const room = table.room ? this.rooms.get(table.room) : null;
+    if (room) {
+      this.wake(room.hostKey);
+      if (room.guestKey) this.wake(room.guestKey);
+    }
+  }
+
+  /** Reject without executing an input prefix or consuming pending facts. */
+  invalidInput(sessionKey: string, options: SayOptions = {}): ServiceResult {
+    if (!this.readerAllowed(sessionKey, options.speaker)) return this.silentResult(sessionKey);
+    const table = tableFor(this.tables, sessionKey);
+    const view = table.view(sessionKey);
+    const text = '没听清，这一手请再说一次。';
+    return {
+      text, battle: view,
+      reply: protocolReply(view, { room: table.room, waiting: table.waiting(), reason: 'unclear', say: text }),
+    };
+  }
+
+  /** A bounded read: it never advances the game or retries an action. */
+  async waitEvent(
+    sessionKey: string,
+    options: { signal?: AbortSignal; timeoutMs?: number; speaker?: string } = {},
+  ): Promise<ServiceResult> {
+    if (!this.readerAllowed(sessionKey, options.speaker)) return this.silentResult(sessionKey);
+    const initial = tableFor(this.tables, sessionKey);
+    const originalId = initial.battle()?.id ?? null;
+    // RoomStore updates its room object in place, so capture this value rather than its closure.
+    const initialWaiting = initial.waiting();
+    const initialReply = protocolReply(initial.view(sessionKey), { room: initial.room, waiting: initialWaiting });
+    const waiting = initialReply.need === 'wait_guest' || initialReply.need === 'wait_foe';
+    const result = () => {
+      const current=tableFor(this.tables,sessionKey);
+      const view=current.view(sessionKey);
+      const need=protocolReply(view,{room:current.room,waiting:current.waiting()}).need;
+      const queued=this.factQueue.get(sessionKey);
+      // A wait/notification/query already delivered this exact change. A second reader stays quiet.
+      if(need!=='wait_guest' && need!=='wait_foe' && view
+        && this.delivered.get(sessionKey)===this.deliverySignature(sessionKey,view)
+        && !(queued?.battleId===view.id && queued.events.length>0)) return this.silentResult(sessionKey);
+      return this.finish(sessionKey, this.statusInternal(sessionKey, { catchUp: true }));
+    };
+    if (options.signal?.aborted) {
+      return {
+        text: '', battle: initial.view(sessionKey),
+        reply: protocolReply(initial.view(sessionKey), {
+          room: initial.room, waiting: initialWaiting, silent: true,
+        }),
+      };
+    }
+    if (!waiting || this.factQueue.get(sessionKey)?.battleId === originalId) return result();
+    return new Promise<ServiceResult>((resolve) => {
+      let settled = false;
+      const callbacks = this.waiters.get(sessionKey) ?? new Set<() => void>();
+      this.waiters.set(sessionKey, callbacks);
+      const done = (cancelled = false, timeout = false) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        options.signal?.removeEventListener('abort', abort);
+        callbacks.delete(check);
+        if (!callbacks.size) this.waiters.delete(sessionKey);
+        const current = tableFor(this.tables, sessionKey);
+        const view = current.view(sessionKey);
+        if (cancelled || current.key !== initial.key || (view?.id ?? null) !== originalId) {
+          resolve({
+            text: '', battle: view,
+            reply: protocolReply(view, {
+              room: current.room, waiting: current.waiting(),
+              silent: true,
+            }),
+          });
+          return;
+        }
+        const response = result();
+        if (timeout && response.reply) {
+          response.reply.events = [
+            ...(response.reply.events ?? []),
+            { t: 'timeout', what: initialReply.need === 'wait_guest' ? 'guest' : 'foe' },
+          ];
+        }
+        resolve(response);
+      };
+      const check = () => {
+        const current = tableFor(this.tables, sessionKey);
+        if (current.key !== initial.key || (current.battle()?.id ?? null) !== originalId
+          || this.factQueue.get(sessionKey)?.battleId === originalId || current.waiting() !== initialWaiting) done();
+      };
+      const abort = () => done(true);
+      const timer = setTimeout(() => done(false, true), Math.max(0, Math.min(options.timeoutMs ?? 30000, 30000)));
+      callbacks.add(check);
+      options.signal?.addEventListener('abort', abort, { once: true });
+      check();
+    });
+  }
+
+  /** Legacy internal callers share the same factual queue and cancellation semantics. */
+  wait(sessionKey:string, options:{timeoutMs:number;signal?:AbortSignal;speaker?:string}):Promise<ServiceResult> {
+    return this.waitEvent(sessionKey,options);
+  }
+
+  private silentResult(sessionKey:string):ServiceResult {
+    return {text:'',battle:this.viewFor(sessionKey),reply:{v:2,ok:true,silent:true}};
+  }
+
+  /** Notifications and waits are reads: gate ownership, but do not require our turn. */
+  private readerAllowed(sessionKey:string,speaker?:string):boolean {
+    if (!this.speakerListed(speaker)) return false;
+    if (this.speakers.length === 0) return true;
+    const table=tableFor(this.tables,sessionKey);
+    const seat=table.seat(sessionKey);
+    const owner=seat ? this.seatsFor(table,table.battle())?.[seat] : undefined;
+    return !owner || owner === speaker?.trim();
+  }
+
+  private deliverySignature(sessionKey:string,battle:Battle|null):string {
+    if(!battle) return '';
+    const table=tableFor(this.tables,sessionKey);
+    return JSON.stringify([battle.id,table.room,table.waiting(),battle.phase,battle.round,battle.active,
+      battle.pending,battle.updatedAt,battle.history.length,battle.player.hp,battle.player.ap,battle.player.ultLeft,
+      battle.enemy.hp,battle.enemy.ap,battle.enemy.ultLeft]);
+  }
+
+  /** Pure fact request; callers cannot supply narration, numbers or an action. */
+  notification(sessionKey:string,kind:PushKind,options:SayOptions & {battleId:string;pushId:string}):ServiceResult {
+    const table=tableFor(this.tables,sessionKey);
+    const battle=table.view(sessionKey);
+    if(!this.readerAllowed(sessionKey,options.speaker) || !battle || battle.id!==options.battleId
+      || battle.phase!=='battle' || !options.pushId) return this.silentResult(sessionKey);
+    const stage=this.deliverySignature(sessionKey,battle);
+    const previous=this.notificationIds.get(sessionKey);
+    const ids=previous?.battleId===battle.id && previous.stage===stage ? previous.ids : new Set<string>();
+    if(ids.has(options.pushId)) return this.silentResult(sessionKey);
+    const facts=protocolReply(battle,{room:table.room,waiting:table.waiting()});
+    const valid=kind==='opponent-joined' ? battle.mode==='pvp' && !table.waiting() && battle.round===1 && battle.history.length===0 && !battle.pending && this.factQueue.get(sessionKey)?.events.some(event=>event.t==='start') === true
+      : kind==='opponent-move' || kind==='idle-respond' ? facts.need==='respond'
+      : kind==='idle-turn' ? facts.need==='move'
+      : kind==='wait-guest' ? facts.need==='wait_guest'
+      : kind==='wait-opponent' ? facts.need==='wait_foe'
+      : kind==='ult-ready' ? isUltimateReady(battle.player)
+      : false;
+    if(!valid) return this.silentResult(sessionKey);
+    if((kind==='opponent-joined'||kind==='opponent-move') && this.delivered.get(sessionKey)===stage) {
+      return this.silentResult(sessionKey);
+    }
+    ids.add(options.pushId);
+    // A stage has at most the seven engine kinds and two idle reminders; bound replay memory.
+    if(ids.size>32) ids.delete(ids.values().next().value!);
+    this.notificationIds.set(sessionKey,{battleId:battle.id,stage,ids});
+    const say=kind==='ult-ready' ? (facts.need==='move' ? '我的能量够了，共鸣冲击准备好了，你想怎么做？' : '我的能量够了，共鸣冲击资源已就绪，等轮到主动行动再出招。')
+      : kind==='idle-turn' ? '我准备好了，你想让我怎么做？'
+      : kind==='idle-respond' ? '对手的招式还没结算，我该怎么应对？'
+      : kind==='wait-guest' ? `挑战编号${table.room}，我还在等对手接受挑战。`
+      : kind==='wait-opponent' ? '我还在等对手，先稳住。'
+      : kind==='opponent-joined' ? '对手已接受挑战，现在可以对决了。'
+      : '对手已经出招，还没有结算，我该怎么应对？';
+    return this.finish(sessionKey,{text:say,battle,protocol:{currentSay:say}});
   }
 
   /** 当前玩家视角的最新局面：房间里按座位镜像，单人是自己的对局 */
@@ -1074,4 +1188,14 @@ function routeStage(battle: Battle | null, question: boolean): RouterStage {
   if (battle.phase !== 'battle') return 'ended';
   if (battle.pending) return battle.pending.actor === 'player' ? 'waiting' : 'response';
   return battle.active === 'player' ? 'active' : 'waiting';
+}
+
+function rejectReason(reason: import('./types.js').RejectReason): ProtocolReason {
+  switch (reason) {
+    case 'wrong-stage': case 'full-ap': return 'wrong_stage';
+    case 'waiting-opponent': return 'waiting';
+    case 'insufficient-ap': return 'no_ap';
+    case 'no-ult': return 'no_ult';
+    case 'ended': return 'ended';
+  }
 }

@@ -95,17 +95,24 @@ async function callTool(
 function textOf(result: any): string {
   assert.equal(result?.isError ?? false, false, '工具调用不应标记为错误');
   assert.equal(result?.content?.[0]?.type, 'text');
-  return String(result.content[0].text);
+  const reply = JSON.parse(String(result.content[0].text));
+  assert.equal(reply.v, 2);
+  assert.equal(result.structuredContent, undefined);
+  return reply.text ?? reply.say ?? '';
 }
 
 describe('MCP 协议链路', () => {
-  it('tools/list 暴露六个游戏工具（含挂起等对手）', async () => {
+  it('tools/list 只暴露 v2 两个工具', async () => {
     const client = await connect(DEVICE_A, 'list-session');
     const response = await client.request('tools/list');
     assert.equal(response.error, undefined);
 
     const names = (response.result?.tools ?? []).map((tool: { name: string }) => tool.name).sort();
-    assert.deepEqual(names, ['game_action', 'game_help', 'game_say', 'game_start', 'game_status', 'wait_event']);
+    assert.deepEqual(names, ['game_say', 'wait_event']);
+
+    const say = response.result.tools.find((tool: {name:string}) => tool.name === 'game_say');
+    assert.equal(say.inputSchema.properties.text.maxLength, 200);
+    assert.equal(say.inputSchema.additionalProperties, false);
 
     for (const tool of response.result.tools) {
       assert.ok(tool.description.length > 0, `${tool.name} 应有描述，平台模型靠它决定何时调用`);
@@ -116,78 +123,101 @@ describe('MCP 协议链路', () => {
   it('开始游戏、出招、查看战况走完整条链路', async () => {
     const client = await connect(DEVICE_A, 'play-1');
 
-    const start = await callTool(client, 'game_start', {});
+    const start = await callTool(client, 'game_say', { text: '开始游戏' });
     assert.match(textOf(start), /对决开始/);
     assert.match(textOf(start), /守擂教头/);
 
-    const turn1 = await callTool(client, 'game_action', { action: '攻击' });
+    const turn1 = await callTool(client, 'game_say', { text: '攻击' });
     assert.match(textOf(turn1), /普攻/);
     assert.match(textOf(turn1), /对手普攻还没结算，我该格挡、闪避，还是承受/);
 
-    const turn2 = await callTool(client, 'game_action', { action: 'dodge' });
+    const turn2 = await callTool(client, 'game_say', { text: 'dodge' });
     assert.match(textOf(turn2), /躲|闪/);
 
-    const status = await callTool(client, 'game_status');
+    const status = await callTool(client, 'game_say', { text: '战况如何' });
     assert.match(textOf(status), /第2轮/);
     assert.match(textOf(status), /生命值/);
   });
 
   it('招式认不出来不推进回合', async () => {
     const client = await connect(DEVICE_A, 'unknown-action');
-    await callTool(client, 'game_start', {});
+    await callTool(client, 'game_say', { text: '开始游戏' });
 
-    const bad = await callTool(client, 'game_action', { action: '跳个舞' });
+    const bad = await callTool(client, 'game_say', { text: '跳个舞' });
     assert.match(textOf(bad), /没听清/);
 
-    const status = await callTool(client, 'game_status');
+    const status = await callTool(client, 'game_say', { text: '战况如何' });
     assert.match(textOf(status), /第1轮/);
   });
 
   it('同一设备重连不丢对局（设备级归属）', async () => {
     const first = await connect(DEVICE_A, 'session-reconnect-1');
-    await callTool(first, 'game_start', {});
-    await callTool(first, 'game_action', { action: '攻击' });
+    await callTool(first, 'game_say', { text: '开始游戏' });
+    await callTool(first, 'game_say', { text: '攻击' });
     first.close();
 
     // 新会话、同设备：对局应继续
     const second = await connect(DEVICE_A, 'session-reconnect-2');
-    const status = await callTool(second, 'game_status');
+    const status = await callTool(second, 'game_say', { text: '战况如何' });
     assert.match(textOf(status), /第1轮/);
   });
 
   it('不同设备的对局互相隔离', async () => {
     const client = await connect(DEVICE_B, 'isolation');
-    const status = await callTool(client, 'game_status');
+    const status = await callTool(client, 'game_say', { text: '战况如何' });
     assert.match(textOf(status), /没有进行中的对局/);
   });
 
   it('以每次调用请求头里的设备为准，不会串对局', async () => {
     const client = await connect('device-e1', 'switch');
-    await callTool(client, 'game_start', {});
-    await callTool(client, 'game_action', { action: '攻击' });
+    await callTool(client, 'game_say', { text: '开始游戏' });
+    await callTool(client, 'game_say', { text: '攻击' });
 
     // 同一条 SSE 连接上换成另一台设备的头：应看到那台设备自己的对局
-    const other = await callTool(client, 'game_status', {}, headers('device-e2', 'switch'));
+    const other = await callTool(client, 'game_say', { text: '战况如何' }, headers('device-e2', 'switch'));
     assert.match(textOf(other), /没有进行中的对局/);
 
     // 换回来，原对局还在
-    const back = await callTool(client, 'game_status');
+    const back = await callTool(client, 'game_say', { text: '战况如何' });
     assert.match(textOf(back), /第1轮/);
   });
 
   it('没有对局时直接出招会自动开局', async () => {
     const client = await connect('device-c', 'auto-start');
-    const action = await callTool(client, 'game_action', { action: '回气' });
+    const action = await callTool(client, 'game_say', { text: '回气' });
 
     assert.match(textOf(action), /先开一局/);
     assert.match(textOf(action), /蓄力/);
   });
 
-  it('玩法说明工具无需对局', async () => {
+  it('玩法说明经原话工具且无需对局', async () => {
     const client = await connect('device-d', 'help');
-    const help = await callTool(client, 'game_help');
+    const help = await callTool(client, 'game_say', { text: '怎么玩' });
     assert.match(textOf(help), /普攻/);
     assert.match(textOf(help), /开始游戏/);
+  });
+
+  it('超长原话通过业务 JSON 拒绝，不截断执行攻击', async () => {
+    const client = await connect('device-long', 'long-input');
+    await callTool(client, 'game_say', { text: '开始游戏' });
+    const before = JSON.parse((await callTool(client, 'game_say', { text: '战况如何' })).content[0].text);
+    const result = await callTool(client, 'game_say', { text: '攻击' + '啊'.repeat(199) });
+    const reply = JSON.parse(result.content[0].text);
+    assert.equal(result.isError, undefined);assert.equal(reply.reason, 'unclear');
+    assert.deepEqual(reply.you, before.you);assert.deepEqual(reply.foe, before.foe);assert.deepEqual(reply.events, []);
+  });
+
+  it('wait_event 通过相同 MCP 链路接收对手进房事实', async () => {
+    const host = await connect('device-wait-host', 'wait-host');
+    const opened = JSON.parse((await callTool(host, 'game_say', { text: '开房间' })).content[0].text);
+    assert.equal(opened.need, 'wait_guest');
+    const waiting = callTool(host, 'wait_event');
+    const guest = await connect('device-wait-guest', 'wait-guest');
+    await callTool(guest, 'game_say', { text: `加入房间${opened.room}` });
+    const result = await waiting;const reply = JSON.parse(result.content[0].text);
+    assert.equal(reply.v, 2);assert.equal(result.isError, undefined);assert.equal(reply.phase, 'battle');
+    assert.ok(reply.events.some((event: { t: string }) => event.t === 'start'));
+    assert.equal(result.structuredContent, undefined);
   });
 
   it('未知会话的 POST 返回 404', async () => {

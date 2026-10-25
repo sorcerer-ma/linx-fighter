@@ -15,6 +15,7 @@ const PENDING_PLAYER: PendingAttackState = { actor: 'player', move: 'light', mov
 /** 直接构造一份页面看到的局面，避免每条用例都真的打一局 */
 function view(overrides: Partial<BattleState> = {}): BattleState {
   return {
+    battleId:'qa-push-battle',
     room: '1234',
     mode: 'pvp',
     side: 'player',

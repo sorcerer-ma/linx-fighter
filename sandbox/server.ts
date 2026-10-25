@@ -1,3 +1,8 @@
+import { connectSpeech as defaultConnectSpeech } from './speech/transport.js';
+import type { ConnectSpeech } from './speech/doubao.js';
+import { installSpeechRoutes, loadSpeechConfig, type SpeechConfig } from './speech.js';
+import { SPEECH_PROFILES, speechProfile } from './platform/profiles.js';
+import { installTtsBridge } from './tts-bridge.js';
 import { createSandboxAgent } from './platform/agent.js';
 import { readFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
@@ -10,7 +15,7 @@ import { pathToFileURL } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createLogger } from '../src/log.js';
 import { loadSandboxConfig, SANDBOX_VERSION, type SandboxConfig } from './config.js';
-import { SandboxClient } from './platform/client.js';
+import { SandboxClient, NOTIFICATION_KINDS, type NotificationSignal } from './platform/client.js';
 
 /**
  * 沙箱 HTTP 服务：给浏览器一个「灵犀设备」页面，同时把页面上的输入转成 MCP 调用。
@@ -23,11 +28,12 @@ import { SandboxClient } from './platform/client.js';
 export interface SandboxDependencies {
   config: SandboxConfig;
   client: SandboxClient;
+  speech?: SpeechConfig;
+  connectSpeech?: ConnectSpeech;
 }
 
 const DEVICE_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
-/** 和 game_say 的入参上限保持一致，超长句子先截断，避免直接把协议错误丢给玩家 */
-const MAX_TEXT_LENGTH = 120;
+/** 超长原话交给 MCP 明确拒绝，绝不截断后执行。 */
 
 /** 生成一个窗口级的兜底身份；页面没带 player 参数时用 */
 function randomSuffix(): string {
@@ -75,6 +81,11 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '32kb' }));
+  // A local bridge owns TTS only. ASR can still use the direct adapter, and
+  // unused direct TTS credentials must not become a requirement for the bridge.
+  const speech = deps.speech ?? loadSpeechConfig(config.ttsBridge ? { ...process.env, SANDBOX_TTS_MODE:'browser' } : process.env);
+  if (config.ttsBridge) installTtsBridge(app, true);
+  installSpeechRoutes(app, speech, deps.connectSpeech ?? defaultConnectSpeech, createLogger(config.logLevel), {tts:!config.ttsBridge});
 
   // 页面加载时读一次配置：地址、身份默认值、语音语言
   app.get('/api/config', (req, res) => {
@@ -82,6 +93,8 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
     res.json({
       ok: true,
       agentMode: client.agentMode,
+      speechProfiles: Object.entries(SPEECH_PROFILES).map(([id, value]) => ({ id, name: value.name })),
+      defaultSpeechProfile: 'cancan',
       sandbox: 'linx-sandbox',
       version: SANDBOX_VERSION,
       upstream: config.upstream,
@@ -89,20 +102,50 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
       agentId: config.agentId,
       defaultDeviceId: `web-${randomSuffix()}`,
       display: config.display,
-      voice: { lang: 'zh-CN' },
+      voice: { lang:'zh-CN', asr:speech.asr, tts:config.ttsBridge || speech.tts !== 'browser' ? 'backend' : 'browser', ttsMode:config.ttsBridge ? 'bridge' : speech.tts, simulation:speech.simulation },
     });
   });
 
   // 唯一的输入入口：页面说了一句话
   app.post('/api/say', async (req, res) => {
-    const body = (req.body ?? {}) as { deviceId?: unknown; text?: unknown };
-    const text = typeof body.text === 'string' ? body.text.trim().slice(0, MAX_TEXT_LENGTH) : '';
-    if (!text) {
+    const body = (req.body ?? {}) as { deviceId?: unknown; text?: unknown; profileId?: unknown };
+    const text = typeof body.text === 'string' ? body.text : '';
+    if (!text.trim()) {
       res.status(400).json({ ok: false, reply: '没有听到内容，请再说一次。', error: 'empty_text' });
       return;
     }
+    const profile = speechProfile(body.profileId ?? 'cancan');
+    if (!profile) { res.status(400).json({ ok:false, error:'invalid_speech_profile' }); return; }
     const deviceId = normalizeDeviceId(body.deviceId) ?? `web-${randomSuffix()}`;
-    res.json(await client.say(deviceId, text));
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    const result = await client.say(deviceId, text, { signal:controller.signal, profileId:profile.profileId });
+    if (!res.destroyed) res.json(result);
+  });
+
+  // Playback completes before the page requests this separate, cancellable wait.
+  app.post('/api/wait', async (req, res) => {
+    const body = (req.body ?? {}) as { deviceId?:unknown; profileId?:unknown };
+    const deviceId = normalizeDeviceId(body.deviceId);
+    if (!deviceId) { res.status(400).json({ ok:false, error:'invalid_device' }); return; }
+    const profile = speechProfile(body.profileId ?? 'cancan');
+    if (!profile) { res.status(400).json({ ok:false, error:'invalid_speech_profile' }); return; }
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    const result = await client.wait(deviceId, { signal:controller.signal, profileId:profile.profileId });
+    if (!res.destroyed) res.json(result);
+  });
+
+  // A validated SSE signal asks for read-only authoritative facts, never a game action.
+  app.post('/api/notify', async(req,res)=>{
+    const body=req.body ?? {}, deviceId=normalizeDeviceId(body.deviceId), profile=speechProfile(body.profileId ?? 'cancan');
+    if(!deviceId || !profile || !NOTIFICATION_KINDS.includes(body.kind) || typeof body.battleId!=='string' || typeof body.pushId!=='string') {
+      res.status(400).json({ok:false,error:'invalid_notification'});return;
+    }
+    const controller=new AbortController();res.on('close',()=>{if(!res.writableEnded)controller.abort();});
+    const notice:NotificationSignal={kind:body.kind,battleId:body.battleId,pushId:body.pushId};
+    const result=await client.notify(deviceId,notice,{signal:controller.signal,profileId:profile.profileId});
+    if(!res.destroyed)res.json(result);
   });
 
   // 只读局面：CLI 与调试脚本用，页面正常情况下走状态流

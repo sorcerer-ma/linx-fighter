@@ -1,4 +1,4 @@
-import type { Presentation } from '../../src/game/presentation.js';
+import { MAX_REPLY_BYTES, type GameReply } from '../../src/game/protocol.js';
 import type { Logger } from '../../src/log.js';
 import { SANDBOX_VERSION } from '../config.js';
 
@@ -111,19 +111,19 @@ export class LinxMcpClient {
     return { ms: Date.now() - this.startedAt, requests: this.trace.slice() };
   }
 
-  async initialize(): Promise<void> {
+  async initialize(options: { signal?: AbortSignal } = {}): Promise<void> {
     const result = (await this.rpc('initialize', {
       protocolVersion: '2025-06-18',
       capabilities: {},
       clientInfo: { name: 'linx-sandbox', version: SANDBOX_VERSION },
-    })) as { serverInfo?: { name?: string; version?: string } } | undefined;
+    }, undefined, options)) as { serverInfo?: { name?: string; version?: string } } | undefined;
 
     const name = result?.serverInfo?.name;
     const version = result?.serverInfo?.version;
     this.server = name ? { name, version: version ?? '' } : null;
 
     // 协议要求初始化后再发一条通知；无状态服务不回内容，失败也不影响调用
-    await this.notify('notifications/initialized');
+    await this.notify('notifications/initialized', options);
   }
 
   async listTools(): Promise<ToolInfo[]> {
@@ -135,27 +135,27 @@ export class LinxMcpClient {
       .map((tool) => ({ name: tool.name, title: tool.title, description: tool.description, inputSchema: tool.inputSchema }));
   }
 
-  /** 调一个工具，返回可直接朗读的文本 */
-  async callTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean; presentation?: Presentation }> {
-    const result = (await this.rpc('tools/call', { name, arguments: args }, name)) as
-      | { content?: Array<{ type?: string; text?: string }>; isError?: boolean; structuredContent?: { presentation?: Presentation } }
-      | undefined;
-
-    const text = (result?.content ?? [])
-      .filter((item) => item.type === 'text' && typeof item.text === 'string')
-      .map((item) => item.text)
-      .join('\n')
-      .trim();
-
-    return { text: text || '（游戏服务没有返回内容）', isError: result?.isError === true, presentation:result?.structuredContent?.presentation };
+  /** v2 text 内容是事实 JSON，绝不作为话术直接朗读。 */
+  async callTool(name: string, args: Record<string, unknown>, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<{ reply: GameReply; isError: boolean; battleId?: string | null }> {
+    const result = await this.rpc('tools/call', { name, arguments: args }, name, options) as
+      { content?: Array<{ type?: string; text?: string }>; isError?: boolean; _meta?: Record<string, unknown> } | undefined;
+    const content = result?.content;
+    if (!content || content.length !== 1 || content[0]?.type !== 'text' || typeof content[0]?.text !== 'string') {
+      throw new UpstreamError('游戏服务没有返回单个事实 JSON', 'protocol_error');
+    }
+    const isError = result?.isError === true;
+    // Faults cannot bind an invented null battle identity to an existing battle.
+    const battleId = isError ? undefined : result?._meta?.['linx/battleId'];
+    if (battleId !== undefined && battleId !== null && typeof battleId !== 'string') invalid();
+    return { reply: decodeReply(content[0].text), isError, battleId: battleId as string | null | undefined };
   }
 
-  private async rpc(method: string, params?: unknown, tool?: string): Promise<unknown> {
+  private async rpc(method: string, params?: unknown, tool?: string, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<unknown> {
     const id = this.nextId++;
     const body: Record<string, unknown> = { jsonrpc: '2.0', id, method };
     if (params !== undefined) body.params = params;
 
-    const { status, message } = await this.post(body, { method, tool });
+    const { status, message } = await this.post(body, { method, tool }, options);
     if (status >= 400) {
       throw new UpstreamError(`游戏服务返回 HTTP ${status}`, 'protocol_error');
     }
@@ -173,9 +173,9 @@ export class LinxMcpClient {
   }
 
   /** 通知没有 id，也不该有响应体；服务端回 202 时不当作失败 */
-  private async notify(method: string): Promise<void> {
+  private async notify(method: string, options: { signal?: AbortSignal } = {}): Promise<void> {
     try {
-      await this.post({ jsonrpc: '2.0', method }, { method });
+      await this.post({ jsonrpc: '2.0', method }, { method }, options);
     } catch (error) {
       this.options.logger.debug('初始化通知未送达，继续调用', {
         method,
@@ -187,10 +187,15 @@ export class LinxMcpClient {
   private async post(
     body: Record<string, unknown>,
     label: { method: string; tool?: string },
+    options: { signal?: AbortSignal; timeoutMs?: number } = {},
   ): Promise<{ status: number; message: unknown }> {
     const startedAt = Date.now();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    const timeoutMs = options.timeoutMs ?? this.options.timeoutMs;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const cancel = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener('abort', cancel, { once: true });
+    if (options.signal?.aborted) cancel();
 
     try {
       const response = await fetch(`${this.options.upstream}/mcp`, {
@@ -221,7 +226,7 @@ export class LinxMcpClient {
     } catch (error) {
       const aborted = error instanceof Error && error.name === 'AbortError';
       const message = aborted
-        ? `请求超时（${this.options.timeoutMs}ms）`
+        ? `请求超时（${timeoutMs}ms）`
         : error instanceof Error
           ? error.message
           : String(error);
@@ -235,11 +240,70 @@ export class LinxMcpClient {
         error: message,
       });
       throw new UpstreamError(
-        aborted ? `游戏服务响应超时（${this.options.timeoutMs}ms）` : `连不上游戏服务：${message}`,
+        aborted ? `游戏服务响应超时（${timeoutMs}ms）` : `连不上游戏服务：${message}`,
         'unreachable',
       );
     } finally {
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', cancel);
     }
   }
 }
+
+/** One versioned schema, no text or presentation guessing. */
+export function decodeReply(text: string): GameReply {
+  if (Buffer.byteLength(text, 'utf8') > MAX_REPLY_BYTES) invalid();
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { throw new UpstreamError('游戏事实不是有效 JSON', 'protocol_error'); }
+  if (!record(value) || value.v !== 2 || typeof value.ok !== 'boolean') invalid();
+  const reply = value as Record<string, unknown>;
+  if (reply.silent === true) return reply as unknown as GameReply;
+  const unknownWithoutSnapshot = reply.reason === 'unknown' && reply.phase === undefined && reply.need === undefined;
+  if (!unknownWithoutSnapshot && !['idle','room','battle','victory','defeat'].includes(String(reply.phase))) invalid();
+  if (!unknownWithoutSnapshot && !['move','respond','wait_guest','wait_foe','none'].includes(String(reply.need))) invalid();
+  if (reply.mode !== undefined && reply.mode !== 'solo' && reply.mode !== 'pvp') invalid();
+  if (reply.round !== undefined && !nonnegative(reply.round)) invalid();
+  if (['battle','victory','defeat'].includes(String(reply.phase)) && (!reply.you || !reply.foe || !reply.mode)) invalid();
+  if (typeof reply.text !== 'string' && typeof reply.say !== 'string') invalid();
+  if (!Array.isArray(reply.events) || !reply.events.every(validEvent)) invalid();
+  if (reply.ok === false && !['unclear','negated','ambiguous','wrong_stage','no_ap','no_ult','waiting','ended','room_missing','room_full','room_bad','failed','unknown'].includes(String(reply.reason))) invalid();
+  if (reply.text !== undefined && typeof reply.text !== 'string') invalid();
+  if (reply.say !== undefined && typeof reply.say !== 'string') invalid();
+  if (reply.room !== undefined && (typeof reply.room !== 'string' || !/^\d{4}$/.test(reply.room))) invalid();
+  for (const key of ['you','foe']) {
+    if (reply[key] !== undefined) {
+      const fighter = reply[key];
+      if (!record(fighter) || !['hp','maxHp','ap','ult'].every(n => nonnegative(fighter[n]))) invalid();
+      if (key === 'you' && !nonnegative(fighter.maxAp)) invalid();
+      if (key === 'foe' && typeof fighter.name !== 'string') invalid();
+    }
+  }
+  if (reply.deny !== undefined) {
+    if (!record(reply.deny) || !['light','heavy','ult','guard','dodge','take','charge'].includes(String(reply.deny.mv))) invalid();
+    if (reply.deny.need !== undefined && !nonnegative(reply.deny.need)) invalid();
+    if (reply.deny.short !== undefined && !nonnegative(reply.deny.short)) invalid();
+  }
+  if (reply.pending !== undefined && (!record(reply.pending) || !side(reply.pending.by) || !move(reply.pending.mv) || !nonnegative(reply.pending.dmg))) invalid();
+  if (reply.choices !== undefined && (!Array.isArray(reply.choices) || !reply.choices.every(c => typeof c === 'string'))) invalid();
+  return reply as unknown as GameReply;
+}
+function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+function nonnegative(value: unknown): boolean { return typeof value === 'number' && Number.isInteger(value) && value >= 0; }
+function side(value: unknown): boolean { return value === 'you' || value === 'foe'; }
+function move(value: unknown): boolean { return ['light','heavy','ult'].includes(String(value)); }
+function validEvent(event: unknown): boolean {
+  if (!record(event)) return false;
+  switch (event.t) {
+    case 'start': return typeof event.foe === 'string' && side(event.first);
+    case 'room': case 'join': return typeof event.code === 'string' && /^\d{4}$/.test(event.code);
+    case 'round': return nonnegative(event.n) && nonnegative(event.bonus);
+    case 'charge': return side(event.by) && nonnegative(event.ap);
+    case 'hit': return side(event.by) && move(event.mv) && ['guard','dodge','take'].includes(String(event.r)) && nonnegative(event.dmg)
+      && ['miss','crit','forced'].every(key => event[key] === undefined || event[key] === true);
+    case 'end': return side(event.win);
+    case 'timeout': return event.what === 'guest' || event.what === 'foe';
+    case 'chant': return typeof event.text === 'string';
+    default: return false;
+  }
+}
+function invalid(): never { throw new UpstreamError('游戏事实不符合 MCP v2 契约', 'protocol_error'); }

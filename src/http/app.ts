@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -7,7 +7,7 @@ import { extractAdminToken, isAdminAllowed } from '../admin/access.js';
 import { buildAdminOverview } from '../admin/overview.js';
 import { ADMIN_PAGE_HTML, adminDeniedPage } from '../admin/page.js';
 import { createRateLimiter } from '../admin/ratelimit.js';
-import { createPushEngine } from '../game/push.js';
+import { createPushEngine, type PushKind } from '../game/push.js';
 import type { GameService } from '../game/service.js';
 import type { BattleState } from '../game/state.js';
 import type { Logger } from '../log.js';
@@ -175,6 +175,21 @@ export function createApp(deps: AppDependencies): express.Express {
    * 只有「服务端 → 页面」一个方向，EventSource 自带重连与心跳，够用且更省事。
    * EventSource 不能带请求头，身份从查询参数取（context 层已支持）。
    */
+  const notices = new Map<string, { owner:string; battleId:string; kind:PushKind; fingerprint:string }>();
+  app.post('/notification', (req, res) => {
+    const ctx=createDeviceContext(randomUUID());
+    applyRequestContext(ctx,req.headers,req.query as Record<string,unknown>);
+    const {pushId,battleId,kind}=req.body ?? {};
+    const notice=typeof pushId === 'string' ? notices.get(pushId) : undefined;
+    const owner=battleKey(ctx), current=service.snapshot(owner)?.state;
+    if (!notice || notice.owner!==owner || notice.battleId!==battleId || notice.kind!==kind || !current || JSON.stringify(current)!==notice.fingerprint) {
+      res.json({reply:{v:2,ok:true,silent:true},battleId:current?.battleId ?? null});return;
+    }
+    notices.delete(pushId);
+    const result=service.notification(owner,notice.kind,{battleId:notice.battleId,pushId,speaker:ctx.speakerName || undefined});
+    res.json({reply:result.reply,battleId:result.battle?.id ?? null,stage:createHash('sha256').update(notice.fingerprint).digest('hex')});
+  });
+
   app.get('/events', (req, res) => {
     const ctx = createDeviceContext(randomUUID());
     applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
@@ -188,6 +203,7 @@ export function createApp(deps: AppDependencies): express.Express {
     });
     res.flushHeaders();
 
+    const issued = new Set<string>();
     let revision = 0;
     let lastFingerprint = '';
     // 每条连接各有一个推送引擎：重连后从当前局面重新起算，不补发上次的提醒
@@ -214,8 +230,15 @@ export function createApp(deps: AppDependencies): express.Express {
       }
       // 先让页面拿到新局面，再让伙伴开口；未知事件类型的老客户端会直接忽略
       for (const message of messages) {
+        if (!battle) continue;
+        const id=randomUUID();
+        // One small live set per connection; reconnect/close invalidates old signals.
+        if (issued.size >= 32) { const oldest=issued.values().next().value; if(oldest) { issued.delete(oldest); notices.delete(oldest); } }
+        issued.add(id);
+        notices.set(id,{owner:battleKey(ctx),battleId:battle.battleId,kind:message.kind,fingerprint});
         const payload = {
           type: 'push',
+          id, battleId:battle.battleId,
           device: ctx.deviceId,
           agent: ctx.agentId,
           kind: message.kind,
@@ -242,6 +265,8 @@ export function createApp(deps: AppDependencies): express.Express {
     });
 
     const close = (): void => {
+      for(const id of issued) notices.delete(id);
+      issued.clear();
       clearInterval(poll);
       clearInterval(heartbeat);
       res.off('close', close);

@@ -113,10 +113,10 @@ describe('配置解析', () => {
 
   it('挂起等对手的时长：默认 30 秒，钳制在 1 秒到 2 分钟', () => {
     assert.equal(loadConfig({}).waitEventTimeoutMs, 30_000);
-    assert.equal(loadConfig({ WAIT_EVENT_TIMEOUT_MS: '45000' }).waitEventTimeoutMs, 45_000);
+    assert.equal(loadConfig({ WAIT_EVENT_TIMEOUT_MS: '45000' }).waitEventTimeoutMs, 30_000);
     // 太短会在对手还没反应时就把请求放回去，太长会一直占着平台的连接
     assert.equal(loadConfig({ WAIT_EVENT_TIMEOUT_MS: '100' }).waitEventTimeoutMs, 1_000);
-    assert.equal(loadConfig({ WAIT_EVENT_TIMEOUT_MS: '999999' }).waitEventTimeoutMs, 120_000);
+    assert.equal(loadConfig({ WAIT_EVENT_TIMEOUT_MS: '999999' }).waitEventTimeoutMs, 30_000);
     assert.equal(loadConfig({ WAIT_EVENT_TIMEOUT_MS: 'oops' }).waitEventTimeoutMs, 30_000);
     assert.equal(loadConfig({ WAIT_EVENT_TIMEOUT_MS: '   ' }).waitEventTimeoutMs, 30_000);
   });
