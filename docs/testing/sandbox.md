@@ -143,6 +143,9 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
 {
   "ok": true,
   "reply": "我强攻，对手格挡，掉2点生命值，剩15。",
+  "protocol": { "v": 2, "ok": true, "phase": "battle", "need": "move", "...": "完整 GameReply" },
+  "sourceReply": "{\"v\":2,\"ok\":true,...}",
+  "silent": false,
   "isError": false,
   "tool": "game_say",
   "deviceId": "web-p1",
@@ -158,16 +161,24 @@ curl -s localhost:8100/api/say -H 'content-type: application/json' \
         "status": 200,
         "ms": 18,
         "request": { "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "game_say", "arguments": { "text": "强攻" } } },
-        "response": { "jsonrpc": "2.0", "id": 2, "result": { "content": [{ "type": "text", "text": "我强攻，对手格挡……" }] } }
+        "response": { "jsonrpc": "2.0", "id": 2, "result": { "content": [{ "type": "text", "text": "{\"v\":2,\"ok\":true,...}" }], "_meta": { "linx/battleId": "b-1" } } }
       }
     ]
   }
 }
 ```
 
-- `reply` 是 Agent 转发与可选人设表达后的最终话术；`sourceReply` 是工具原文，供诊断来源与回退。当前 presentation 是文本兼容事实，不是 v2；v2 中工具文本块是 JSON，须解析并完成表达后才形成 reply，不能直接交页面或 TTS。
+- `reply` 是 Agent 转发与可选人设表达后的最终话术；`sourceReply` 是工具返回的 v2 事实 JSON 原文；`protocol` 是解析后的 `GameReply`。工具文本块是 JSON，须解析并完成表达后才形成 `reply`，不能直接交页面或 TTS。
 - `state` 是调用完成后从 `GET /state` 取到的局面快照；取不到时为 `null`（不影响播报）。
 - 上游完全连不上：`{ "ok": false, "reply": "沙箱连不上游戏服务 http://…，先确认 pnpm dev 在跑。", "error": "upstream_unreachable" }`，HTTP 状态仍为 200，页面照常播报这句。
+
+### POST /api/wait
+
+即时话术播放完成后，页面用当前 `deviceId`、`profileId` 请求一次；沙箱调 `wait_event` 把这次请求挂起，返回与 `/api/say` 同形的 `reply`、`protocol`、`sourceReply`、`state` 与 `trace`。轮到自己出招、单人局、没有进行中对局或对局已结束时立即返回；新输入、隐藏、手动停止或换局会取消旧等待，迟到的旧局回复不播放。
+
+### POST /api/notify
+
+页面收到 `push` 后回传 `{deviceId, kind, battleId, pushId, profileId}`；服务端核对身份、对局、一次性 `pushId` 与局面指纹，只取当前权威事实再交表达，不重放旧提醒，也不执行游戏动作。`kind` 只接受页面提醒的七类；缺字段、旧局或失效信号返回空话术。
 
 ### GET /api/state?deviceId=web-p1
 
@@ -217,7 +228,7 @@ data: {"type":"push","device":"web-p1","agent":"linx-sandbox","kind":"opponent-m
 | `wait-guest` | 房间一直没人加入，30 秒提醒一次 | `wait` |
 
 - 同一个局面只催到规定次数；终局不推，避免和玩家那次行动的回复重复。
-- 大招就绪只认服务端 `presentation.facts.you.ultimateReady`：能量不足、本局次数用完或当前不能出招时，不会说“可以用大招”；就绪推送每次就绪只发一次。
+- 大招就绪只认服务端 `rules.isUltimateReady` 判定与 v2 事实里的 `you.ult`：能量不足、本局次数用完或当前不能出招时，不会说“可以用大招”；就绪推送每次就绪只发一次。
 - `text` 是伙伴第一人称的短句，最多两句、约 60 字；页面可直接显示，也可以交给 TTS。
 - 空闲基准取「局面最后变化、连接建立、本次变化」三者较晚者；玩家行动结算后局面变化，计时重新开始。
 - 页面收到 `push` 会写进对话记录并朗读；正在朗读时只留最新一条排队，玩家正在说话、打字或页面隐藏时丢弃，不抢麦。麦克风只是开着待机不算「在说话」，朗读会短暂暂停收音再恢复。排队与丢弃逻辑在 `sandbox/public/push.js`。

@@ -12,7 +12,7 @@
 | SSH | `ssh linx-fighter-las`（`111.62.156.213:10653`，私钥登录） |
 | 应用服务 | `linx-fighter.service`，代码 `/opt/linx-fighter`，用户 `linx`，监听 `127.0.0.1:8000` |
 | 反向代理 | `nginx.service`，`/etc/nginx/conf.d/linx-fighter.conf`，80 → `127.0.0.1:8000` |
-| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`WAIT_EVENT_TIMEOUT_MS`、`COMMAND_CODE_API_KEY`、`ADMIN_TOKEN` 等），不进仓库 |
+| 运行配置 | `/etc/linx-fighter.env`（端口、`BATTLE_TTL_SECONDS`、`WAIT_EVENT_TIMEOUT_MS`、`DECISION_API_KEY`、`CHAT_API_KEY`、`ADMIN_TOKEN` 等），不进仓库 |
 | 监控页 | `http://111.62.156.213/admin`（只读看板，3 秒轮询；`ADMIN_TOKEN` 为空即公开） |
 
 常用操作：
@@ -149,8 +149,8 @@ pnpm exec tsx scripts/smoke.ts http://111.62.156.213
 
 服务端做不到、必须靠平台侧的：
 
-- 说话人身份要「先要」才「再给」：MCP 请求头里只有 Device / Agent / Session 三个 `X-Linx-*` 头，不带说话人；但**在工具的 `inputSchema` 里声明了 `speaker` 参数之后，平台会把声纹识别出的名字填进这个参数**（平台支持侧的说明；真机待验）。game_say 声明了它，服务端只拿它记日志、写回 `DeviceContext.speakerName`，不参与招式裁决与座位归属。
-- 请求头里如果也带了 `X-Linx-Speaker-Name` / `X-Linx-Speaker-Id` 会一并接住（同样只进日志），并且每个进程第一次见到某种请求头组合时会打一条 `请求身份头快照`，把平台实际下发的自定义头列出来（`authorization`、`cookie` 之类按名字打码）。确认办法：`journalctl -u linx-fighter --no-pager -o cat --since "10 min ago" | grep -E '工具调用|请求身份头快照'`，看 `speaker` 字段有没有值。
+- 说话人身份要「先要」才「再给」：MCP 请求头里只有 Device / Agent / Session 三个 `X-Linx-*` 头，不带说话人；但**在工具的 `inputSchema` 里声明了 `speaker` 参数之后，平台会把声纹识别出的名字填进这个参数**（平台支持侧的说明；真机待验）。game_say 与 wait_event 都声明了它；服务端用它做 `ALLOWED_SPEAKERS` 白名单、日志与称呼，参数与 `X-Linx-Speaker-Name` 冲突时静默，不参与招式裁决与座位归属。
+- 请求头里如果也带了 `X-Linx-Speaker-Name` / `X-Linx-Speaker-Id` 会一并接住（同样只进白名单与日志），并且每个进程第一次见到某种请求头组合时会打一条 `请求身份头快照`，把平台实际下发的自定义头列出来（`authorization`、`cookie` 之类按名字打码）。确认办法：`journalctl -u linx-fighter --no-pager -o cat --since "10 min ago" | grep -E '工具调用|请求身份头快照'`，看 `speaker` 字段有没有值。
 - 平台的声纹开关（控制台「声纹功能：只回应指定的人」）是**内部门禁**：命中就转发、不命中设备直接不吭声。它要求**每台设备绑各自的智能体**，否则两台设备在平台眼里是同一个主人，声纹也分不开。
 - 换设备所属智能体有官方接口（`PUT /v1/devices/{mac_address}/agent/{agent_id}`，原文「将设备切换到目标智能体」）：
 
@@ -179,6 +179,39 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 表达适配器采用可配置的 OpenAI 兼容 Chat Completions，模型和地址以本地配置及获授权的实际验证为准；v2不依赖 presentation 或 structuredContent，平台须实际读到content文本块内的事实JSON；不能因沙箱实现而宣称平台已同步。密钥不写入模板或浏览器，不从一组 Provider 自动复制到另一组。
 
 字段见 [协议](mcp-protocol.md#7-智能体提示词)，验收见 [迁移说明](mcp-v2-migration.md)。未新增 MCP_PROTOCOL 开关或协议猜测；发布前必须配对更新平台提示词，旧文本模板不得直接朗读 JSON。仓库模板不会自动同步平台。
+
+## 7. 环境变量
+
+服务启动时从环境变量读取配置，示例见 [`.env.example`](../../.env.example)；空白值视为未设置。模型 provider 的地址、密钥与路径组合见 [1.1](#11-模型层的出口与换网关)。
+
+| 变量 | 默认 | 作用 |
+| --- | --- | --- |
+| `PORT` | `8000` | HTTP 监听端口 |
+| `HOST` | `0.0.0.0` | 监听地址 |
+| `LOG_LEVEL` | `info` | 日志级别；`debug` 会打印每条进出 MCP 的原始报文 |
+| `BATTLE_TTL_SECONDS` | `1800` | 对局与房间的空闲过期时间 |
+| `ENABLE_DEBUG_ENDPOINTS` | 非 production 开启 | 是否暴露 `/debug/*` 调试端点 |
+| `API_KEY` | — | 旧共享密钥；仅在未设置对应专用地址时回退 |
+| `BASE_URL` | — | 旧共享地址；未设置专用地址时同时用于决策与聊天 |
+| `DECISION_API_KEY` | — | 决策 provider 密钥；配置后启用命令路由与 JEV 对手 |
+| `DECISION_BASE_URL` | — | 决策服务地址；优先级为专用变量 → `BASE_URL` → 默认地址 |
+| `DECISION_MODEL` | `typesafe/jev-1.14` | 命令路由与对手决策的模型名 |
+| `DECISION_PATH` | `/systemone` | 决策模型路径 |
+| `CHAT_API_KEY` | — | 聊天 provider 密钥；配置后启用规则外问答 |
+| `CHAT_BASE_URL` | — | 聊天服务地址；优先级同上 |
+| `CHAT_MODEL` | `deepseek/deepseek-v4-flash` | 规则外问答的模型名 |
+| `CHAT_PATH` | `/chat/completions` | 聊天模型路径 |
+| `CHAT_REASONING` | `off` | 问答模型推理开关；只接受 `off` / `low` |
+| `ROUTER_TIMEOUT_MS` | `2000` | 命令路由超时，超时按没认出来处理 |
+| `CHAT_TIMEOUT_MS` | `6000` | 规则外问答超时，超时回固定话术 |
+| `ENEMY_AI` | `jev` | 对手 AI：`jev` 走决策接口，`local` 只用本地决策；没有决策密钥时自动回落 `local` |
+| `ENEMY_TIMEOUT_MS` | `2000` | JEV 对手单次决策超时，超时回退本地 |
+| `ATTRIBUTION_MODE` | `off` | 双人房座位归属：`strict` 时按口令过滤串音 |
+| `ALLOWED_SPEAKERS` | — | 逗号分隔的声纹称呼白名单；配置后未登记的说话人不回应，留空不限制 |
+| `WAIT_EVENT_TIMEOUT_MS` | `30000` | `wait_event` 挂起上限，夹在 1000～30000 毫秒 |
+| `ADMIN_TOKEN` | — | 后台监控页口令；为空时 `/admin` 公开，只适合演示环境 |
+
+沙箱自己的变量（`SANDBOX_*`）见 [沙箱配置](../testing/sandbox.md#配置项)。
 
 ## 常见问题
 
