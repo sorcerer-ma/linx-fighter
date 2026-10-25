@@ -30,6 +30,7 @@ export type Command =
   | { kind: 'help' }
   | { kind: 'start' }
   | { kind: 'open-room' }
+  | { kind: 'leave-room' }
   | { kind: 'join-room'; code: string }
   | { kind: 'refused'; why: RefuseReason }
   /** 串音/回灌：这句话不是冲本机说的，只回极短应答，不推进对局 */
@@ -139,7 +140,7 @@ const NEGATE_FALSE_POSITIVES = ['特别', '区别', '告别', '别的', '分别'
  * 动词与 pvp.ts 里的开房口令保持一致，改口令时两边一起看。
  */
 const CHALLENGE_NEGATION =
-  /(?:不要|不用|不想|不打算|甭|算了|不|别)(?:再|去|要|想|用)?(?:发起挑战|接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)|进房|挑战你|挑战|联机|开房|开个?房|建个?房|创建房|组队|一起打)/;
+  /(?:不要|不用|不想|不打算|甭|算了|不|别)(?:再|去|要|想|用)?(?:退出挑战|退出房间|发起挑战|接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)|进房|挑战你|挑战|联机|开房|开个?房|建个?房|创建房|组队|一起打)/;
 
 function includesAny(text: string, rules: string[]): boolean {
   return rules.some((rule) => text.includes(rule));
@@ -218,6 +219,12 @@ export function readCommand(raw: string): Command {
   // 「不打了，怎么重新开始」这类话还能得到玩法说明。
   // 反问式疑问（「要不要发起挑战」）先剔掉「要不要」再判，不算否定。
   if (CHALLENGE_NEGATION.test(negatableText(text))) return { kind: 'refused', why: 'negated' };
+
+  // Explicit exit cannot be reinterpreted as joining a number mentioned beside it.
+  if (/退出(?:挑战|房间)/.test(text)) {
+    if (/^(?:我要|我想|请|帮我)?(?:退出挑战|退出房间)(?:吧|了)?$/.test(text)) return {kind:'leave-room'};
+    return block === 'query' ? {kind:'route',question:true} : {kind:'refused',why:'ambiguous'};
+  }
 
   // 带编号的接受挑战最明确：已经在房间里的玩家也要能凭这句话换房
   if (code) return { kind: 'join-room', code };

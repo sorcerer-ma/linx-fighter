@@ -284,6 +284,8 @@ export class GameService {
       case 'echo':
         this.logger.info('疑似播报回灌', { sessionKey, chars: raw.length, rule: matchEchoRule(raw) });
         return { text: '', battle: this.viewFor(sessionKey), protocol: { silent: true, consume: false } };
+      case 'leave-room':
+        return this.leaveRoom(sessionKey, options);
       case 'join-room': {
         const result = this.joinRoom(sessionKey, command.code);
         if (result.battle && !result.protocol?.reason) this.bindSeat(sessionKey, options.speaker);
@@ -673,6 +675,37 @@ export class GameService {
       firstMover: battle.firstMover,
     });
     return { text: narrateOpening(battle), battle, protocol: { events: [this.startEvent(battle)] }, presentation:presentation('opening',battle) };
+  }
+
+  /** Exit shares the room transaction; a newly joined/changed battle is never cleared blindly. */
+  private leaveRoom(sessionKey: string, options: SayOptions): Promise<ServiceResult> {
+    const queued = tableFor(this.tables, sessionKey);
+    const originalId = queued.battle()?.id ?? null;
+    return this.battles.runExclusive(queued.key, () => {
+      if (!this.readerAllowed(sessionKey, options.speaker)) return this.silentResult(sessionKey);
+      const room = this.rooms.byPlayer(sessionKey);
+      const current = tableFor(this.tables, sessionKey);
+      const battle = current.view(sessionKey);
+      if (!room) return {text:'我现在不在挑战房间里，当前对局没有改变。',battle,protocol:{text:true,consume:false}};
+      if (room.code !== queued.room || (battle?.id ?? null) !== originalId) {
+        return {text:narrateStaleAction(),battle,protocol:{reason:'failed',text:true,consume:false}};
+      }
+      // An active two-player exit needs a product decision: no invented surrender,
+      // penalty, winner or automatic cancellation of the other player's game.
+      if (room.guestKey && battle?.phase === 'battle') {
+        return {text:'对决已经开始，现在还不能退出挑战；当前对局保持不变。',battle,protocol:{reason:'wrong_stage',text:true,consume:false}};
+      }
+      const ended = room.guestKey !== null;
+      dropRoom(this.tables, room, '明确退出挑战');
+      this.delivered.delete(room.hostKey);
+      this.notificationIds.delete(room.hostKey);
+      if (room.guestKey) {
+        this.delivered.delete(room.guestKey);
+        this.notificationIds.delete(room.guestKey);
+      }
+      this.clearRoomFacts(room);
+      return {text:ended ? '这场挑战已经结束，我已退出房间。' : '我已退出挑战，等待房间已撤销。',battle:null,protocol:{text:true,consume:false}};
+    });
   }
 
   /**

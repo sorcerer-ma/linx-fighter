@@ -342,3 +342,11 @@ it('加入意图缺少或错误编号不创建，否定和查询仍不执行',()
  assert.equal(readCommand('双人怎么玩').kind,'help');
  assert.equal(readCommand('共鸣对决，发起挑战').kind,'open-room');
 });
+
+it('退出挑战与退出房间同义，否定和询问不执行退出',()=>{
+ for(const text of ['退出挑战','退出房间','我要退出房间','请退出挑战吧'])assert.equal(readCommand(text).kind,'leave-room',text);
+ for(const text of ['不要退出挑战','不退出房间'])assert.equal(readCommand(text).kind,'refused',text);
+ assert.notEqual(readCommand('如何退出房间？').kind,'leave-room');
+ assert.deepEqual(readCommand('退出房间1234'),{kind:'refused',why:'ambiguous'});
+ assert.deepEqual(readCommand('如何退出房间1234？'),{kind:'route',question:true});
+});
