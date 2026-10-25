@@ -262,7 +262,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     const systemReply = data.ok === false || data.isError === true;
     pushReply(data.reply, systemReply ? 'warn' : 'normal', systemReply ? 'system' : 'partner');
     activeReplyBattleId = data.sourceBattleId || null;
-    return speak(data.reply);
+    return speak(data.speech, data.reply, turn);
   }
 
   async function waitForOpponent(turn) {
@@ -416,39 +416,72 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     return typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance === 'function';
   }
 
-  // 音频层仅消费最终话术，以完成/失败/取消事件通知调用方。
-  function speak(text) {
-    if (!text.trim()) return Promise.resolve('silent');
+  // 单段适配边界为 {text, emotion}，对应未来语音队列 enqueue(text, emotion)。
+  // 浏览器只使用 text；emotion 是模型意图，不伪造音色情绪或映射音高/语速。
+  function browserSpeechSegment(item) {
+    const utter = new window.SpeechSynthesisUtterance(item.text);
+    utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
+    utter.rate = TTS_RATE;
+    el.replies.dataset.emotionIntent = item.emotion;
+    el.replies.dataset.emotionApplied = 'false';
+    return utter;
+  }
+
+  function speak(plan, reply, turn) {
     stopSpeaking();
+    // 旧版本只有 reply：明确作为 neutral 单段兼容，不从文字猜情绪。
+    const segments = plan && plan.version === 1 && Array.isArray(plan.segments)
+      ? plan.segments : [{ text: reply, emotion: 'neutral' }];
+    if (!segments.length) return Promise.resolve('silent');
     if (!canSpeak()) return Promise.resolve('displayed');
     listener.pause();
     return new Promise(function (resolve) {
-      var utter = new window.SpeechSynthesisUtterance(text);
-      activeUtterance = utter;
-      utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
-      utter.rate = TTS_RATE;
-      utter.onstart = function () {
-        if (activeUtterance === utter) el.replies.setAttribute('aria-label', '对话记录，伙伴正在朗读');
-      };
+      let index = 0;
+      let finished = false;
       function finish(reason) {
-        if (activeUtterance !== utter) return;
+        if (finished) return;
+        finished = true;
         clearTimeout(ttsTimer);
         ttsTimer = null;
         activeUtterance = null;
         finishPlayback = null;
+        delete el.replies.dataset.emotionIntent;
+        delete el.replies.dataset.emotionApplied;
         el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
         resolve(reason);
-        if (!busy && el.composer.hidden && listener) listener.resume();
+        if (reason !== 'cancelled' && !busy && el.composer.hidden && listener) listener.resume();
+      }
+      function playNext() {
+        if (finished) return;
+        if (turn !== turnSequence || document.hidden) { finish('cancelled'); return; }
+        if (index === segments.length) { finish('ended'); return; }
+        const utter = browserSpeechSegment(segments[index++]);
+        activeUtterance = utter;
+        utter.onstart = function () {
+          if (!finished && activeUtterance === utter) el.replies.setAttribute('aria-label', '对话记录，伙伴正在朗读（浏览器未应用情绪）');
+        };
+        utter.onend = function () {
+          if (finished || activeUtterance !== utter) return;
+          clearTimeout(ttsTimer);
+          ttsTimer = null;
+          // 同步接续下一段，整条话术结束之前不恢复识别，不触发 wait_event。
+          playNext();
+        };
+        utter.onerror = function () {
+          if (finished || activeUtterance !== utter) return;
+          finish('error');
+          try { window.speechSynthesis.cancel(); } catch (err) { /* 浏览器已收尾 */ }
+        };
+        ttsTimer = setTimeout(function () {
+          if (finished || activeUtterance !== utter) return;
+          finish('timeout');
+          try { window.speechSynthesis.cancel(); } catch (err) { /* 浏览器已收尾 */ }
+        }, TTS_TIMEOUT);
+        try { window.speechSynthesis.speak(utter); }
+        catch { utter.onerror(); }
       }
       finishPlayback = finish;
-      utter.onend = function () { finish('ended'); };
-      utter.onerror = function () { finish('error'); };
-      ttsTimer = setTimeout(function () {
-        finish('timeout');
-        try { window.speechSynthesis.cancel(); } catch (err) { /* 浏览器已收尾 */ }
-      }, TTS_TIMEOUT);
-      try { window.speechSynthesis.speak(utter); }
-      catch { finish('error'); }
+      playNext();
     });
   }
 

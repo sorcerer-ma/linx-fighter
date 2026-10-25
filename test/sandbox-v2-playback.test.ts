@@ -124,3 +124,70 @@ it('SSE 换局后旧 say 回复不播不记；自身开新局仍能播；播报�
   h.state({ battleId: 'another', round: 1 }, 4); h.utterances[0].onend(); await flush();
   assert.equal(h.calls.length, 2);
 });
+
+const segmented = (segments: Array<{ text: string; emotion: string }>, need = 'wait_foe') => ({
+  ...outcome(segments.map(item => item.text).join(''), need),
+  speech: { version: 1, source: 'model', segments },
+});
+it('情绪分段依次播放，日志只显示合并句；麦克风整队列暂停，最后结束才等待', async () => {
+  const h = harness(); await h.ready(); h.input('强攻');
+  const segments = [{ text: '嘿，打中了！', emotion: 'proud' }, { text: '我还能再来！🔥', emotion: 'determined' }];
+  h.calls[0].respond(segmented(segments)); await flush();
+  const resumes = h.listener.resumes;
+  assert.equal(h.utterances.length, 1);
+  assert.equal(h.utterances[0].text, segments[0]!.text);
+  assert.equal(h.nodes.get('replies').dataset.emotionIntent, 'proud');
+  assert.equal(h.nodes.get('replies').dataset.emotionApplied, 'false');
+  assert.equal(h.utterances[0].pitch, undefined);
+  assert.equal(h.listener.paused, true);
+  h.utterances[0].onend(); await flush();
+  assert.equal(h.utterances.length, 2);
+  assert.equal(h.utterances[1].text, segments[1]!.text);
+  assert.equal(h.nodes.get('replies').dataset.emotionIntent, 'determined');
+  assert.equal(h.utterances[1].rate, h.utterances[0].rate);
+  assert.equal(h.listener.resumes, resumes);
+  assert.equal(h.listener.paused, true);
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.messages.filter(x => x.role === 'partner'), [{ role: 'partner', text: segments.map(s => s.text).join('') }]);
+  h.utterances[1].onend(); await flush();
+  assert.equal(h.calls[1].url, '/api/wait');
+  assert.equal(h.listener.paused, false);
+});
+it('分段队列失败、超时、手动停止和新输入均丢弃剩余段，不挂起也不重做行动', async () => {
+  for (const mode of ['error', 'timeout', 'stop', 'input']) {
+    const h = harness(); await h.ready(); h.input('攻击');
+    h.calls[0].respond(segmented([{ text: '第一段。', emotion: 'excited' }, { text: '第二段。', emotion: 'happy' }, { text: '第三段。', emotion: 'neutral' }]));
+    await flush();
+    const oldUtter = h.utterances[0];
+    if (mode === 'error') oldUtter.onerror();
+    else if (mode === 'timeout') h.fireTimers();
+    else if (mode === 'stop') h.stop();
+    else h.input('战况');
+    await flush(); oldUtter.onend(); await flush();
+    assert.equal(h.utterances.length, 1, mode);
+    assert.equal(h.calls.filter(c => c.url === '/api/wait').length, 0, mode);
+    assert.equal(h.calls.filter(c => c.url === '/api/say').length, mode === 'input' ? 2 : 1, mode);
+    if (mode === 'stop') assert.equal(h.listener.enabled, false);
+  }
+});
+it('分段静默跳过所有音频；旧 reply 仍以单段 neutral 播放', async () => {
+  const h = harness(); await h.ready(); h.input('原话');
+  h.calls[0].respond({ ...segmented([]), silent: true }); await flush();
+  assert.equal(h.utterances.length, 0); assert.equal(h.messages.length, 1);
+  h.input('战况'); h.calls[1].respond(outcome('我在这儿。')); await flush();
+  assert.equal(h.utterances.length, 1);
+  assert.equal(h.utterances[0].text, '我在这儿。');
+  assert.equal(h.nodes.get('replies').dataset.emotionIntent, 'neutral');
+});
+it('播放到中间段后换局或隐藏页面取消余段，迟到 onend 不继续播也不等待', async () => {
+  for (const mode of ['battle', 'hide']) {
+    const h = harness(); await h.ready(); h.state({ battleId: 'old', round: 1 }, 1); h.input('攻击');
+    h.calls[0].respond({ ...segmented([{ text: '一。', emotion: 'happy' }, { text: '二。', emotion: 'hurt' }, { text: '三。', emotion: 'determined' }]), sourceBattleId: 'old' });
+    await flush(); h.utterances[0].onend(); await flush();
+    assert.equal(h.utterances.length, 2);
+    if (mode === 'battle') h.state({ battleId: 'new', round: 1 }, 2); else h.hide();
+    h.utterances[1].onend(); await flush();
+    assert.equal(h.utterances.length, 2, mode);
+    assert.equal(h.calls.length, 1, mode);
+  }
+});

@@ -36,8 +36,8 @@ it('client preserves unknown feedback in an existing battle, and suppresses canc
  };
  try{
   const client=new SandboxClient({upstream:'http://mock.invalid',agentId:'test',timeoutMs:1000,logger:createLogger('error'),agent:new SandboxAgent('伙伴',{async express(){if(mode==='cancel')controller.abort();return '我准备好了，好期待呀！';}})});
-  const fault=await client.say('test','强攻');assert.equal(fault.silent,false);assert.equal(fault.sourceBattleId,undefined);assert.match(fault.reply,/结果未确认/);
-  mode='stale';const stale=await client.say('test','开始');assert.equal(stale.reply,'');assert.equal(stale.silent,true);assert.equal(stale.rewriteStatus,'stale');
-  mode='cancel';const cancelled=await client.say('test','开始',{signal:controller.signal});assert.equal(cancelled.reply,'');assert.equal(cancelled.silent,true);assert.equal(cancelled.rewriteStatus,'cancelled');
+  const fault=await client.say('test','强攻');assert.equal(fault.silent,false);assert.equal(fault.sourceBattleId,undefined);assert.match(fault.reply,/结果未确认/);assert.equal(fault.speech.source,'fallback');assert.equal(fault.speech.segments.map(segment=>segment.text).join(''),fault.reply);
+  mode='stale';const stale=await client.say('test','开始');assert.equal(stale.reply,'');assert.equal(stale.silent,true);assert.equal(stale.rewriteStatus,'stale');assert.deepEqual(stale.speech.segments,[]);
+  mode='cancel';const cancelled=await client.say('test','开始',{signal:controller.signal});assert.equal(cancelled.reply,'');assert.equal(cancelled.silent,true);assert.equal(cancelled.rewriteStatus,'cancelled');assert.deepEqual(cancelled.speech.segments,[]);
  }finally{globalThis.fetch=original;}
 });
