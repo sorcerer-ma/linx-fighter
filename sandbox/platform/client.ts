@@ -1,4 +1,5 @@
 import { SandboxAgent, type ExpressionValidationReason } from './agent.js';
+import { resolveProfileId, type SpeechProfileId } from './profiles.js';
 import { fallbackSpeech, type SpeechPlan } from './speech.js';
 import type { GameReply } from '../../src/game/protocol.js';
 import { randomUUID } from 'node:crypto';
@@ -34,6 +35,7 @@ export interface BattleSnapshot {
 }
 
 export interface SayResult {
+  profileId: SpeechProfileId;
   ok: boolean;
   protocol?: GameReply;
   sourceBattleId?: string | null;
@@ -60,33 +62,35 @@ export class SandboxClient {
   get agentMode(): 'relay' | 'compatibility' { return this.options.agent ? 'relay' : 'compatibility'; }
 
   /** No protocol interpretation or tool selection occurs before game_say. */
-  async say(deviceId: string, text: string, options: { signal?: AbortSignal } = {}): Promise<SayResult> {
+  async say(deviceId: string, text: string, options: { signal?: AbortSignal; profileId?: string } = {}): Promise<SayResult> {
     return this.invoke(deviceId, 'game_say', text, options);
   }
-  async wait(deviceId: string, options: { signal?: AbortSignal } = {}): Promise<SayResult> {
+  async wait(deviceId: string, options: { signal?: AbortSignal; profileId?: string } = {}): Promise<SayResult> {
     return this.invoke(deviceId, 'wait_event', '', options);
   }
-  private async invoke(deviceId: string, tool: 'game_say' | 'wait_event', text: string, options: { signal?: AbortSignal }): Promise<SayResult> {
+  private async invoke(deviceId: string, tool: 'game_say' | 'wait_event', text: string, options: { signal?: AbortSignal; profileId?: string }): Promise<SayResult> {
+    const profileId = resolveProfileId(options.profileId);
+    const request = {signal:options.signal,profileId};
     const sessionId = `s-${randomUUID().slice(0, 8)}`;
     const mcp = new LinxMcpClient({
       upstream: this.options.upstream, deviceId, agentId: this.options.agentId,
       sessionId, timeoutMs: this.options.timeoutMs, logger: this.options.logger, display: this.options.display,
     });
-    const base = { tool, deviceId, agentId: this.options.agentId, sessionId };
+    const base = { tool, profileId, deviceId, agentId: this.options.agentId, sessionId };
     try {
-      options.signal?.throwIfAborted();
-      await mcp.initialize(options);
+      request.signal?.throwIfAborted();
+      await mcp.initialize({signal:request.signal});
       const agent = this.options.agent ?? new SandboxAgent('');
-      const outcome = tool === 'wait_event' ? await agent.wait(mcp, options) : await agent.run(text, mcp, options);
+      const outcome = tool === 'wait_event' ? await agent.wait(mcp, request) : await agent.run(text, mcp, request);
       const state = await this.state(deviceId).catch(() => null);
-      const cancelled = options.signal?.aborted === true;
+      const cancelled = request.signal?.aborted === true;
       const stale = state !== null && outcome.battleId !== undefined && outcome.battleId !== (state.battle?.battleId ?? null);
       const trace = mcp.takeTrace();
       const validationReason = 'validationReason' in outcome ? outcome.validationReason : undefined;
       const rewriteStatus = cancelled ? 'cancelled' : stale ? 'stale' : outcome.rewriteStatus;
       const speech = cancelled || stale ? fallbackSpeech('') : outcome.speech;
       this.options.logger.info('沙箱转发', {
-        deviceId, requestId: sessionId, rewriteStatus, validationReason, speechSource:speech.source, speechSegments:speech.segments.length,
+        deviceId, profileId, requestId: sessionId, rewriteStatus, validationReason, speechSource:speech.source, speechSegments:speech.segments.length,
         expressionError: 'expressionError' in outcome ? outcome.expressionError : undefined,
         isError: outcome.isError, round: state?.battle?.round ?? 0, room: state?.room, tool, ms: trace.ms,
       });
@@ -95,7 +99,7 @@ export class SandboxClient {
         isError: outcome.isError, sourceReply:outcome.sourceText, rewriteStatus,
         expressionError:'expressionError' in outcome && typeof outcome.expressionError === 'string' ? outcome.expressionError : undefined, state, trace };
     } catch {
-      const cancelled = options.signal?.aborted === true;
+      const cancelled = request.signal?.aborted === true;
       this.options.logger.warn('沙箱工具结果未确认', { deviceId, requestId:sessionId, tool, cancelled });
       const reply = cancelled ? '' : '这一手结果未确认，我先核实局面。';
       return { ok:false, ...base, silent:cancelled, reply, speech:fallbackSpeech(reply),
