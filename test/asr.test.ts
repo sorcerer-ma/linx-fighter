@@ -78,8 +78,9 @@ describe('音节与音节距离', () => {
 
 describe('线上真实语料：同音只差一处也认', () => {
   it('语料里的错识别句子都能命中正确招式', () => {
-    expectAction('公鸡', 'light', 'exact');
-    expectAction('重机', 'heavy', 'exact');
+    expectAction('公鸡', 'light', 'syllable');
+    expectAction('我要公鸡你', 'light', 'syllable');
+    expectAction('重机', 'heavy', 'syllable');
     expectAction('硬航', 'take', 'exact');
     expectAction('长寿', 'take', 'exact');
     expectAction('我要可党。', 'guard', 'exact');

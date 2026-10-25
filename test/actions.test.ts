@@ -35,18 +35,15 @@ describe('招式识别', () => {
     assert.equal(parseAction('生吃这一下'), 'take');
   });
 
-  it('容忍 ASR 同音/近音误识别', () => {
-    // 平台侧 ASR 会把「攻击」转成「公鸡」这类同音字，只能在我们这层兜住
-    assert.equal(parseAction('公鸡'), 'light');
-    assert.equal(parseAction('我要公鸡你'), 'light');
-    assert.equal(parseAction('工击'), 'light');
-    assert.equal(parseAction('墙攻'), 'heavy');
-    assert.equal(parseAction('大召'), 'ult');
-    assert.equal(parseAction('回七'), 'charge');
-    // 「多开」「傻逼」这类同音、吞韵尾的误写不再进词表，由 asr.ts 的近似匹配兜住，
-    // 对应断言在 test/asr.test.ts
-    assert.equal(parseAction('哥挡'), 'guard');
-    assert.equal(parseAction('成受'), 'take');
+  it('精确层只兜拼音规则接不住的误识别', () => {
+    // 同音、近音、吞韵尾的错字交给 asr.ts，对应断言在 test/asr.test.ts；
+    // 这里只留语义级误听和音节表尚未收录的字。
+    assert.equal(parseAction('大着'), 'ult');
+    assert.equal(parseAction('可党'), 'guard');
+    assert.equal(parseAction('狠抗'), 'take');
+    assert.equal(parseAction('硬坑'), 'take');
+    assert.equal(parseAction('硬航'), 'take');
+    assert.equal(parseAction('长寿'), 'take');
   });
 
   it('念出唤出指令也能出招，并带回原文', () => {
@@ -100,7 +97,7 @@ describe('一句话里的招式集合', () => {
   it('单招式只返回一个 id', () => {
     assert.deepEqual(matchActionIds('攻击'), ['light']);
     assert.deepEqual(matchActionIds('大招'), ['ult']);
-    assert.deepEqual(matchActionIds('我要公鸡你'), ['light']);
+    assert.deepEqual(matchActionIds('我要攻击你'), ['light']);
     assert.deepEqual(matchActionIds('  HEAVY  '), ['heavy']);
     assert.deepEqual(matchActionIds('攻击。'), ['light']);
   });
@@ -145,7 +142,7 @@ describe('一句话里的招式集合', () => {
   });
 
   it('matchAction 仍是单招式结果，且落在 matchActionIds 里', () => {
-    for (const text of ['大招还是强攻', '攻击或者闪避', '全力攻击', '我要公鸡你']) {
+    for (const text of ['大招还是强攻', '攻击或者闪避', '全力攻击', '我要攻击你']) {
       const single = matchAction(text);
       assert.ok(single, `「${text}」应有 matchAction 结果`);
       assert.ok(matchActionIds(text).includes(single.id), `「${text}」的 matchAction 应是命中招式之一`);

@@ -60,8 +60,8 @@ describe('一句话读成命令', () => {
     assert.notEqual(readCommand('今天1234').kind, 'join-room');
   });
 
-  it('招式读成 turn，同音误识别与唤出指令都算', () => {
-    for (const text of ['攻击', '普攻', '公鸡', '强攻', '格挡', '闪避']) {
+  it('招式读成 turn，拼音规则接不住的误识别与唤出指令都算', () => {
+    for (const text of ['攻击', '普攻', '大着', '强攻', '格挡', '闪避']) {
       expectKind(text, 'turn');
     }
     assert.deepEqual(readCommand('共鸣斩破军'), { kind: 'turn', action: 'light', chant: '共鸣斩破军' });
