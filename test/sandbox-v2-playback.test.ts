@@ -29,26 +29,27 @@ function harness(audio = true, cloud = false, configOverrides: Record<string, un
     addEventListener(name: string, fn: () => void) { docEvents[name] = fn; }, documentElement: { style: { setProperty() {} } },
   };
   const window: any = { location: { search: '?player=test' }, sessionStorage: { getItem() { return null; }, setItem() {} },
-    isSecureContext: true, SpeechRecognition: class {}, addEventListener() {}, scrollBy() {},
+    isSecureContext: true, SpeechRecognition: class BrowserRecognition {}, navigator: {mediaDevices:{getUserMedia() {}}}, AudioContext: class {}, AudioWorkletNode: class {}, addEventListener() {}, scrollBy() {},
   };
   if (audio) {
     window.SpeechSynthesisUtterance = class { constructor(public text: string) {} };
     window.speechSynthesis = { speak(utter: any) { utterances.push(utter); }, cancel() {} };
   }
   class EventSource {
-    readyState = 1; onopen?: () => void; onerror?: () => void; onstate?: (data: any) => void;
+    readyState = 1; onopen?: () => void; onerror?: () => void; onstate?: (data: any) => void; onpush?: (data: any) => void;
     constructor() { stream = this; }
-    addEventListener(name: string, fn: any) { if (name === 'state') this.onstate = fn; }
+    addEventListener(name: string, fn: any) { if (name === 'state') this.onstate = fn; if (name === 'push') this.onpush = fn; }
     close() {}
   }
   const fetch = (url: string, init: any = {}) => {
-    if (url === '/api/config') return Promise.resolve({ ok: true, json: async () => ({ agentMode: 'relay', eventsUrl: '/events', voice:{tts:cloud ? 'backend' : 'browser'}, ...profileConfig, ...configOverrides }) });
+    if (url === '/api/config') return Promise.resolve({ ok: true, json: async () => ({ agentMode: 'relay', eventsUrl: '/events', voice:{asr:'browser',tts:cloud ? 'backend' : 'browser'}, ...profileConfig, ...configOverrides }) });
     let resolve: (data: any) => void = () => {};
     const promise = new Promise<any>(done => { resolve = done; });
     calls.push({ url, init, respond(data: any) { resolve({ ok: true, json: async () => data }); } });
     return promise;
   };
   vm.runInContext(script, vm.createContext({ window, document, fetch, EventSource, AbortController, URLSearchParams, Uint8Array,
+    BackendRecognition: class BackendRecognition {},
     backendPlayback(item: any, signal: AbortSignal, onEmotion: any) {
       return new Promise((resolve, reject) => {
         cloudItems.push({ item, signal, finish() { onEmotion({requested:item.emotion,applied:item.emotion,control:'instruction',profileId:item.profileId,speaker:'speaker-' + item.profileId}); resolve(undefined); }, fail() { reject(new Error('synthesis_failed')); } });
@@ -64,11 +65,14 @@ function harness(audio = true, cloud = false, configOverrides: Record<string, un
   return { nodes, messages, utterances, calls, listener, cloudItems,
     async ready() { await flush(); stream.onopen(); },
     input(text: string) { listeningOptions.onFinal(text); },
+    recognition() { return new listeningOptions.Recognition(); },
     partial(text: string) { listeningOptions.onText(text, false); },
     stop() { node('mic').events.click(); },
     profile(value: string) { node('speech-profile').value = value; node('speech-profile').events.change(); },
     hide() { document.hidden = true; docEvents.visibilitychange!(); },
     state(battle: any, revision: number) { stream.onstate({ data: JSON.stringify({ battle, revision }) }); },
+    push(payload: any) { stream.onpush({ data: JSON.stringify(payload) }); },
+    keyboard() { node('keyboard').events.click(); },
     fireTimers() { const list = [...timers.values()]; timers.clear(); list.forEach(fn => fn()); },
   };
 }
@@ -275,4 +279,133 @@ it('旧 profile 的取消回调不能在新回合等待回复时重新启麦', a
   assert.equal(h.calls.length, 2);
   assert.equal(h.listener.paused, true);
   assert.equal(h.cloudItems[0].signal.aborted, true);
+});
+
+it('识别构造代理在配置到达后选择 doubao 后台或明确 browser 原生，未知模式不降级', async () => {
+  const backend = harness(true, true, { voice: { asr: 'doubao', tts: 'backend' } });
+  await backend.ready(); assert.equal(backend.recognition().constructor.name, 'BackendRecognition');
+  const browser = harness(); await browser.ready(); assert.equal(browser.recognition().constructor.name, 'BrowserRecognition');
+  const unknown = harness(true, false, { voice: { asr: 'not-supported', tts: 'browser' } });
+  await unknown.ready(); assert.throws(() => unknown.recognition(), /asr_not_configured/);
+});
+
+const notice = (id: string, kind = 'ult-ready', battleId = 'push-battle') => ({ id, kind, battleId, text: '绝不能直接读这段服务端文字' });
+const notified = (reply = '我已经蓄好劲了！', need = 'move') => ({ ...outcome(reply, need), profileId: 'cancan', sourceBattleId: 'push-battle', speech: { version: 1, source: 'model', segments: [{ text: reply, emotion: 'excited' }] } });
+it('SSE push只请求notify，由Agent最终话术分段播放；不朗读push原文、不调用say或自动wait', async () => {
+  const h = harness(true, true); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
+  h.push(notice('push-1')); assert.equal(h.calls[0].url, '/api/notify');
+  assert.deepEqual(JSON.parse(h.calls[0].init.body), { deviceId: 'web-test', kind: 'ult-ready', battleId: 'push-battle', pushId: 'push-1', profileId: 'cancan' });
+  h.calls[0].respond({ ...notified('我攒好力气了！等他过来。', 'wait_foe'), speech: { version: 1, source: 'model', segments: [{ text: '我攒好力气了！', emotion: 'excited' }, { text: '等他过来。', emotion: 'expectant' }] } }); await flush();
+  assert.equal(h.cloudItems.length, 1); assert.equal(h.listener.paused, true);
+  h.cloudItems[0].finish(); await flush(); assert.equal(h.cloudItems.length, 2); assert.equal(h.listener.paused, true);
+  assert.equal(h.calls.length, 1); h.cloudItems[1].finish(); await flush();
+  assert.equal(h.listener.paused, false); assert.equal(h.listener.enabled, true); assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.messages, [{ role: 'partner', text: '我攒好力气了！等他过来。' }]);
+});
+it('通知去重，模型请求期间丢弃新信号，播报中最多保留最新的一条', async () => {
+  const h = harness(); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
+  h.push(notice('one')); h.push(notice('one')); h.push(notice('model-busy')); assert.equal(h.calls.length, 1);
+  h.calls[0].respond(notified('第一条。')); await flush();
+  h.push(notice('two')); h.push(notice('three')); assert.equal(h.calls.length, 1);
+  h.utterances[0].onend(); await flush(); assert.equal(h.calls.length, 2);
+  assert.equal(JSON.parse(h.calls[1].init.body).pushId, 'three');
+  h.calls[1].respond(notified('最新的一条。')); await flush(); h.utterances[1].onend(); await flush();
+  assert.equal(h.calls.length, 2); assert.equal(h.messages.some(item => item.text.includes('绝不能')), false);
+});
+it('say/wait繁忙、玩家讲话、输入框展开和隐藏页面不抢播通知', async () => {
+  for (const mode of ['say', 'wait', 'partial', 'composer', 'hidden']) {
+    const h = harness(); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
+    if (mode === 'say' || mode === 'wait') h.input('攻击');
+    if (mode === 'wait') { h.calls[0].respond({ ...outcome('等对手。', 'wait_foe'), sourceBattleId: 'push-battle' }); await flush(); h.utterances[0].onend(); await flush(); }
+    if (mode === 'partial') h.partial('我想');
+    if (mode === 'composer') h.keyboard();
+    if (mode === 'hidden') h.hide();
+    const before = h.calls.length; h.push(notice('blocked-' + mode)); await flush();
+    assert.equal(h.calls.length, before, mode);
+  }
+});
+it('新输入、profile、换局、隐藏或玩家partial取消通知请求，晚到模型话术不显示也不播', async () => {
+  for (const mode of ['input', 'profile', 'battle', 'hidden', 'partial']) {
+    const h = harness(); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
+    h.push(notice('pending-' + mode)); const pending = h.calls[0];
+    if (mode === 'input') h.input('战况');
+    if (mode === 'profile') h.profile('qingcang');
+    if (mode === 'battle') h.state({ battleId: 'new-battle', round: 1 }, 2);
+    if (mode === 'hidden') h.hide();
+    if (mode === 'partial') h.partial('攻击');
+    assert.equal(pending.init.signal.aborted, true, mode);
+    pending.respond(notified('不能播放的迟到通知')); await flush();
+    assert.equal(h.messages.some(item => item.text === '不能播放的迟到通知'), false, mode);
+    assert.equal(h.utterances.length, 0, mode);
+  }
+});
+it('普通话术播完要进入wait时，丢弃排队通知，由等待主通道消费事实', async () => {
+  const h = harness(); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
+  h.input('攻击'); h.calls[0].respond({ ...outcome('我已经出手，等他。', 'wait_foe'), sourceBattleId: 'push-battle' }); await flush();
+  h.push(notice('queued')); h.utterances[0].onend(); await flush();
+  assert.deepEqual(h.calls.map(item => item.url), ['/api/say', '/api/wait']);
+});
+it('通知播放失败不继续剩余分段或排队通知；非法kind、局号、缺id均不请求', async () => {
+  const h = harness(true, true); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
+  h.push(notice('bad-kind', 'unknown')); h.push(notice('wrong-battle', 'ult-ready', 'other')); h.push({ kind: 'ult-ready', battleId: 'push-battle' });
+  assert.equal(h.calls.length, 0);
+  h.push(notice('good')); h.calls[0].respond({ ...notified('一。二。'), speech: { version: 1, source: 'model', segments: [{ text: '一。', emotion: 'happy' }, { text: '二。', emotion: 'proud' }] } }); await flush();
+  h.push(notice('queued-after-error')); h.cloudItems[0].fail(); await flush();
+  assert.equal(h.cloudItems.length, 1); assert.equal(h.calls.length, 1);
+});
+
+it('wait模型回复的云音频播完后恢复麦克风，不被通知通道再次等待', async () => {
+  const h = harness(true, true); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
+  h.input('攻击'); h.calls[0].respond({ ...notified('等他应对。', 'wait_foe') }); await flush(); h.cloudItems[0].finish(); await flush();
+  assert.equal(h.calls[1].url, '/api/wait');
+  h.calls[1].respond(notified('轮到你指挥我啦。', 'wait_foe')); await flush();
+  assert.equal(h.listener.paused, true); h.cloudItems[1].finish(); await flush();
+  assert.equal(h.listener.paused, false); assert.equal(h.calls.length, 2);
+});
+it('通知播放中切profile取消余段和排队信号，不播放旧profile也不调用wait', async () => {
+  const h = harness(true, true); await h.ready(); h.state({ battleId: 'push-battle', round: 1 }, 1);
+  h.push(notice('playing')); h.calls[0].respond({ ...notified('一。二。'), speech: { version: 1, source: 'model', segments: [{ text: '一。', emotion: 'happy' }, { text: '二。', emotion: 'proud' }] } }); await flush();
+  h.push(notice('queued')); h.profile('tiancai'); await flush();
+  assert.equal(h.cloudItems[0].signal.aborted, true); assert.equal(h.cloudItems.length, 1); assert.equal(h.calls.length, 1);
+  assert.equal(h.listener.enabled, true);
+});
+
+it('同局respond到defeat的新revision取消通知模型请求和播放，不再播旧应对提示', async () => {
+  for (const playing of [false, true]) {
+    const h = harness(true, true); await h.ready();
+    h.state({ battleId: 'push-battle', phase: 'battle', pending: { actor: 'enemy', moveLabel: '强攻' }, round: 1 }, 1);
+    h.push(notice('stage-' + playing, 'opponent-move')); const notification = h.calls[0];
+    if (playing) {
+      notification.respond({ ...notified('请指挥我应对！还有一段。', 'respond'), speech: { version: 1, source: 'model', segments: [{ text: '请指挥我应对！', emotion: 'urgent' }, { text: '还有一段。', emotion: 'expectant' }] } }); await flush();
+      assert.equal(h.cloudItems.length, 1);
+    }
+    h.state({ battleId: 'push-battle', phase: 'defeat', pending: null, round: 1 }, 2);
+    assert.equal(notification.init.signal.aborted, true);
+    if (playing) { await flush(); assert.equal(h.cloudItems[0].signal.aborted, true); assert.equal(h.cloudItems.length, 1); assert.equal(h.listener.paused, false); }
+    else { notification.respond(notified('不该播的旧应对提示', 'respond')); await flush(); assert.equal(h.messages.length, 0); assert.equal(h.cloudItems.length, 0); }
+    assert.equal(h.calls.length, 1);
+  }
+});
+it('同局新revision不误取消普通say或wait的真实结算回复', async () => {
+  for (const waiting of [false, true]) {
+    const h = harness(); await h.ready(); h.state({ battleId: 'push-battle', phase: 'battle', round: 1 }, 1); h.input('攻击');
+    let reply = h.calls[0];
+    if (waiting) {
+      reply.respond(notified('等他应对。', 'wait_foe')); await flush(); h.utterances[0].onend(); await flush(); reply = h.calls[1];
+    }
+    h.state({ battleId: 'push-battle', phase: 'defeat', round: 1 }, 2);
+    assert.equal(reply.init.signal.aborted, false);
+    reply.respond(notified('这局输了，我还想再战！', 'none')); await flush();
+    assert.equal(h.messages.at(-1).text, '这局输了，我还想再战！');
+    assert.equal(h.utterances.at(-1).text, '这局输了，我还想再战！');
+  }
+});
+it('pending say切换profile后丢弃旧回复，清除busy后恢复用户持续聆听', async () => {
+  const h = harness(); await h.ready(); h.input('战况'); assert.equal(h.listener.paused, true);
+  h.profile('qingcang'); assert.equal(h.listener.enabled, true); assert.equal(h.listener.paused, true);
+  h.calls[0].respond({ ...outcome('灿灿的旧回复'), profileId: 'cancan' }); await flush();
+  assert.equal(h.listener.enabled, true); assert.equal(h.listener.paused, false);
+  assert.equal(h.messages.some(item => item.text === '灿灿的旧回复'), false); assert.equal(h.utterances.length, 0);
+  h.input('新的战况'); assert.equal(h.calls.length, 2); assert.equal(JSON.parse(h.calls[1].init.body).profileId, 'qingcang');
+  assert.equal(h.listener.paused, true);
 });

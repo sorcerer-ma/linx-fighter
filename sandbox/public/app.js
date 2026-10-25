@@ -1,3 +1,4 @@
+import { BackendRecognition } from './backend-recognition.js';
 import { backendPlayback } from './playback.js';
 import { diagnosticText } from './speech-diagnostic.js';
 import { createConversation } from './conversation.js';
@@ -11,7 +12,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
  *  1. 身份：?player=1 → web-1；否则 sessionStorage；否则随机 web-xxxx。
  *  2. 输入：唯一路径 POST /api/say，body { deviceId, text }。
  *  3. 局面：GET /api/config 拿 eventsUrl → EventSource 监听 state 事件，revision 单调丢弃。
- *  4. 语音：浏览器 SpeechRecognition 识别（实时填输入框、结束即发送），speechSynthesis 朗读 reply。
+ *  4. 语音：按配置选后台或浏览器识别，partial 只展示，final 单次发送；最终话术分段播放。
  *
  * 身份只写 sessionStorage：localStorage 会让所有标签页变成同一个人。
  */
@@ -32,7 +33,20 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   // 连接状态点：灰=连接中、绿=已连接、红=断开（点本身不显示文字）
   var CONN_LABEL = { connecting: '连接中', connected: '已连接', offline: '断开' };
 
-  var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var BrowserRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  // listener 在配置之前创建；每次开始收音时才按已加载配置选择真正的识别器。
+  function recognitionConstructor() {
+    if (!config || !config.voice) return null;
+    if (config.voice.asr === 'doubao') return BackendRecognition;
+    if (config.voice.asr === 'browser') return BrowserRecognition;
+    return null;
+  }
+  function ConfiguredRecognition() {
+    const Recognition = recognitionConstructor();
+    if (!Recognition) throw new Error('asr_not_configured');
+    return new Recognition();
+  }
 
   /* ---------------- DOM ---------------- */
 
@@ -87,6 +101,12 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var waitAbort = null;
   var finishPlayback = null;
   var cloudPlayback = null;
+  var notificationRequest = null;
+  var notificationPlaying = false;
+  var queuedNotification = null;
+  var seenPushIds = [];
+  var playerSpeaking = false;
+  var PUSH_KINDS = ['opponent-move', 'opponent-joined', 'ult-ready', 'idle-turn', 'idle-respond', 'wait-opponent', 'wait-guest'];
   var activeReplyBattleId = null;
 
   /* ---------------- 身份 ---------------- */
@@ -178,6 +198,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       .then(function (data) {
         config = data;
         loadSpeechProfiles(data);
+        if (!listener.enabled) el.micStatus.textContent = micPrompt({ enabled: false, active: false, paused: false });
         $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 事实约束人设表达' : '事实兜底 · 人设表达未启用';
         connectStream(data);
       })
@@ -226,6 +247,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       return;
     }
     if (next === selectedSpeechProfile) return;
+    // 丢弃切换前的 partial；保持用户启用意图，再为新 profile 接续收音。
+    listener.pause();
     cancelTurn();
     selectedSpeechProfile = next;
     showProfileStatus();
@@ -264,6 +287,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       setConn(source && source.readyState === 2 ? 'offline' : 'connecting');
     };
     source.addEventListener('state', onStateEvent);
+    source.addEventListener('push', onPushEvent);
   }
 
   function onStateEvent(event) {
@@ -273,27 +297,115 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     } catch (err) {
       return;
     }
+    const freshRevision = typeof payload.revision === 'number' && payload.revision > state.revision;
     if (typeof payload.revision === 'number') {
       if (payload.revision <= state.revision) return; // 丢弃乱序/重复
       state.revision = payload.revision;
     }
+    // 通知只对应签发时的局面；同局新结算也会使旧应对提示失效。
+    if (freshRevision || (state.battle && payload.battle && state.battle.phase !== payload.battle.phase)) cancelNotifications();
     const nextBattleId = payload.battle && payload.battle.battleId;
+    if (state.battle && state.battle.battleId !== nextBattleId) cancelNotifications();
     if ((waitAbort && state.battle && state.battle.battleId && nextBattleId !== state.battle.battleId) ||
-        (activeUtterance && activeReplyBattleId && nextBattleId !== activeReplyBattleId)) cancelTurn();
+        ((activeUtterance || cloudPlayback) && activeReplyBattleId && nextBattleId !== activeReplyBattleId)) cancelTurn();
     unconfirmed = false;
     applyBattle(payload.battle);
+    resumeListeningIfIdle();
   }
 
   /* ---------------- 发送 ---------------- */
 
   // 每条输入最多等待一次。新输入、停止或离开页面使旧响应失效。
+  function resumeListeningIfIdle() {
+    if (listener && listener.enabled && !document.hidden && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
+  }
+
   function cancelTurn() {
     turnSequence += 1;
+    cancelNotifications();
     if (waitAbort) waitAbort.abort();
     waitAbort = null;
     stopSpeaking();
     activeReplyBattleId = null;
     return turnSequence;
+  }
+
+  function cancelNotifications() {
+    queuedNotification = null;
+    const active = notificationRequest;
+    notificationRequest = null;
+    if (active) active.abort();
+    if (notificationPlaying) stopSpeaking();
+    notificationPlaying = false;
+  }
+
+  function notificationIsCurrent(signal) {
+    return signal.turn === turnSequence && signal.profileId === selectedSpeechProfile &&
+      state.battle && state.battle.battleId === signal.battleId && !document.hidden &&
+      el.composer.hidden && !playerSpeaking && Date.now() - signal.receivedAt < 10000;
+  }
+
+  function onPushEvent(event) {
+    let payload;
+    try { payload = JSON.parse(event.data); } catch { return; }
+    if (!payload || typeof payload.id !== 'string' || !payload.id ||
+        typeof payload.battleId !== 'string' || !PUSH_KINDS.includes(payload.kind) ||
+        seenPushIds.includes(payload.id)) return;
+    seenPushIds.push(payload.id);
+    if (seenPushIds.length > 64) seenPushIds.shift();
+    // 这里只读取信号，不使用服务端 payload.text 作为最终话术。
+    const signal = { pushId: payload.id, battleId: payload.battleId, kind: payload.kind,
+      turn: turnSequence, profileId: selectedSpeechProfile, receivedAt: Date.now() };
+    if (!signal.profileId || !notificationIsCurrent(signal) || busy || waitAbort ||
+        (notificationRequest && !notificationPlaying)) return;
+    if (activeUtterance || cloudPlayback) {
+      queuedNotification = signal; // 播放中最多保留一个最新通知，不排长队。
+      return;
+    }
+    void requestNotification(signal);
+  }
+
+  function drainNotification() {
+    const signal = queuedNotification;
+    queuedNotification = null;
+    if (!signal || !notificationIsCurrent(signal) || busy || waitAbort || notificationRequest ||
+        activeUtterance || cloudPlayback) return;
+    void requestNotification(signal);
+  }
+
+  async function requestNotification(signal) {
+    if (!notificationIsCurrent(signal) || busy || waitAbort || notificationRequest) return;
+    const controller = new AbortController();
+    notificationRequest = controller;
+    const timer = setTimeout(() => controller.abort(), SAY_TIMEOUT);
+    const revision = state.revision;
+    try {
+      const response = await fetch('/api/notify', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId: deviceId, kind: signal.kind, battleId: signal.battleId,
+          pushId: signal.pushId, profileId: signal.profileId }), signal: controller.signal
+      });
+      const data = await response.json();
+      if (controller.signal.aborted || !notificationIsCurrent(signal) || notificationRequest !== controller) return;
+      if (!response.ok || !data) throw new Error('bad notification response');
+      if (data.sourceBattleId !== signal.battleId) return;
+      notificationPlaying = true;
+      const playback = await showOutcome(data, signal.turn, revision, signal.profileId);
+      if (!['ended', 'displayed', 'silent'].includes(playback)) queuedNotification = null;
+      // 通知不是玩家输入，永不由它追加 wait_event 或重发 game_say。
+    } catch (error) {
+      if (!controller.signal.aborted && notificationIsCurrent(signal)) {
+        el.speechDetail.textContent = '通知未播报，可主动询问战况。';
+      }
+    } finally {
+      clearTimeout(timer);
+      if (notificationRequest === controller) {
+        notificationRequest = null;
+        notificationPlaying = false;
+        drainNotification();
+        if (!busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
+      }
+    }
   }
 
   function wantsWait(data) {
@@ -348,6 +460,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     } finally {
       clearTimeout(timeout);
       if (waitAbort === abort) waitAbort = null;
+      drainNotification();
+      if (turn === turnSequence && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
     }
   }
 
@@ -392,10 +506,13 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       const playback = await showOutcome(data, turn, revision, profileId);
       // 播放错误、取消、超时不冒充播放完成，也不提前挂起。
       if ((playback === 'ended' || playback === 'displayed') && wantsWait(data)) {
+        queuedNotification = null;
         void waitForOpponent(turn, profileId);
       }
     }
-    if (turn === turnSequence && !busy && !activeUtterance && !cloudPlayback && el.composer.hidden) listener.resume();
+    if (turn === turnSequence) drainNotification();
+    // 旧请求可以清除 busy，但不能越过新请求或音频；切换 profile 后仍接续启用意图。
+    resumeListeningIfIdle();
   }
 
   /* ---------------- 输入行 ---------------- */
@@ -522,7 +639,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
         delete el.replies.dataset.emotionApplied;
         el.replies.setAttribute('aria-label', '玩家、伙伴与系统的对话记录');
         resolve(reason);
-        if (reason !== 'cancelled' && !busy && el.composer.hidden && listener) listener.resume();
+        if (reason !== 'cancelled' && !notificationPlaying && !queuedNotification && !busy && el.composer.hidden && listener) listener.resume();
       }
       function playNext() {
         if (finished) return;
@@ -610,20 +727,26 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   // 语音不可用时，底栏提示直接指向键盘入口，免得演示者以为按钮坏了
   function speechReady() {
-    return Boolean(SpeechRecognitionCtor) && window.isSecureContext !== false;
+    if (window.isSecureContext === false || !recognitionConstructor()) return false;
+    if (config.voice.asr === 'doubao') return Boolean(window.navigator && window.navigator.mediaDevices &&
+      window.navigator.mediaDevices.getUserMedia && window.AudioContext && window.AudioWorkletNode);
+    return true;
   }
 
   function micPrompt(session) {
     if (session.active) return '正在聆听，点击停止';
     if (session.enabled) return session.paused ? '聆听已开启，等待伙伴回复' : '聆听已开启，正在接续收音';
     if (speechReady()) return '点击开启持续聆听';
-    return SpeechRecognitionCtor ? '页面不是 HTTPS，点键盘输入' : '此浏览器不支持语音，点键盘输入';
+    if (!config) return '正在加载语音配置';
+    if (window.isSecureContext === false) return '页面不是 HTTPS，点键盘输入';
+    return config.voice.asr === 'doubao' ? '此浏览器不支持后台收音，点键盘输入' : '此浏览器不支持语音，点键盘输入';
   }
 
   var listener = createListeningSession({
-    Recognition: SpeechRecognitionCtor,
+    Recognition: ConfiguredRecognition,
     onState: function (session) {
       listening = session.active;
+      if (!session.active) playerSpeaking = false;
       el.mic.dataset.listening = session.active ? 'true' : 'false';
       el.mic.setAttribute('aria-pressed', String(session.enabled));
       el.mic.setAttribute('aria-label', session.enabled ? '停止持续聆听' : '开启持续聆听');
@@ -631,6 +754,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       render();
     },
     onText: function (text, final) {
+      playerSpeaking = !final && Boolean(text.trim());
+      if (playerSpeaking) cancelNotifications();
       el.transcript.textContent = (final ? '玩家 · 已识别：' : '玩家 · 识别中：') + text;
     },
     onFinal: function (text) { say(text); },
@@ -646,7 +771,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   function toggleListening() {
     if (listener.enabled) { stopListening(); return; }
     if (!speechReady()) {
-      pushReply(SpeechRecognitionCtor ? MIC_NO_HTTPS : MIC_NO_API, 'warn');
+      pushReply(!config ? '语音配置尚未就绪，请稍后再开启麦克风。' : window.isSecureContext === false ? MIC_NO_HTTPS :
+        config.voice.asr === 'doubao' ? '此浏览器不支持后台收音，请用支持安全麦克风和 AudioWorklet 的浏览器，或点键盘输入。' : MIC_NO_API, 'warn');
       openComposer(true);
       return;
     }
