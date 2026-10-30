@@ -64,7 +64,7 @@ python3 -m http.server 8151 --bind 127.0.0.1
 
 全部转成 H.264 + `+faststart`，统一用浏览器原生控件播放完整版，不再有节选片与自定义弹窗；视频一律 `preload="metadata"`，只有浏览器需要时才真正拉流。
 
-**视频不进仓库**（`media/*.mp4` 已在 `.gitignore` 里），体积大且属于现场素材；部署时要和页面一起上传，否则别人打开页面看到的只有封面：
+**视频随仓库保留**（`media/*.mp4`），根 `README.md` 直接链接这四个文件；部署时仍要和页面一起上传，否则别人打开页面看到的只有封面：
 
 ```bash
 rsync -av --exclude '.DS_Store' landing/ user@host:/path/to/static/landing/

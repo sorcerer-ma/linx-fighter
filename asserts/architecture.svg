@@ -1,0 +1,209 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="960" viewBox="0 0 1240 960" role="img" aria-labelledby="title desc">
+<title id="title">共鸣：闻声对决 技术架构</title>
+<desc id="desc">玩家语音经灵矽平台与 MCP 进入本服务，服务端完成命令理解、对局事务、规则裁决与事实编码，平台与模型只负责听、说、演。</desc>
+<rect width="1240" height="960" fill="#FBF7EE"/>
+<marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2F6B4F"/></marker>
+<marker id="arrowGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8A9A92"/></marker>
+<marker id="arrowOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#C96A2D"/></marker>
+<marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#3B5B7A"/></marker>
+<text x="40" y="46" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="28" font-weight="700" fill="#22302A" text-anchor="start" >共鸣：闻声对决 · 技术架构</text>
+<text x="40" y="72" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="14.5" font-weight="400" fill="#5E6E66" text-anchor="start" >平台负责听和说，服务端负责判和算，模型只负责理解与表达</text>
+<text x="1200" y="46" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="13" font-weight="600" fill="#8A9A92" text-anchor="end" >v1.0.2 · MCP v2</text>
+<line x1="40" y1="88" x2="1200" y2="88" stroke="#D8D2C4" stroke-width="1"/>
+<text x="40" y="116" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="13" font-weight="700" fill="#2F6B4F" text-anchor="start" >① 玩家与平台 — 声音进出，事实不进模型</text>
+<rect x="40" y="130" width="120" height="82" rx="9" fill="#F8E9DD" stroke="#C96A2D" stroke-width="1.4"/>
+<rect x="40" y="140" width="4" height="62" rx="2" fill="#C96A2D"/>
+<text x="54" y="155" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >玩家</text>
+<text x="54" y="175" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >开口说招式</text>
+<text x="54" y="192" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >不用手柄</text>
+<rect x="185" y="130" width="180" height="82" rx="9" fill="#F8E9DD" stroke="#C96A2D" stroke-width="1.4"/>
+<rect x="185" y="140" width="4" height="62" rx="2" fill="#C96A2D"/>
+<text x="199" y="155" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >灵矽设备</text>
+<text x="199" y="175" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >麦克风 · 小屏 · 喇叭</text>
+<text x="199" y="192" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >唤醒与播放</text>
+<rect x="390" y="130" width="200" height="82" rx="9" fill="#F8E9DD" stroke="#C96A2D" stroke-width="1.4"/>
+<rect x="390" y="140" width="4" height="62" rx="2" fill="#C96A2D"/>
+<text x="404" y="155" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >灵矽平台</text>
+<text x="404" y="175" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >唤醒 → ASR → 智能体</text>
+<text x="404" y="192" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >TTS 播报</text>
+<rect x="620" y="130" width="280" height="82" rx="9" fill="#F8E9DD" stroke="#C96A2D" stroke-width="1.4"/>
+<rect x="620" y="140" width="4" height="62" rx="2" fill="#C96A2D"/>
+<text x="634" y="155" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >平台 Agent</text>
+<text x="634" y="175" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >原话固定调用 game_say</text>
+<text x="634" y="192" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >按事实 + 人设演绎</text>
+<rect x="930" y="130" width="270" height="82" rx="9" fill="#FBF7EE" stroke="#C96A2D" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="944" y="155" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="14.5" font-weight="700" fill="#22302A" text-anchor="start" >服务不碰音频</text>
+<text x="944" y="175" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12" font-weight="400" fill="#5E6E66" text-anchor="start" >只收发文字；换人设不改玩法</text>
+<text x="944" y="192" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12" font-weight="400" fill="#5E6E66" text-anchor="start" >模型不推演数值</text>
+<path d="M 160 171 L 185 171" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<path d="M 365 171 L 390 171" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<path d="M 590 171 L 620 171" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<path d="M 690 212 L 690 224 L 20 224 L 20 300 L 40 300" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<text x="430" y="218" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">POST /mcp · game_say(text = 原话)</text>
+<path d="M 780 265 L 780 232 L 890 232 L 890 212" fill="none" stroke="#C96A2D" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowOrange)" stroke-dasharray="6 5"/>
+<text x="835" y="226" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">v2 事实 JSON</text>
+<path d="M 840 212 L 840 250 L 750 250 L 750 265" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)" stroke-dasharray="6 5"/>
+<text x="800" y="244" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">need=wait → 串行续挂</text>
+<text x="40" y="252" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="13" font-weight="700" fill="#2F6B4F" text-anchor="start" >② 接入与协议 — MCP 只做传输，身份不进工具参数</text>
+<rect x="40" y="265" width="250" height="88" rx="9" fill="#E7F0E8" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="40" y="275" width="4" height="68" rx="2" fill="#2F6B4F"/>
+<text x="54" y="290" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >接入层</text>
+<text x="54" y="310" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >src/http/app.ts</text>
+<text x="54" y="327" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >Streamable HTTP · SSE 兼容</text>
+<text x="54" y="344" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >/state · /events · /notification</text>
+<rect x="320" y="265" width="210" height="88" rx="9" fill="#E7F0E8" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="320" y="275" width="4" height="68" rx="2" fill="#2F6B4F"/>
+<text x="334" y="290" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >身份与载体</text>
+<text x="334" y="310" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >src/mcp/context.ts</text>
+<text x="334" y="327" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >X-Linx-* 请求头</text>
+<text x="334" y="344" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >设备 + 智能体，不进工具参数</text>
+<rect x="560" y="265" width="230" height="88" rx="9" fill="#E7F0E8" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="560" y="275" width="4" height="68" rx="2" fill="#2F6B4F"/>
+<text x="574" y="290" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >公开工具</text>
+<text x="574" y="310" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >src/mcp/tools.ts</text>
+<text x="574" y="327" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >game_say / wait_event</text>
+<text x="574" y="344" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >content[].text 单行 v2</text>
+<rect x="820" y="265" width="250" height="88" rx="9" fill="#E7F0E8" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="820" y="275" width="4" height="68" rx="2" fill="#2F6B4F"/>
+<text x="834" y="290" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >v2 事实协议</text>
+<text x="834" y="310" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >src/game/protocol.ts</text>
+<text x="834" y="327" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >谁 · 多少 · 成没成 · 下一步</text>
+<text x="834" y="344" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >不依赖 structuredContent</text>
+<path d="M 290 309 L 320 309" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<path d="M 530 309 L 560 309" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<path d="M 790 309 L 820 309" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<rect x="30" y="382" width="1180" height="340" rx="14" fill="#FFFDF8" stroke="#2F6B4F" stroke-width="1.8"/>
+<text x="48" y="408" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="14" font-weight="700" fill="#2F6B4F" text-anchor="start" >③ 本服务 — Node.js / TypeScript，规则与事实的唯一来源</text>
+<path d="M 675 353 L 675 382" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<text x="675" y="372" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">game_say</text>
+<rect x="50" y="425" width="200" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="50" y="435" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="64" y="450" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >编排层</text>
+<text x="64" y="470" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >src/game/service.ts</text>
+<text x="64" y="487" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >开局 / 出招 / 查询 / 等待</text>
+<text x="64" y="504" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >按命令分派到桌子</text>
+<rect x="275" y="425" width="220" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="275" y="435" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="289" y="450" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >读原话</text>
+<text x="289" y="470" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >command.ts / asr.ts</text>
+<text x="289" y="487" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >招式/战况/玩法/开局/房间</text>
+<text x="289" y="504" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >规则优先；认不出再问路由模型</text>
+<rect x="520" y="425" width="180" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="520" y="435" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="534" y="450" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >找桌子</text>
+<text x="534" y="470" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >table.ts</text>
+<text x="534" y="487" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >单人局 / 双人挑战</text>
+<text x="534" y="504" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >房间归属</text>
+<rect x="725" y="425" width="200" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="725" y="435" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="739" y="450" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >对局事务</text>
+<text x="739" y="470" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >serialize.ts</text>
+<text x="739" y="487" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >按存储键串行</text>
+<text x="739" y="504" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >写回前核对同一局</text>
+<rect x="950" y="425" width="230" height="82" rx="9" fill="#E3EFE7" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="950" y="435" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="964" y="450" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >规则引擎</text>
+<text x="964" y="470" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >engine.ts / rules.ts</text>
+<text x="964" y="487" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >生命值 / 能量 / 轮次 / 胜负</text>
+<text x="964" y="504" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >seed 随机 · 纯函数</text>
+<path d="M 250 466 L 275 466" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<path d="M 495 466 L 520 466" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<path d="M 700 466 L 725 466" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<path d="M 925 466 L 950 466" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<rect x="50" y="532" width="200" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="50" y="542" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="64" y="557" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >规则外问答</text>
+<text x="64" y="577" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >chat.ts / llm.ts</text>
+<text x="64" y="594" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >只答规则之外</text>
+<text x="64" y="611" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >不碰对局、不推进</text>
+<rect x="275" y="532" width="220" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="275" y="542" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="289" y="557" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >表现层</text>
+<text x="289" y="577" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >narrator.ts / push.ts</text>
+<text x="289" y="594" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >兼容文本 / 页面提醒</text>
+<text x="289" y="611" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >补账去重，不反推数值</text>
+<rect x="520" y="532" width="180" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="520" y="542" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="534" y="557" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >双人视角</text>
+<text x="534" y="577" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >pvp.ts</text>
+<text x="534" y="594" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >视角镜像</text>
+<text x="534" y="611" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >房间与座位</text>
+<rect x="725" y="532" width="200" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="725" y="542" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="739" y="557" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >事实编码</text>
+<text x="739" y="577" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >protocol.ts</text>
+<text x="739" y="594" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >单行 v2 JSON</text>
+<text x="739" y="611" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >工具返回</text>
+<rect x="950" y="532" width="230" height="82" rx="9" fill="#FFFFFF" stroke="#2F6B4F" stroke-width="1.4"/>
+<rect x="950" y="542" width="4" height="62" rx="2" fill="#2F6B4F"/>
+<text x="964" y="557" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >AI 对手</text>
+<text x="964" y="577" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >enemy.ts</text>
+<text x="964" y="594" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >只从合法动作中选</text>
+<text x="964" y="611" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >失败回退本地 AI</text>
+<path d="M 385 507 L 385 532" fill="none" stroke="#8A9A92" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGray)" stroke-dasharray="6 5"/>
+<text x="385" y="524" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">仅规则外</text>
+<path d="M 1065 507 L 1065 532" fill="none" stroke="#8A9A92" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGray)" stroke-dasharray="6 5"/>
+<text x="1065" y="524" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">决策</text>
+<path d="M 1150 532 L 1150 507" fill="none" stroke="#8A9A92" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGray)" stroke-dasharray="6 5"/>
+<text x="1150" y="524" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">合法动作</text>
+<path d="M 950 466 L 935 466 L 935 500 L 900 500 L 900 532" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<text x="930" y="505" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">事实</text>
+<path d="M 725 614 L 725 622 L 385 622 L 385 614" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<text x="610" y="618" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">读事实</text>
+<path d="M 610 507 L 610 532" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<text x="610" y="524" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">视角</text>
+<rect x="50" y="640" width="330" height="74" rx="9" fill="#EEF1EF" stroke="#8A9A92" stroke-width="1.4"/>
+<rect x="50" y="650" width="4" height="54" rx="2" fill="#8A9A92"/>
+<text x="64" y="665" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >存储层</text>
+<text x="64" y="685" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >store/battles.ts · rooms.ts · echoes.ts</text>
+<text x="64" y="702" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >内存 + TTL；串行按存储键</text>
+<rect x="400" y="640" width="240" height="74" rx="9" fill="#EEF1EF" stroke="#8A9A92" stroke-width="1.4"/>
+<rect x="400" y="650" width="4" height="54" rx="2" fill="#8A9A92"/>
+<text x="414" y="665" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >只读监控</text>
+<text x="414" y="685" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >admin/overview.ts</text>
+<text x="414" y="702" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >房间与对局总览</text>
+<rect x="660" y="640" width="260" height="74" rx="9" fill="#EEF1EF" stroke="#8A9A92" stroke-width="1.4"/>
+<rect x="660" y="650" width="4" height="54" rx="2" fill="#8A9A92"/>
+<text x="674" y="665" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >本地沙箱</text>
+<text x="674" y="685" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >sandbox/server.ts</text>
+<text x="674" y="702" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >platform/agent.ts（只走 HTTP/MCP）</text>
+<rect x="940" y="640" width="240" height="74" rx="9" fill="#FBF7EE" stroke="#8A9A92" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="954" y="665" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="14" font-weight="700" fill="#22302A" text-anchor="start" >状态与复现</text>
+<text x="954" y="685" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >seed + 时间 + 确定性策略</text>
+<text x="954" y="702" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >可复现一局</text>
+<path d="M 825 614 L 825 632 L 218 632 L 218 640" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<text x="700" y="632" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="600" fill="#5E6E66" text-anchor="middle" stroke="#FBF7EE" stroke-width="4" paint-order="stroke">读写</text>
+<path d="M 380 677 L 400 677" fill="none" stroke="#8A9A92" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGray)" stroke-dasharray="6 5"/>
+<text x="40" y="750" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="13" font-weight="700" fill="#2F6B4F" text-anchor="start" >④ 旁路与模型 — 只读、可回退；事实仍以服务端为准</text>
+<rect x="40" y="764" width="400" height="84" rx="9" fill="#E8EEF5" stroke="#3B5B7A" stroke-width="1.4"/>
+<rect x="40" y="774" width="4" height="64" rx="2" fill="#3B5B7A"/>
+<text x="54" y="789" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >页面与旁路</text>
+<text x="54" y="809" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >网页 / 手机 / 沙箱</text>
+<text x="54" y="826" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >GET /events（SSE）· /state 只读</text>
+<text x="54" y="843" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >SSE 只更新视觉，不直接播报</text>
+<rect x="780" y="764" width="420" height="84" rx="9" fill="#F8E9DD" stroke="#C96A2D" stroke-width="1.4" stroke-dasharray="5 4"/>
+<rect x="780" y="774" width="4" height="64" rx="2" fill="#C96A2D"/>
+<text x="794" y="789" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="700" fill="#22302A" text-anchor="start" >外部模型（可注入假模型）</text>
+<text x="794" y="809" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >命令路由 · 对手决策 · 规则外问答</text>
+<text x="794" y="826" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >不获知未结算结果；失败回退本地/固定话术</text>
+<rect x="465" y="764" width="280" height="84" rx="9" fill="#FBF7EE" stroke="#8A9A92" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="479" y="789" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="14" font-weight="700" fill="#22302A" text-anchor="start" >音频不进服务</text>
+<text x="479" y="809" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >服务只收发文字</text>
+<text x="479" y="826" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="12.3" font-weight="400" fill="#5E6E66" text-anchor="start" >换人设不改玩法</text>
+<path d="M 240 764 L 240 722" fill="none" stroke="#3B5B7A" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowBlue)" stroke-dasharray="6 5"/>
+<path d="M 990 764 L 990 722" fill="none" stroke="#C96A2D" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowOrange)" stroke-dasharray="6 5"/>
+<line x1="40" y1="890" x2="1200" y2="890" stroke="#D8D2C4" stroke-width="1"/>
+<path d="M 48 912 L 92 912" fill="none" stroke="#2F6B4F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/>
+<text x="100" y="916" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="400" fill="#5E6E66" text-anchor="start" >请求 / 裁决</text>
+<path d="M 200 912 L 244 912" fill="none" stroke="#8A9A92" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGray)" stroke-dasharray="6 5"/>
+<text x="252" y="916" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="400" fill="#5E6E66" text-anchor="start" >事件 / 只读 / 模型调用</text>
+<rect x="520" y="904" width="12" height="12" rx="3" fill="#C96A2D"/>
+<text x="538" y="915" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="400" fill="#5E6E66" text-anchor="start" >平台</text>
+<rect x="670" y="904" width="12" height="12" rx="3" fill="#2F6B4F"/>
+<text x="688" y="915" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="400" fill="#5E6E66" text-anchor="start" >服务与规则</text>
+<rect x="820" y="904" width="12" height="12" rx="3" fill="#8A9A92"/>
+<text x="838" y="915" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="400" fill="#5E6E66" text-anchor="start" >存储</text>
+<rect x="970" y="904" width="12" height="12" rx="3" fill="#3B5B7A"/>
+<text x="988" y="915" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="400" fill="#5E6E66" text-anchor="start" >旁路</text>
+<text x="1200" y="936" font-family="'PingFang SC','Noto Sans SC','Microsoft YaHei',-apple-system,BlinkMacSystemFont,sans-serif" font-size="11.5" font-weight="400" fill="#8A9A92" text-anchor="end" >事实态在服务端；平台与模型只负责听、说、演。</text>
+</svg>

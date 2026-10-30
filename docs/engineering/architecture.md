@@ -6,6 +6,10 @@
 
 v2事实协议已实现：公开工具只有game_say与wait_event，旧game_start/game_action/game_status/game_help不再注册；工具content[].text是一行JSON，不依赖structuredContent。平台Agent先播即时话术，need为wait_guest/wait_foe时再按need串行持续调用wait_event；等待不改变游戏规则。事实生成、等待与表达的分工见[MCP协议v2](mcp-protocol.md)，迁移记录见[实施说明](mcp-v2-migration.md)。
 
+下图是服务端视角的模块与数据流：实线是请求与裁决，虚线是事件、只读查询与模型调用。
+
+![系统架构](../../asserts/architecture.svg)
+
 以下是游戏服务真实执行链路，Agent不在调用前自主选游戏工具：
 
 ```text
