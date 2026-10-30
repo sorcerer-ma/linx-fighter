@@ -18,8 +18,9 @@ import {
   identityHeaders,
   type DeviceContext,
 } from '../mcp/context.js';
-import { createMcpServer } from '../mcp/server.js';
+import { createMcpServer, createHudServer } from '../mcp/server.js';
 import { registerGameTools } from '../mcp/tools.js';
+import { HudTracker, registerHudTools } from '../mcp/hud-tools.js';
 import type { BattleStore } from '../store/battles.js';
 import type { RoomStore } from '../store/rooms.js';
 
@@ -127,6 +128,27 @@ export function createApp(deps: AppDependencies): express.Express {
   app.use(express.json({ limit: '256kb' }));
 
   const sessions = new Map<string, McpSession>();
+  const hudTracker = new HudTracker();
+
+  /**
+   * 设备对局键解析。
+   *
+   * 平台建局可能带任意 agentId，而固件只知道自己的设备号，因此先按标准身份键找，
+   * 找不到再在设备号前缀下取最近更新的一局；都没有就返回标准键，让 HUD 回待命。
+   */
+  const resolveHudKey = (ctx: DeviceContext): string => {
+    const direct = battleKey(ctx);
+    if (service.snapshot(direct)) return direct;
+    const prefix = `${ctx.deviceId}#`;
+    let latest: { key: string; at: number } | null = null;
+    for (const entry of store.list()) {
+      if (!entry.key.startsWith(prefix)) continue;
+      if (latest === null || entry.battle.updatedAt > latest.at) {
+        latest = { key: entry.key, at: entry.battle.updatedAt };
+      }
+    }
+    return latest?.key ?? direct;
+  };
 
   // 监控接口按来源限速：3 秒轮询只占 20 次/分钟，留足余量；进程内 Map，重启即清空
   const adminLimiter = createRateLimiter();
@@ -145,6 +167,7 @@ export function createApp(deps: AppDependencies): express.Express {
         health: '/health',
         events: '/events',
         state: '/state',
+        device: '/device/mcp',
         admin: '/admin',
       },
     });
@@ -396,6 +419,57 @@ export function createApp(deps: AppDependencies): express.Express {
 
   // 部分客户端结束会话时会 DELETE /mcp；无状态模式没有可销毁的会话，直接 200 让它安静收尾
   app.delete('/mcp', (_req, res) => {
+    res.status(200).end();
+  });
+
+  /**
+   * 硬件专用只读通道：设备只拉屏幕状态，不碰对局。
+   *
+   * 单独挂一条路径，平台智能体在 /mcp 看到的工具仍然只有 game_say 与 wait_event；
+   * 固件只知道自己的 MAC，身份从 X-Linx-Device-Id 头或 ?device= 查询参数取。
+   */
+  app.post('/device/mcp', async (req, res) => {
+    const ctx = createDeviceContext(randomUUID());
+    applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
+
+    const body = req.body as RpcMessage | RpcMessage[] | undefined;
+    const message = Array.isArray(body) ? body[0] : body;
+    logger.info('设备 HUD 请求', {
+      method: message?.method ?? '',
+      tool: message?.params?.name,
+      deviceId: ctx.deviceId,
+    });
+
+    const server = createHudServer();
+    registerHudTools(server, {
+      service, logger, ctx, tracker: hudTracker, resolveKey: resolveHudKey,
+    });
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+
+    res.on('close', () => {
+      void transport.close();
+      void server.close();
+    });
+
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      logger.error('设备 HUD 请求处理失败', {
+        deviceId: ctx.deviceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (!res.headersSent) {
+        res.status(500).json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: '内部错误' } });
+      }
+    }
+  });
+
+  app.delete('/device/mcp', (_req, res) => {
     res.status(200).end();
   });
 

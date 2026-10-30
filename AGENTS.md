@@ -44,6 +44,7 @@ TypeScript 使用 ESM / NodeNext，相对导入带 `.js` 后缀。运行时与�
 | 双人视角与房间索引 | `src/game/pvp.ts`、`src/store/rooms.ts` |
 | 伙伴播报、补账与界面快照 | `src/game/narrator.ts`、`state.ts`、`src/store/echoes.ts` |
 | MCP 工具、身份与载体能力 | `src/mcp/server.ts`、`tools.ts`、`context.ts` |
+| 设备 HUD 画面派生与设备通道 | `src/game/hud.ts`、`src/mcp/hud-tools.ts`、[设备 HUD 通道](docs/engineering/device-hud.md) |
 | 路由、传输、状态流、调试接口 | `src/http/app.ts` |
 | 存储与过期 | `src/store/` |
 | 沙箱服务、客户端与页面 | `sandbox/server.ts`、`platform/`、`public/` |

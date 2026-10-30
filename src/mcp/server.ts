@@ -27,3 +27,19 @@ export function createMcpServer(): McpServer {
     { instructions: INSTRUCTIONS },
   );
 }
+
+/** 设备侧 HUD 通道的说明：只读、不参与裁决，硬件据此画面与音效 */
+const HUD_INSTRUCTIONS = [
+  '这里是「共鸣：闻声对决」设备 HUD 通道，只给硬件拉屏幕状态，不改对局。',
+  '调用 game_hud 拿一帧：表情名、生命值、能量、大招徽记与要播放的音效。',
+  '帧号 seq 单调递增；表情没变时 cue 为 null，不要重复播同一段音效。',
+  'hold_ms 是短时表情的保持时长，到点回到待命，硬件自己计时即可。',
+].join('\n');
+
+/** 设备侧 MCP Server：与平台智能体用的实例分开，避免工具面混在一起 */
+export function createHudServer(): McpServer {
+  return new McpServer(
+    { name: `${SERVER_NAME}-hud`, version: SERVER_VERSION },
+    { instructions: HUD_INSTRUCTIONS },
+  );
+}
