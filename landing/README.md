@@ -23,9 +23,9 @@ python3 -m http.server 8151 --bind 127.0.0.1
 | 屏 | 内容 |
 | --- | --- |
 | 首屏 | 标题、一句话说明、60 秒产品片（自动播放、原生控件）；底部一条四格产品亮点（两台设备一张桌子 / 七个词一局一个样 / 不背口令 / 声音是唯一入口） |
-| 01 问题 | 三类方案的短处与取舍 |
+| 01 双人对局 | 第二屏直接把双人对战实录（5 分 08 秒，原生控件）放在左边，右边四条面对面差异（对手坐对面 / 手是空的 / 坐下就能打 / 谁也改不了数）；节末对比手机游戏与语音助手 |
 | 02 玩法 | 滚动定格：开局 → 出招 → 应对 → 结算；7 个动作表与结算顺序 |
-| 03 真机实录 | 表情实录、设备语音实录、双人设备对战实录，三段完整版并列，原生控件播放 |
+| 03 真机实录 | 表情实录、设备语音实录两段完整版并列，原生控件播放（双人对战实录已上移到 01） |
 | 04 结构 | 设备手动翻面（按钮或点设备），按当前朝向标注指示灯三色、生命值、能量、大招、NFC、声波徽记、外壳；右侧四层职责。整节标注「设想与推演 · 尚未交付」 |
 | 05 技术深潜 · 一 | 一句话穿过三层；规则层、端侧同音、决策模型的分工与延迟 |
 | 06 技术深潜 · 二 | 事实在服务端、语气在模型；三条必须守住的边界 |
@@ -43,7 +43,7 @@ python3 -m http.server 8151 --bind 127.0.0.1
 | `main.js` | GSAP + ScrollTrigger 动效、玩法定格叙事、表情切换、翻面、平滑滚动与逐屏吸附、养成升级动画 |
 | `assets/faces/` | 8 个表情（496×496，按屏幕比例裁好）；`_raw/` 是裁切前原图，留作重裁 |
 | `assets/fonts/ZiHunBianTaoTi.woff2` | 标题字体子集（84 KB，从系统字体 2.1 MB 抽子集；改文案后需重抽，缺字会回退成系统字体） |
-| `assets/poster-*.jpg` | 三段视频的封面帧 |
+| `assets/poster-*.jpg` | 四段视频的封面帧 |
 | `assets/logo.png` | 导航与 favicon 图标（128×128） |
 | `assets/icons/nfc.svg` | NFC 字形原文件：来源 Simple Icons（CC0），页内已内联成 sprite 的 `#i-nfc`，可直接 `currentColor` 着色 |
 | `media/` | 视频，见下 |
@@ -64,11 +64,15 @@ python3 -m http.server 8151 --bind 127.0.0.1
 
 全部转成 H.264 + `+faststart`，统一用浏览器原生控件播放完整版，不再有节选片与自定义弹窗；视频一律 `preload="metadata"`，只有浏览器需要时才真正拉流。
 
-**视频不进仓库**（`media/*.mp4` 已在 `.gitignore` 里），体积大且属于现场素材；部署时要和页面一起上传，否则别人打开页面看到的只有封面：
+**视频随仓库保留**（`media/*.mp4`），根 `README.md` 直接链接这四个文件；部署时仍要和页面一起上传，否则别人打开页面看到的只有封面：
 
 ```bash
-rsync -av --exclude '.DS_Store' landing/ user@host:/path/to/static/landing/
+# 演示机上的实际路径是 linx-fighter-las:/var/www/linx-fighter/landing/
+rsync -av --exclude '.DS_Store' landing/ linx-fighter-las:/var/www/linx-fighter/landing/
+ssh linx-fighter-las 'chown -R root:root /var/www/linx-fighter/landing/ && chmod -R a+rX /var/www/linx-fighter/landing/'
 ```
+
+上传后必须确认 nginx 读得到：文件 644、目录 755，否则整站返回 403——本机文件被存成 600 时 `rsync -a` 会把 600 一起带上去。页面引用的 `styles.css` / `main.js` 没带版本号，nginx 只发 `ETag` 与 `Last-Modified`，改版后老访客可能要强刷一次才看到新样式。
 
 ## 口径与边界
 

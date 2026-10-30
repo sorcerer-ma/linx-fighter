@@ -184,7 +184,7 @@
     });
 
     // 单一来源的段落高亮：取中线以上最后一个段落，避免相邻段落同时点亮
-    var navIds = ['problem', 'play', 'arch', 'listen', 'fair', 'grow'];
+    var navIds = ['duel', 'play', 'arch', 'listen', 'fair', 'grow'];
     var navLinks = navIds.map(function (id) { return $('.nav__links a[href="#' + id + '"]'); });
     var navSecs = navIds.map(function (id) { return document.getElementById(id); });
     var navTick = { v: -1 };
@@ -254,17 +254,6 @@
         gsap.to(batch, { y: 0, opacity: 1, duration: 0.85, stagger: 0.08, ease: 'power2.out' });
       }
     });
-
-    var statement = $('.statement');
-    if (statement) {
-      gsap.set(statement, { '--u': 0 });
-      ScrollTrigger.create({
-        trigger: statement,
-        start: 'top 78%',
-        once: true,
-        onEnter: function () { gsap.to(statement, { '--u': 1, duration: 0.9, ease: 'power2.out' }); }
-      });
-    }
   }
 
   /* ============================================================

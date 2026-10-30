@@ -61,7 +61,7 @@
     <span>共鸣：闻声对决</span>
   </a>
   <nav class="nav__links" aria-label="页面导航">
-    <a href="#problem">问题</a>
+    <a href="#duel">对局</a>
     <a href="#play">玩法</a>
     <a href="#footage">实录</a>
     <a href="#arch">结构</a>
@@ -138,49 +138,70 @@
     </div>
   </section>
 
-  <!-- ========== S2 问题 ========== -->
-  <section class="scene scene--problem" id="problem">
+  <!-- ========== S2 双人对局：第二屏直接看两个人开打 ========== -->
+  <section class="scene scene--duel" id="duel">
     <div class="wrap">
       <header class="sect-head" data-reveal>
-        <p class="num">01 / 问题</p>
-        <h2 class="h2">语音助手停在问答，<br>硬件伙伴停在卖萌</h2>
+        <p class="num">01 / 双人对局</p>
+        <h2 class="h2">两个人，一张桌子，<br>各说各的，谁也没碰按钮</h2>
       </header>
 
-      <div class="stops">
-        <article class="stop" data-reveal data-parallax="-0.02">
-          <span class="stop__ico"><svg class="icon"><use href="#i-wave"/></svg></span>
-          <h3>停在问答</h3>
-          <p>一次一条，说完就散。没有回合，没有立场，更没有输赢。</p>
-        </article>
-        <article class="stop" data-reveal data-parallax="-0.05">
-          <span class="stop__ico"><svg class="icon"><use href="#i-box"/></svg></span>
-          <h3>停在卖萌</h3>
-          <p>会应声、会放歌、会亮灯，唯独没把用户那张嘴用上——它只是音箱加灯。</p>
-        </article>
-        <article class="stop" data-reveal data-parallax="-0.08">
-          <span class="stop__ico"><svg class="icon"><use href="#i-users"/></svg></span>
-          <h3>停在屏幕</h3>
-          <p>两个人坐在一起，却各自低头点按钮，社交隔着屏幕。</p>
-        </article>
+      <div class="duel">
+        <figure class="duel__film" data-reveal>
+          <div class="film__frame">
+            <video class="film__video" controls playsinline preload="metadata"
+                   src="media/pvp-battle.mp4" poster="assets/poster-battle.jpg"
+                   aria-label="双人对战实录：两台设备面对面开打"></video>
+            <span class="film__badge"><svg class="icon"><use href="#i-play"/></svg>5 分 08 秒 · 双人实录</span>
+          </div>
+          <figcaption class="film__cap">
+            <span class="film__note">一台设备一个伙伴，整局只有两张嘴在操作</span>
+            <a class="duel__more" href="#play">它是怎么算的<svg class="icon"><use href="#i-arrow-right"/></svg></a>
+          </figcaption>
+        </figure>
+
+        <div class="duel__copy" data-reveal>
+          <p class="lede">
+            朋友坐在对面，一人一台设备，轮流用嘴出招、应招。没有匹配、没有手柄、没有技能栏——
+            同一句话送到服务端，两边算出来的是同一组数。
+          </p>
+          <ul class="duel__facts">
+            <li>
+              <span class="duel__ico"><svg class="icon"><use href="#i-users"/></svg></span>
+              <div><b>对手就坐在对面</b><small>不是匹配来的陌生人，也不是屏幕里的头像。</small></div>
+            </li>
+            <li>
+              <span class="duel__ico"><svg class="icon"><use href="#i-mic"/></svg></span>
+              <div><b>手一直是空的</b><small>没有手柄、没有技能栏，也不比手速，只比读招。</small></div>
+            </li>
+            <li>
+              <span class="duel__ico"><svg class="icon"><use href="#i-flag"/></svg></span>
+              <div><b>坐下就能开打</b><small>不用先练，也不用过教程，规则边打边说。</small></div>
+            </li>
+            <li>
+              <span class="duel__ico"><svg class="icon"><use href="#i-shield-check"/></svg></span>
+              <div><b>谁也改不了数</b><small>事实在服务端，模型只负责把话说顺。</small></div>
+            </li>
+          </ul>
+        </div>
       </div>
 
-      <p class="statement" data-reveal>
-        语音不是输入方式之一，<br>而是这个玩法里唯一顺手的输入。
-      </p>
-
-      <div class="compare" data-reveal>
-        <table>
-          <caption class="sr-only">手机游戏、语音助手与本产品的形态差异</caption>
-          <thead>
-            <tr><th scope="col"></th><th scope="col">手机游戏</th><th scope="col">语音助手</th><th scope="col" class="is-us">我们</th></tr>
-          </thead>
-          <tbody>
-            <tr><th scope="row">输入</th><td>手指点按，眼睛盯着</td><td>一问一答，说完就散</td><td class="is-us">原话直给，手是空的</td></tr>
-            <tr><th scope="row">对手</th><td>匹配到的陌生人</td><td>没有对手</td><td class="is-us">坐你对面的朋友</td></tr>
-            <tr><th scope="row">伙伴</th><td>角色只是你捏的头像</td><td>助手，不替你出手</td><td class="is-us">会替你还手的伙伴</td></tr>
-            <tr><th scope="row">场合</th><td>需要腾出双手和视线</td><td>独处、碎片时间</td><td class="is-us">面对面，边聊边打</td></tr>
-          </tbody>
-        </table>
+      <div class="duel__compare" data-reveal>
+        <p class="duel__lead">对手是谁，决定了这是哪一种对战</p>
+        <div class="compare">
+          <table>
+            <caption class="sr-only">手机游戏、语音助手与本产品的形态差异</caption>
+            <thead>
+              <tr><th scope="col"></th><th scope="col">手机游戏</th><th scope="col">语音助手</th><th scope="col" class="is-us">我们</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">输入</th><td>手指点按，眼睛盯着</td><td>一问一答，说完就散</td><td class="is-us">原话直给，手是空的</td></tr>
+              <tr><th scope="row">对手</th><td>匹配到的陌生人</td><td>没有对手</td><td class="is-us">坐你对面的朋友</td></tr>
+              <tr><th scope="row">伙伴</th><td>角色只是你捏的头像</td><td>助手，不替你出手</td><td class="is-us">会替你还手的伙伴</td></tr>
+              <tr><th scope="row">场合</th><td>需要腾出双手和视线</td><td>独处、碎片时间</td><td class="is-us">面对面，边聊边打</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </section>
@@ -282,7 +303,7 @@
       <header class="sect-head" data-reveal>
         <p class="num">03 / 真机实录</p>
         <h2 class="h2">拍的，不是画的</h2>
-        <p class="sect-sub">设备放在桌上、手机握在手里，三段现场录像，没有补拍也没有剪辑加速。</p>
+        <p class="sect-sub">设备放在桌上、手机握在手里，两段现场录像，没有补拍也没有剪辑加速。双人开打的那段在上面第一节。</p>
       </header>
 
       <div class="reels">
@@ -309,19 +330,6 @@
           <figcaption>
             <h3>说一句，它就开始听</h3>
             <p>唤醒、听清、回应，都在这一块小屏上发生——屏幕之外，没有别的操作。</p>
-          </figcaption>
-        </figure>
-
-        <figure class="reel" data-reveal>
-          <div class="reel__frame">
-            <video class="reel__video" controls playsinline preload="metadata"
-                   poster="assets/poster-battle.jpg" aria-label="双人对战实录"
-                   src="media/pvp-battle.mp4"></video>
-            <span class="reel__tag">5 分 08 秒 · 实录</span>
-          </div>
-          <figcaption>
-            <h3>两台设备，面对面开打</h3>
-            <p>两个人各说各的，谁也没碰按钮——同一句话，两边算出来的是同一组数。</p>
           </figcaption>
         </figure>
       </div>
