@@ -40,12 +40,10 @@
 
 > 点封面到落地页直接播放 60 秒产品片；四段视频也随仓库提供，GitHub 打开文件后可下载并用本地播放器观看。
 
-| 视频 | 内容 | 时长 |
-| --- | --- | --- |
-| [60 秒产品片](landing/media/intro.mp4) | 从开口到结算的一局 | 1:00 |
-| [设备表情实录](landing/media/faces-full.mp4) | 听、准备、挨打、胜利 | 3:25 |
-| [设备语音实录](landing/media/pvp.mp4) | 唤醒、听清、回应 | 3:06 |
-| [双人对战实录](landing/media/pvp-battle.mp4) | 两台设备，面对面 | 5:08 |
+- [60 秒产品片](landing/media/intro.mp4)<br>从开口到结算的一局
+- [设备表情实录](landing/media/faces-full.mp4)<br>听、准备、挨打、胜利
+- [设备语音实录](landing/media/pvp.mp4)<br>唤醒、听清、回应
+- [双人对战实录](landing/media/pvp-battle.mp4)<br>两台设备，面对面
 
 ## 项目亮点
 
