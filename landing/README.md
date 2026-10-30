@@ -67,10 +67,12 @@ python3 -m http.server 8151 --bind 127.0.0.1
 **视频随仓库保留**（`media/*.mp4`），根 `README.md` 直接链接这四个文件；部署时仍要和页面一起上传，否则别人打开页面看到的只有封面：
 
 ```bash
-rsync -av --exclude '.DS_Store' --chmod=D755,F644 landing/ user@host:/path/to/static/landing/
+# 演示机上的实际路径是 linx-fighter-las:/var/www/linx-fighter/landing/
+rsync -av --exclude '.DS_Store' landing/ linx-fighter-las:/var/www/linx-fighter/landing/
+ssh linx-fighter-las 'chown -R root:root /var/www/linx-fighter/landing/ && chmod -R a+rX /var/www/linx-fighter/landing/'
 ```
 
-演示机上的实际路径是 `linx-fighter-las:/var/www/linx-fighter/landing/`。上传后要确认 nginx 读得到：文件 644、目录 755，否则整站返回 403（`chown -R root:root` + `chmod -R a+rX`）。页面引用的 `styles.css` / `main.js` 没带版本号，nginx 只发 `ETag` 与 `Last-Modified`，改版后老访客可能要强刷一次才看到新样式。
+上传后必须确认 nginx 读得到：文件 644、目录 755，否则整站返回 403——本机文件被存成 600 时 `rsync -a` 会把 600 一起带上去。页面引用的 `styles.css` / `main.js` 没带版本号，nginx 只发 `ETag` 与 `Last-Modified`，改版后老访客可能要强刷一次才看到新样式。
 
 ## 口径与边界
 
