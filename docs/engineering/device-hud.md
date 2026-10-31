@@ -81,8 +81,9 @@
    `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --window-size=320,240 --screenshot=out.png file://sheet.html`
    再生成一份「删掉背景色矩形」的 SVG，加 `--default-background-color=00000000` 输出透明前景。
 3. 裁剪：按 alpha>8 求包围盒、留 2px 边距，得到每张图的 `(x,y,w,h)`；背景色交给 LVGL 纯色绘制，不烘进位图。
-4. 转 C：`scripts/Image_Converter/LVGLImage.py --ofmt C --cf RGB565A8 --compress NONE`，生成 `face_assets.c/.h`（每个符号带 `FACE_<NAME>_X`/`_Y` 偏移宏，`face_view.cc` 摆放时叠加偏移）。
-5. 容量：app 分区 4,032KB，2.1.8 版镜像 3,798,128 字节；未压缩前景合计约 840KB。**不要用 RLE**（踩坑 3）。
+4. 转 C：`scripts/Image_Converter/LVGLImage.py --ofmt C --cf RGB565A8 --compress RLE`，生成 `face_assets.c/.h`（每个符号带 `FACE_<NAME>_X`/`_Y` 偏移宏，`face_view.cc` 摆放时叠加偏移）。
+5. 容量：app 分区 4,032KB。2.5.0 起表情与特效前景改用 RLE，`face_assets.c` 从 5.6MB 源码（约 1.12MB rodata）降到 0.9MB 源码（约 0.20MB rodata），镜像从 4,055,440 → 3,135,392 字节，余量从 72KB 提到约 970KB。
+6. RLE 开关：Kconfig 必须有 `CONFIG_LV_USE_RLE=y`（`LV_BIN_DECODER_RAM_LOAD=y` 也要开）。`RGB565A8` 的 RLE 按 **2 字节为单位**压缩（`pixel_byte=2`，颜色平面+透明平面连续处理），转换器 `blk_size=(bpp+7)//8` 对 `RGB565A8` 取 16bpp 正好对齐；`RGB565`（烘焙底色）取 2 字节同样对齐。
 
 ### 动画
 
@@ -127,7 +128,7 @@
 | --- | --- | --- | --- |
 | 1 | 烧录后彻底没输出：无日志、无 MCP、复位也不跑 | HUD 初始化写在 `LcdDisplay::SetupUI()` 里，那是 `Board::GetInstance()` 的构造过程；HUD 内部再取 Board 触发静态初始化重入，永久卡死 | 初始化挪到 `Application::Initialize()`，`board.GetDisplay()` 之后再启动 HUD |
 | 2 | 屏幕只有底色在切换，看不到五官 | 设计稿导出把 8 个「背景色」矩形重命名成 `背景色1/2/3…`（还有 `ns1:id` 形式），按 id 删除只删掉一个，其余前景图整屏不透明 | 按属性值匹配删除背景矩形（任何 `id`/`ns1:id` 等于「背景色」的元素） |
-| 3 | 前景图有了但表情仍不显示，探针显示 `w=0 h=0` | LVGL 内嵌 RLE 压缩图元解码不出尺寸（即便开了 `LV_BIN_DECODER_RAM_LOAD`） | 改用未压缩 `RGB565A8`，按内容裁剪控制体积 |
+| 3 | 前景图有了但表情仍不显示，探针显示 `w=0 h=0` | `CONFIG_LV_USE_RLE` 没开：`lv_bin_decoder` 看到 `LV_IMAGE_COMPRESS_RLE` 直接返回 invalid（日志只有 `RLE decompression is not enabled`），即使 `LV_BIN_DECODER_RAM_LOAD` 已开也会退化成空图 | 打开 `CONFIG_LV_USE_RLE=y`；2.5.0 用 RLE 后资源从 1.12MB 降到约 0.20MB |
 | 4 | LVGL 矢量表情在真机不可见、但 `lv_snapshot` 截图正常 | 部分刷新模式下 `lv_draw_sw_vector` 的 viewport 用绝对坐标、又按 `-buf_area` 平移，整屏矢量路径被裁到条带外；快照走整屏 layer 所以看起来正常 | 放弃矢量渲染，改预渲染位图；**不要**改成 `full_refresh`（整屏 PSRAM 缓冲 + 每帧 307KB ARGB 临时缓冲，实测把设备跑死） |
 | 5 | 换表情后残留上一张的眉毛/火焰 | 新图尺寸比旧图小，旧像素没被覆盖 | 立即换图处 `lv_obj_invalidate(root)` 整屏重绘 |
 | 6 | 残影对象存在但永远透明 | 创建时 `lv_obj_set_style_opa(obj, LV_OPA_TRANSP)` 把整对象透明度钉死为 0 | 用 `lv_obj_set_style_image_opa` 控制图片透明度，残影放在主图下层 |
@@ -136,17 +137,19 @@
 | 9 | 截图数据横向彩条、字节错位 | 控制台 VFS 写是非阻塞的，15 万字节整帧直写会丢字节 | 分块 base64 行回传（每 1KB 一块）+ `WriteAll` 3s 超时丢弃 |
 | 10 | `esptool read-mac`/`write-flash` 报 `No serial data received`，但设备明明在跑 | 应用占用 USB-Serial-JTAG，esptool 自带的 RTS 复位对本固件无效 | 用 pyserial 手动拨 `rts=True; dtr=False` 再放开进下载模式，或烧录脚本每 5s 重试 |
 | 11 | 开机 10 分钟后设备「失联」，USB 还在但串口无响应 | 原厂 `PowerSaveTimer(-1, 60, 600)` 到点 `esp_deep_sleep_start()` 并断 5V | 联调版 `PowerSaveTimer(-1, 60, -1)`；唤醒需长按侧键或断电重上电 |
+| 13 | 链接报 `multiple definition of 'icon_heart'` 等 | `face_assets.c` 与 `battle_assets.c` 都定义了 6 个图标 | 生成 `face_assets.c` 时只放表情与特效，图标继续由 `battle_assets.c` 提供 |
+| 14 | 资源从 DRAM 溢出（`region 'dram0_0_seg' overflowed`） | 生成的 `uint8_t xxx_map[]` 没有 `const`，落进 `.data` | 用 `static const` 放 flash rodata；生成的拆分写法（`static const` 独立一行 + 属性行 + `uint8_t` 行）要整段保留，只改声明 |
 
 ## 验证与证据
 
 - 服务端：`pnpm typecheck`、`pnpm test`（`test/hud.test.ts` 与 `test/hud-http.test.ts` 覆盖待命帧、瞬时表情、大招三态、帧号去重、长轮询与通道工具面）。
 - 真机：USB 连接后用 `hud/host/mcp_drive.py` 发 `initialize`/`tools/list`/`tools/call`；`self.hud.set_state` 驱动 8 表情与音效，`self.hud.get_state` 回读，`hud.screenshot` 抓整屏比对设计稿。**注意**：截图取自 LVGL 缓冲，看不到面板侧颜色反转，颜色必须人眼确认。
-- 证据（仓库外）：`~/Documents/linx-hud-spike/evidence/`（`final_sheet.png` 8 状态总览、`device_*.png`、`mcp_transcript.jsonl`）、固件 `firmware/xiaozhi-hud-2.1.8.bin` 与 `xiaozhi-hud-2.1.8.patch`。
+- 证据（仓库外）：`~/Documents/linx-hud-spike/evidence/`（`final_sheet.png` 8 状态总览、`device_*.png`、`rle_sheet.png` 12 表情 RLE 版本总览、`mcp_transcript.jsonl`）、固件 `firmware/xiaozhi-hud-2.5.0.bin` 与 `xiaozhi-hud-2.5.0.patch`。
 
 ## 已知限制
 
 - 固件按上游 v2.1.0 重建，丢掉了厂商私有工具 `self.system.set_aec`、`self.system.switch_TFT`；需要厂商源码才能补回。
-- esp-sr 语音模型未随镜像打包，唤醒词暂不可用；HUD 与 MCP 不受影响。
+- 语音模型在原厂 8MB assets 分区里，未随镜像覆盖；刷机后实测 `MODEL_LOADER: Successfully load srmodels`，唤醒词可用。若整片擦除需重新烧 `assets` 分区，否则唤醒词失效。
 - 设备通道已具备固件 HudClient（`battle_pull.cc`，NVS 配 `hud/url` 与 `hud/enabled`，默认关闭），尚未与平台真实链路联调；现阶段用 USB 上的 MCP 调用驱动。
 - 闪避的「三张脸」按屏幕宽度做了取舍：现为单张主脸 + 残影摆动，与设计稿的三脸残影构图不完全一致。
 - 设备绑定仍按 MAC：刷机后 `Client-Id` 会变，平台侧需要按新 MAC `e8:f6:0a:8b:f4:b4` 重新绑定。
