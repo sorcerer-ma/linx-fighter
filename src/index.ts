@@ -4,6 +4,8 @@ import { createChatAnswerer } from './game/chat.js';
 import { createJevEnemyAI } from './game/enemy-jev.js';
 import { createCommandRouter } from './game/router.js';
 import { createApp } from './http/app.js';
+import { attachDeviceHudSocket } from './http/device-hud-socket.js';
+import { createHudKeyResolver } from './http/hud-key.js';
 import { createLogger } from './log.js';
 import { BattleStore } from './store/battles.js';
 import { EchoStore } from './store/echoes.js';
@@ -77,6 +79,14 @@ const server = app.listen(config.port, config.host, () => {
     chatModel: chat ? config.chatModel : 'disabled',
     attribution: config.attribution,
     speakers: config.speakers,
+  });
+  // 设备推送通道与 HTTP 共用一个端口：设备连上后由服务端主动推 HUD 帧
+  attachDeviceHudSocket({
+    server,
+    service,
+    logger,
+    resolveKey: createHudKeyResolver({ service, store }),
+    token: config.deviceToken,
   });
 });
 

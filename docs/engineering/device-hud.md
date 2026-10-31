@@ -1,6 +1,6 @@
 # 设备 HUD 通道（当前实现）
 
-> 面向硬件的只读状态通道：服务端把对局局面派生成屏幕能直接消费的画面状态，设备通过 `/device/mcp` 上的 `game_hud` 长轮询拉取；平台侧 `/mcp` 工具面不变，仍是 `game_say` 与 `wait_event`。固件侧改动基于小智开源固件上游 v2.1.0，代码暂存仓库外，见文末。
+> 面向硬件的只读状态通道：服务端把对局局面派生成屏幕能直接消费的画面状态，以 WebSocket 主动推送（`/device/ws`），并保留 `/device/mcp` 的 `game_hud` 长轮询作兜底；平台侧 `/mcp` 工具面不变，仍是 `game_say` 与 `wait_event`。固件侧改动基于小智开源固件上游 v2.1.0，代码暂存仓库外，见文末。
 
 ## 为什么单独开一条通道
 
@@ -8,7 +8,7 @@
 
 ```
 权威对局 ──► BattleFrame ──► Facts ──┬──► 平台事实（/mcp 的 content.text）
-                                     └──► hudFromFacts() ──► HudState ──(长轮询 /device/mcp)──► 设备 HUD
+                                     └──► hudFromFacts() ──► HudState ──(推送 /device/ws)──► 设备 HUD
 ```
 
 服务端仍是唯一裁决方：设备只渲染，不推导数值。
@@ -24,9 +24,12 @@
 
 ## 设备通道契约
 
-- 入口：`POST /device/mcp`（Streamable HTTP，无状态），`DELETE /device/mcp` 收尾返回 200；`GET /` 的 `endpoints` 里多一个 `device: '/device/mcp'`。
-- 工具：只有一个 `game_hud`，入参 `wait_ms`（整数 0–5000，默认 0）。`wait_ms>0` 时按 150ms 步进长轮询，直到画面帧号 `seq` 变化或超时，再返回最新一帧。
-- 返回：`content[0].text` 是单行 JSON：
+设备有两条等价的取帧通道，载荷完全相同；默认走推送，轮询只在链路不通时兜底：
+
+- **推送（默认）**：`GET /device/ws?device=<MAC>` 升级为 WebSocket。连上立即推一帧当前画面，之后每 200ms 检查一次局面，`seq` 变化才推；25s 一次 ping 保活，未回 pong 直接断开。`DEVICE_WS_TOKEN` 配置后必须带 `?token=`，否则 1008 拒绝。
+- **轮询（兜底）**：`POST /device/mcp`（Streamable HTTP，无状态），`DELETE /device/mcp` 收尾返回 200；工具只有一个 `game_hud`，入参 `wait_ms`（整数 0–5000，默认 0），`wait_ms>0` 按 150ms 步进长轮询到 `seq` 变化或超时。`GET /` 的 `endpoints` 里 `device: '/device/mcp'`。
+- 两条通道共用同一份解析器（`src/http/hud-key.ts`）与同一套派生（`hudFromFacts`），不各写一份判断。
+- 返回（推送帧与 `game_hud` 的 `content[0].text` 同构）是单行 JSON：
 
 | 字段 | 含义 |
 | --- | --- |

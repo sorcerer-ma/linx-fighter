@@ -68,6 +68,11 @@ export interface AppConfig {
    */
   adminToken?: string;
   /**
+   * 设备 HUD 推送通道的共享口令；为空时 /device/ws 只按设备号订阅（局域网/演示）。
+   * 配置后设备连接必须带 ?token=，避免公网被任意 MAC 订阅。
+   */
+  deviceToken?: string;
+  /**
    * 可以触发游戏的说话人（平台声纹的名字，逗号分隔）：未登记的声音不回应，
    * 避免环境里其他人声、噪声误触发对局。为空表示不限制。
    */
@@ -136,6 +141,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enemyTimeoutMs: Math.max(200, Math.min(5000, parseInteger(env.ENEMY_TIMEOUT_MS, 2000))),
     attribution: parseAttributionMode(env.ATTRIBUTION_MODE),
     adminToken: env.ADMIN_TOKEN?.trim() || undefined,
+    deviceToken: env.DEVICE_WS_TOKEN?.trim() || undefined,
     speakers: parseSpeakers(env.ALLOWED_SPEAKERS),
     waitEventTimeoutMs: Math.max(
       WAIT_EVENT_TIMEOUT_MS_MIN,

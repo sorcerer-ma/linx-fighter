@@ -18,6 +18,7 @@ import {
   identityHeaders,
   type DeviceContext,
 } from '../mcp/context.js';
+import { createHudKeyResolver } from './hud-key.js';
 import { createMcpServer, createHudServer } from '../mcp/server.js';
 import { registerGameTools } from '../mcp/tools.js';
 import { HudTracker, registerHudTools } from '../mcp/hud-tools.js';
@@ -130,25 +131,8 @@ export function createApp(deps: AppDependencies): express.Express {
   const sessions = new Map<string, McpSession>();
   const hudTracker = new HudTracker();
 
-  /**
-   * 设备对局键解析。
-   *
-   * 平台建局可能带任意 agentId，而固件只知道自己的设备号，因此先按标准身份键找，
-   * 找不到再在设备号前缀下取最近更新的一局；都没有就返回标准键，让 HUD 回待命。
-   */
-  const resolveHudKey = (ctx: DeviceContext): string => {
-    const direct = battleKey(ctx);
-    if (service.snapshot(direct)) return direct;
-    const prefix = `${ctx.deviceId}#`;
-    let latest: { key: string; at: number } | null = null;
-    for (const entry of store.list()) {
-      if (!entry.key.startsWith(prefix)) continue;
-      if (latest === null || entry.battle.updatedAt > latest.at) {
-        latest = { key: entry.key, at: entry.battle.updatedAt };
-      }
-    }
-    return latest?.key ?? direct;
-  };
+  // 设备对局键解析：/device/mcp 与 /device/ws 共用同一套规则
+  const resolveHudKey = createHudKeyResolver({ service, store });
 
   // 监控接口按来源限速：3 秒轮询只占 20 次/分钟，留足余量；进程内 Map，重启即清空
   const adminLimiter = createRateLimiter();
