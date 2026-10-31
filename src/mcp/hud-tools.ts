@@ -100,14 +100,16 @@ export function registerHudTools(server: McpServer, deps: HudToolDependencies): 
     }).strict(),
   }, async ({ wait_ms }) => {
     const key = resolve(ctx);
-    const first = tracker.update(key, readFacts(service, key));
+    // 帧号按设备递增：换局时对局键会变，若按对局键重新计数，设备会把新局当成旧帧丢掉
+    const frameKey = ctx.deviceId ? `dev:${ctx.deviceId}` : key;
+    const first = tracker.update(frameKey, readFacts(service, key));
     const waitMs = wait_ms ?? DEFAULT_WAIT_MS;
     let hud = first;
     if (waitMs > 0) {
       const deadline = Date.now() + waitMs;
       while (Date.now() < deadline && hud.seq === first.seq) {
         await delay(POLL_STEP_MS);
-        hud = tracker.update(key, readFacts(service, key));
+        hud = tracker.update(frameKey, readFacts(service, key));
       }
     }
     logger.debug('设备拉取 HUD', {

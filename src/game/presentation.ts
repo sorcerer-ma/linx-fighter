@@ -39,6 +39,8 @@ export interface FactsOpponent {
 /** 一局事实：屏幕画面与平台演绎都只读这一份 */
 export interface Facts {
   round?: number;
+  /** 对局形态：双人房里两块屏相对，单人局只有本人一块屏 */
+  mode?: 'solo' | 'pvp';
   phase?: BattleFrame['phase'];
   room?: string;
   updatedAt?: number;
@@ -100,6 +102,7 @@ export function factsOf(
     ...(frame
       ? {
           round: frame.round,
+          mode: frame.mode,
           phase: frame.phase,
           ...(frame.room ? { room: frame.room } : {}),
           updatedAt: frame.updatedAt,

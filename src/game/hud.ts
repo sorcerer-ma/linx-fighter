@@ -65,6 +65,8 @@ export interface HudState {
   ult: HudUltState;
   /** 对面玩家的资源；等对手加入或没有对局时为 null，屏幕只画自己那一行 */
   opponent: HudResources | null;
+  /** 对局形态：双人房上排画对手、单人局上排画自己（看屏的人是本人） */
+  mode: 'solo' | 'pvp' | null;
   /** 本帧需要播放的音效名；只在表情变化时给一次，null 表示不发声 */
   cue: string | null;
   /** 单调递增的帧号；同一次设备会话里每次变化 +1 */
@@ -88,6 +90,7 @@ export function idleHud(updatedAt: number): HudState {
     maxEnergy: 5,
     ult: 0,
     opponent: null,
+    mode: null,
     cue: null,
     seq: 0,
     holdMs: 0,
@@ -171,6 +174,7 @@ function sameFrame(a: HudState, b: HudState): boolean {
     && a.maxEnergy === b.maxEnergy
     && a.ult === b.ult
     && sameOpponent(a.opponent, b.opponent)
+    && a.mode === b.mode
     && a.holdMs === b.holdMs;
 }
 
@@ -205,6 +209,7 @@ export function hudFromFacts(facts: Facts | null, previous: HudState | null, now
     maxEnergy: facts.you.maxEnergy,
     ult: ultState({ ultimateRemaining: facts.you.ultimateRemaining, energy: facts.you.energy }, youReady),
     opponent: opponentOf(facts),
+    mode: facts.mode ?? null,
     cue: null,
     seq: 0,
     holdMs,
@@ -243,6 +248,7 @@ export function hudPayload(hud: HudState): Record<string, unknown> {
     energy: hud.energy,
     max_energy: hud.maxEnergy,
     ult: hud.ult,
+    mode: hud.mode,
     opponent: hud.opponent
       ? {
           hp: hud.opponent.hp,

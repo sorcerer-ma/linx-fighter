@@ -36,6 +36,8 @@ export interface FrameTurn {
 /** 视角化局面：`you` 是本次请求的视角方，`active`/`actor` 也按这个视角写 */
 export interface BattleFrame {
   round: number;
+  /** 对局形态：双人房两边各一块屏，单人局只有本人这一块屏 */
+  mode: 'solo' | 'pvp';
   phase: BattlePhase;
   /** 现在轮到谁主动出手（视角内） */
   active: Side;
@@ -78,6 +80,7 @@ export function turnOf(entry: FrameTurn | HistoryEntryState): FrameTurn {
 export function frameOfBattle(battle: Battle): BattleFrame {
   return {
     round: battle.round,
+    mode: battle.mode,
     phase: battle.phase,
     active: battle.active,
     pending: battle.pending ? { actor: battle.pending.actor } : null,
@@ -93,6 +96,7 @@ export function frameOfBattle(battle: Battle): BattleFrame {
 export function frameOfState(state: BattleState): BattleFrame {
   return {
     round: state.round,
+    mode: state.mode,
     phase: state.phase,
     active: state.active,
     pending: state.pending ? { actor: state.pending.actor } : null,
