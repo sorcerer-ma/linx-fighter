@@ -34,9 +34,10 @@
 | `battle` / `room` / `waiting` | 是否在局、房间号、是否在等对手或对手出招 |
 | `round` | 第几轮，与事实的 `round` 同源，便于日志对齐 |
 | `expression` | 8 表情之一：`neutral`、`attack`、`hurt`、`guard`、`dodge`、`ultready`、`victory`、`defeat` |
-| `hp` / `max_hp` | 生命值，设备画爱心与加粗辅助条，不显示数字 |
-| `energy` / `max_energy` | 能量，设备画 5 个闪电（实心/空心） |
-| `ult` | 大招徽记三态：`0` 未就绪、`1` 可释放、`2` 本局已用 |
+| `hp` / `max_hp` | 自己的生命值；设备画爱心、当前值数字与加粗辅助条（上限由条长表达） |
+| `energy` / `max_energy` | 自己的能量，设备只画 5 个闪电（实心/空心），不写数字 |
+| `ult` | 自己右上角大招徽记三态：`0` 未就绪、`1` 可释放、`2` 本局已用 |
+| `opponent` | 对手资源块 `{hp, max_hp, energy, max_energy, ult}`，画在上一行与左上角徽记；等对手加入或没有对局时为 `null`，设备只画自己这一行 |
 | `cue` | 本次要播的音效名，仅表情切换那一帧才有，待命为空 |
 | `seq` | 画面帧号，同帧重复拉取不涨号，设备据此去重 |
 | `hold_ms` | 瞬时表情停留时长，0 表示常驻 |
@@ -61,7 +62,8 @@
 - 保留官方「简单式」UI（`USE_DEFAULT_MESSAGE_STYLE`），启动时隐藏 `emoji_box_`、`top_bar_`、`status_bar_`、`bottom_bar_`，在同一 `screen` 上叠一层战斗 HUD：
   - 整屏底色：LVGL 纯色矩形，切换时 300ms 自算 RGB 插值；
   - 表情前景：`face_view` 管理的两张 `lv_image` 交叉淡入，加闪避残影；
-  - 资源行：爱心 `(10,207)`、生命轨道 `(32,207)` 170×14、5 个闪电 `x=212+i*20, y=207`、右上角大招徽记 `(284,4)` 30px。
+  - 两行资源（两块屏相对摆放：上排对手、下排自己）：行高约 14px，y 分别为 `190`/`212`；每行爱心在 `x=8`、当前生命值数字（Montserrat 12）在 `x=27`、生命轨道从 `x=50` 拉通到 `x=214`、5 个闪电 `x=224+i*19` 贴右边；能量只画闪电不写数字。
+  - 大招徽记：左上角 `(6,4)` 画对手三态、右上角 `(284,4)` 画自己三态；没有对手时左上角与上排一起隐藏。
 - 初始化点必须在 `Application::Initialize()` 里：`auto display = board.GetDisplay(); battle_hud_create(display); battle_ctl_start(); battle_pull_start();`。**不能放进 `LcdDisplay::SetupUI()`**（见踩坑 1）。
 - 平台情绪照常接收，但一旦 HUD 收到过显式状态就置 `locked`，不再被情绪覆盖；`hud.unlock` 解除。
 

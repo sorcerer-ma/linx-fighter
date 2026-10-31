@@ -9,6 +9,7 @@
 import type { BattleState } from './state.js';
 import { frameOfState, type FrameTurn } from './frame.js';
 import { factsOf, type Facts } from './presentation.js';
+import { isUltimateReady } from './rules.js';
 
 /** 与设计文档「八种表情」一一对应，也是固件表情资源的文件名 */
 export type HudExpression =
@@ -39,6 +40,15 @@ const CUE_OF: Record<HudExpression, string | null> = {
 /** 大招徽记：0=未就绪（空心断弧），1=可释放（实心+气焰），2=本局已用（斜划） */
 export type HudUltState = 0 | 1 | 2;
 
+/** 一侧玩家的资源；屏幕同一行既画生命值又画 5 个闪电 */
+export interface HudResources {
+  hp: number;
+  maxHp: number;
+  energy: number;
+  maxEnergy: number;
+  ult: HudUltState;
+}
+
 /** 下发给设备的一帧 HUD（字段名与固件 cJSON 解析保持一致） */
 export interface HudState {
   /** 是否在对局中；false 时设备只显示待命表情，不显示资源 */
@@ -53,6 +63,8 @@ export interface HudState {
   energy: number;
   maxEnergy: number;
   ult: HudUltState;
+  /** 对面玩家的资源；等对手加入或没有对局时为 null，屏幕只画自己那一行 */
+  opponent: HudResources | null;
   /** 本帧需要播放的音效名；只在表情变化时给一次，null 表示不发声 */
   cue: string | null;
   /** 单调递增的帧号；同一次设备会话里每次变化 +1 */
@@ -75,6 +87,7 @@ export function idleHud(updatedAt: number): HudState {
     energy: 0,
     maxEnergy: 5,
     ult: 0,
+    opponent: null,
     cue: null,
     seq: 0,
     holdMs: 0,
@@ -120,9 +133,29 @@ function expressionOf(facts: Facts, now: number): HudExpression {
 }
 
 /** 大招徽记三态：本局次数用完优先显示「已用」 */
-function ultState(facts: Facts): HudUltState {
-  if ((facts.you?.ultimateRemaining ?? 0) <= 0) return 2;
-  return facts.next === 'act' && facts.you?.ultimateReady ? 1 : 0;
+function ultState(fighter: { ultimateRemaining: number; energy: number } | undefined, ready: boolean): HudUltState {
+  if (!fighter || fighter.ultimateRemaining <= 0) return 2;
+  return ready ? 1 : 0;
+}
+
+/** 对面玩家的资源：等对手加入（facts.opponent 缺省）时返回 null */
+function opponentOf(facts: Facts): HudResources | null {
+  const foe = facts.opponent;
+  if (!foe) return null;
+  return {
+    hp: foe.hp,
+    maxHp: foe.maxHp,
+    energy: foe.energy,
+    maxEnergy: foe.maxEnergy,
+    ult: ultState({ ultimateRemaining: foe.ultimateRemaining, energy: foe.energy }, isUltimateReady({ ap: foe.energy, ultLeft: foe.ultimateRemaining })),
+  };
+}
+
+/** 对面资源逐项比较；一方没有对手时只比「都没有」 */
+function sameOpponent(a: HudResources | null, b: HudResources | null): boolean {
+  if (!a || !b) return a === b;
+  return a.hp === b.hp && a.maxHp === b.maxHp && a.energy === b.energy
+    && a.maxEnergy === b.maxEnergy && a.ult === b.ult;
 }
 
 /** 两帧是否等价：只有等价才不涨帧号、不重复播音效 */
@@ -137,6 +170,7 @@ function sameFrame(a: HudState, b: HudState): boolean {
     && a.energy === b.energy
     && a.maxEnergy === b.maxEnergy
     && a.ult === b.ult
+    && sameOpponent(a.opponent, b.opponent)
     && a.holdMs === b.holdMs;
 }
 
@@ -154,6 +188,8 @@ export function hudFromFacts(facts: Facts | null, previous: HudState | null, now
   }
 
   const expression = expressionOf(facts, now);
+  // 大招就绪：只有轮到自己主动、且事实判定可释放时才算「可点」
+  const youReady = facts.next === 'act' && facts.you.ultimateReady;
   const holdMs = expression === 'victory' || expression === 'defeat' || expression === 'ultready' || expression === 'neutral'
     ? 0
     : HUD_TRANSIENT_MS;
@@ -167,7 +203,8 @@ export function hudFromFacts(facts: Facts | null, previous: HudState | null, now
     maxHp: facts.you.maxHp,
     energy: facts.you.energy,
     maxEnergy: facts.you.maxEnergy,
-    ult: ultState(facts),
+    ult: ultState({ ultimateRemaining: facts.you.ultimateRemaining, energy: facts.you.energy }, youReady),
+    opponent: opponentOf(facts),
     cue: null,
     seq: 0,
     holdMs,
@@ -206,6 +243,15 @@ export function hudPayload(hud: HudState): Record<string, unknown> {
     energy: hud.energy,
     max_energy: hud.maxEnergy,
     ult: hud.ult,
+    opponent: hud.opponent
+      ? {
+          hp: hud.opponent.hp,
+          max_hp: hud.opponent.maxHp,
+          energy: hud.opponent.energy,
+          max_energy: hud.opponent.maxEnergy,
+          ult: hud.opponent.ult,
+        }
+      : null,
     cue: hud.cue,
     seq: hud.seq,
     hold_ms: hud.holdMs,

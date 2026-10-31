@@ -192,6 +192,11 @@ describe('下发字段', () => {
     assert.equal(payload.battle, true);
     assert.equal(payload.room, '1234');
     assert.equal(payload.round, hud.round);
+    assert.deepEqual(payload.opponent, {
+      hp: hud.opponent?.hp, max_hp: hud.opponent?.maxHp,
+      energy: hud.opponent?.energy, max_energy: hud.opponent?.maxEnergy,
+      ult: hud.opponent?.ult,
+    });
   });
 });
 
@@ -223,6 +228,26 @@ describe('事实投影', () => {
     assert.equal(hud.battle, false);
     assert.equal(hud.expression, 'neutral');
     assert.equal(hud.seq, 1);
+  });
+
+  it('对手资源单独成块，缺对手（等加入）时不造数据', () => {
+    const facts = factsOf(frameOfState(state({
+      opponent: { name: '对手', hp: 9, maxHp: 14, ap: 4, maxAp: 5, ultLeft: 0 },
+    })), { kind: 'status' });
+    const hud = hudFromFacts(facts, null, NOW);
+    assert.deepEqual(hud.opponent, { hp: 9, maxHp: 14, energy: 4, maxEnergy: 5, ult: 2 });
+
+    const waiting = hudFromFacts(factsOf(frameOfState(state({ waiting: true })), { kind: 'status', waiting: true }), null, NOW);
+    assert.equal(waiting.opponent, null, '等对手加入时只画自己那一行');
+  });
+
+  it('对手可释放大招时给徽记「可点」，自己打完后不再算可点', () => {
+    const foeReady = hudFromFacts(factsOf(frameOfState(state({
+      opponent: { name: '对手', hp: 14, maxHp: 14, ap: 4, maxAp: 5, ultLeft: 1 },
+    })), { kind: 'status' }), null, NOW);
+    assert.equal(foeReady.opponent?.ult, 1);
+    const own = hudFromFacts(factsOf(frameOfState(state({ active: 'enemy', next: undefined } as Partial<BattleState>)), { kind: 'status' }), null, NOW);
+    assert.equal(own.ult, 0, '轮不到自己主动时徽记不算可点');
   });
 
   it('事实里的上限直接进画面，不需要再读对局对象', () => {
