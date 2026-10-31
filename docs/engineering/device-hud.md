@@ -44,20 +44,83 @@
 
 ## 固件侧（小智上游 v2.1.0 + 本项目补丁）
 
-- 显示：`main/display/battle_hud.cc|h` 在官方简单式 UI 上叠加战斗层——8 张表情位图（240×170，RGB565 未压缩，放 `battle_assets.c`）、生命条、5 个闪电、右上角大招徽记；原生文字/情绪/状态栏在启动时隐藏，平台情绪按 `angry/sad/crying→defeat`、`surprised/shocked→hurt`、其余 → `neutral` 映射。
-- 音效：8 段 16kHz 单声道 ogg 放进 `main/assets/common/`，由 `scripts/gen_lang.py` 生成 `OGG_READY/ATTACK/HURT/GUARD/DODGE/ULT/VICTORY/DEFEAT`，经 `AudioService::PlaySound` 播。
-- MCP：设备自身注册 `self.hud.set_state`、`self.hud.get_state`、`self.hud.demo`，平台智能体可直接调；另在 USB Serial/JTAG 上跑标准 MCP JSON-RPC（`initialize`、`tools/list`、`tools/call`）供本机联调。
-- 启动点：HUD 在 `Application::Initialize()` 里初始化；不能放进 `LcdDisplay::SetupUI()`——那是 `Board::GetInstance()` 构造过程的一部分，HUD 内部再取 Board 会撞上静态初始化重入而卡死。
+固件源码在仓库外：二进制与补丁在 `~/Documents/linx-hud-spike/firmware/`，生成脚本与证据在 `hud/`；仓库只维护通道契约与画面派生规则。
+
+### 显示栈
+
+- 保留官方「简单式」UI（`USE_DEFAULT_MESSAGE_STYLE`），启动时隐藏 `emoji_box_`、`top_bar_`、`status_bar_`、`bottom_bar_`，在同一 `screen` 上叠一层战斗 HUD：
+  - 整屏底色：LVGL 纯色矩形，切换时 300ms 自算 RGB 插值；
+  - 表情前景：`face_view` 管理的两张 `lv_image` 交叉淡入，加闪避残影；
+  - 资源行：爱心 `(10,207)`、生命轨道 `(32,207)` 170×14、5 个闪电 `x=212+i*20, y=207`、右上角大招徽记 `(284,4)` 30px。
+- 初始化点必须在 `Application::Initialize()` 里：`auto display = board.GetDisplay(); battle_hud_create(display); battle_ctl_start(); battle_pull_start();`。**不能放进 `LcdDisplay::SetupUI()`**（见踩坑 1）。
+- 平台情绪照常接收，但一旦 HUD 收到过显式状态就置 `locked`，不再被情绪覆盖；`hud.unlock` 解除。
+
+### 表情资产管线（从设计稿到固件）
+
+1. 设计稿：用户导出的 SVG 里 8 个画板排成 4×2，每块 76.8×57.6，整张 `viewBox="0 0 308 116"`。8 个文件内容完全相同，解析一份、按画板原点平移即可拆出 8 个表情。
+2. 渲染：把根节点 `viewBox`/`width`/`height` 改成单个画板（320×240），用 Chrome headless 截图：
+   `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --window-size=320,240 --screenshot=out.png file://sheet.html`
+   再生成一份「删掉背景色矩形」的 SVG，加 `--default-background-color=00000000` 输出透明前景。
+3. 裁剪：按 alpha>8 求包围盒、留 2px 边距，得到每张图的 `(x,y,w,h)`；背景色交给 LVGL 纯色绘制，不烘进位图。
+4. 转 C：`scripts/Image_Converter/LVGLImage.py --ofmt C --cf RGB565A8 --compress NONE`，生成 `face_assets.c/.h`（每个符号带 `FACE_<NAME>_X`/`_Y` 偏移宏，`face_view.cc` 摆放时叠加偏移）。
+5. 容量：app 分区 4,032KB，2.1.8 版镜像 3,798,128 字节；未压缩前景合计约 840KB。**不要用 RLE**（踩坑 3）。
+
+### 动画
+
+`main/display/face_view.cc`，30fps `lv_timer`：
+
+| 状态 | 动画 |
+| --- | --- |
+| 待命 | 4.2s 呼吸（±1.8px）+ 3.2s 眨眼（换 `neutral_blink` 图） |
+| 进攻 | 两段：0.14s `attack_flat`（平眉）→ 0.38s `attack`（斜眉、直嘴），底色同步渐变 |
+| 格挡 | 整图从 +40px 升起 240ms |
+| 闪避 | 从右侧 40px 滑入 280ms + 残影淡入（160ms 后 260ms 淡出）+ `sin` 摆动衰减 |
+| 受击 | 抖动 320ms 后回待命 |
+| 大招就绪 | 形象 0.94–1.0 呼吸 |
+| 胜利/失败 | 上跳 1500ms / 下沉 700ms 后常驻 |
+
+### 音效
+
+8 段 16kHz 单声道 ogg 放在 `main/assets/common/`，`scripts/gen_lang.py` 生成 `Lang::Sounds::OGG_READY/ATTACK/HURT/GUARD/DODGE/ULT/VICTORY/DEFEAT`，经 `AudioService::PlaySound` 与 TTS 共用解码队列（顺序播放，不混音）。
+
+### MCP 与联调
+
+- 设备侧注册 `self.hud.set_state` / `self.hud.get_state` / `self.hud.demo` / `self.hud.invert`（平台智能体可见）。
+- USB Serial/JTAG 上另跑一套标准 MCP JSON-RPC（`initialize`、`tools/list`、`tools/call`），供本机联调；工具表与平台侧同名，另加 `hud.screenshot`（分块 base64 回传整屏，默认关闭）。
+- 主机脚本：`hud/host/mcp_drive.py`（`info` / `set` / `demo` / `shots`；`_readline()` 跳过 ESP_LOG 行只认 JSON）。
+
+### 面板与板级
+
+- `SpiLcdDisplay` 保持部分刷新（`buffer_size = width*20`、`double_buffer=false`）；整屏 `full_refresh` 会卡死（踩坑 4）。
+- 这块 ST7789 批次需要 INVOFF→INVON 校正：板级 `esp_lcd_panel_invert_color(panel, true)`，并提供运行时开关 `self.hud.invert` / `self.system.invert_colors`（写 NVS `display/ips_mode`）。
+- 原厂 `PowerSaveTimer(-1, 60, 600)` 会在 10 分钟无操作后深睡（断 5V、USB 一起失联），联调版改为 `-1`，保留 60 秒降亮度。
+
+## 踩坑记录
+
+| # | 症状 | 原因 | 修法 |
+| --- | --- | --- | --- |
+| 1 | 烧录后彻底没输出：无日志、无 MCP、复位也不跑 | HUD 初始化写在 `LcdDisplay::SetupUI()` 里，那是 `Board::GetInstance()` 的构造过程；HUD 内部再取 Board 触发静态初始化重入，永久卡死 | 初始化挪到 `Application::Initialize()`，`board.GetDisplay()` 之后再启动 HUD |
+| 2 | 屏幕只有底色在切换，看不到五官 | 设计稿导出把 8 个「背景色」矩形重命名成 `背景色1/2/3…`（还有 `ns1:id` 形式），按 id 删除只删掉一个，其余前景图整屏不透明 | 按属性值匹配删除背景矩形（任何 `id`/`ns1:id` 等于「背景色」的元素） |
+| 3 | 前景图有了但表情仍不显示，探针显示 `w=0 h=0` | LVGL 内嵌 RLE 压缩图元解码不出尺寸（即便开了 `LV_BIN_DECODER_RAM_LOAD`） | 改用未压缩 `RGB565A8`，按内容裁剪控制体积 |
+| 4 | LVGL 矢量表情在真机不可见、但 `lv_snapshot` 截图正常 | 部分刷新模式下 `lv_draw_sw_vector` 的 viewport 用绝对坐标、又按 `-buf_area` 平移，整屏矢量路径被裁到条带外；快照走整屏 layer 所以看起来正常 | 放弃矢量渲染，改预渲染位图；**不要**改成 `full_refresh`（整屏 PSRAM 缓冲 + 每帧 307KB ARGB 临时缓冲，实测把设备跑死） |
+| 5 | 换表情后残留上一张的眉毛/火焰 | 新图尺寸比旧图小，旧像素没被覆盖 | 立即换图处 `lv_obj_invalidate(root)` 整屏重绘 |
+| 6 | 残影对象存在但永远透明 | 创建时 `lv_obj_set_style_opa(obj, LV_OPA_TRANSP)` 把整对象透明度钉死为 0 | 用 `lv_obj_set_style_image_opa` 控制图片透明度，残影放在主图下层 |
+| 7 | 进攻动画停在「平眉微笑」，第二段不动 | 第一段完成回调里用 `after != g_shown` 判断，`g_shown` 已是目标表情，条件永假 | 改成 `after >= 0` 直接走第二段 |
+| 8 | 深绿显示成浅粉红、绿显示成品红 | 这块 ST7789 面板的 INVON/INVOFF 与驱动默认相反；反转发生在面板硬件，`lv_snapshot` 看不出来 | 初始化 `esp_lcd_panel_invert_color(panel, true)`，并保留运行时切换 |
+| 9 | 截图数据横向彩条、字节错位 | 控制台 VFS 写是非阻塞的，15 万字节整帧直写会丢字节 | 分块 base64 行回传（每 1KB 一块）+ `WriteAll` 3s 超时丢弃 |
+| 10 | `esptool read-mac`/`write-flash` 报 `No serial data received`，但设备明明在跑 | 应用占用 USB-Serial-JTAG，esptool 自带的 RTS 复位对本固件无效 | 用 pyserial 手动拨 `rts=True; dtr=False` 再放开进下载模式，或烧录脚本每 5s 重试 |
+| 11 | 开机 10 分钟后设备「失联」，USB 还在但串口无响应 | 原厂 `PowerSaveTimer(-1, 60, 600)` 到点 `esp_deep_sleep_start()` 并断 5V | 联调版 `PowerSaveTimer(-1, 60, -1)`；唤醒需长按侧键或断电重上电 |
 
 ## 验证与证据
 
-- 服务端：`pnpm typecheck`、`pnpm test`（新增 `test/hud.test.ts` 与 `test/hud-http.test.ts`，覆盖待命帧、瞬时表情、大招三态、帧号去重、长轮询与通道工具面）。
-- 真机：设备 USB 连接下用仓库外的 `hud/host/mcp_drive.py` 发 `initialize`/`tools/list`/`tools/call`，`set_state` 驱动 8 表情与音效，`get_state` 回读；开机自检会自动轮播一遍。
-- 证据与脚本（均在仓库外）：`~/Documents/linx-hud-spike/hud/evidence/`（`device_overview.png`、`mcp_transcript.jsonl`）、`~/Documents/linx-hud-spike/hud/host/mcp_drive.py`。
+- 服务端：`pnpm typecheck`、`pnpm test`（`test/hud.test.ts` 与 `test/hud-http.test.ts` 覆盖待命帧、瞬时表情、大招三态、帧号去重、长轮询与通道工具面）。
+- 真机：USB 连接后用 `hud/host/mcp_drive.py` 发 `initialize`/`tools/list`/`tools/call`；`self.hud.set_state` 驱动 8 表情与音效，`self.hud.get_state` 回读，`hud.screenshot` 抓整屏比对设计稿。**注意**：截图取自 LVGL 缓冲，看不到面板侧颜色反转，颜色必须人眼确认。
+- 证据（仓库外）：`~/Documents/linx-hud-spike/evidence/`（`final_sheet.png` 8 状态总览、`device_*.png`、`mcp_transcript.jsonl`）、固件 `firmware/xiaozhi-hud-2.1.8.bin` 与 `xiaozhi-hud-2.1.8.patch`。
 
 ## 已知限制
 
-- 固件按上游 v2.1.0 重建，丢掉了厂商私有工具 `self.system.set_aec`、`self.system.switch_TFT`；这是替换镜像的代价，需要厂商源码才能补回。
+- 固件按上游 v2.1.0 重建，丢掉了厂商私有工具 `self.system.set_aec`、`self.system.switch_TFT`；需要厂商源码才能补回。
 - esp-sr 语音模型未随镜像打包，唤醒词暂不可用；HUD 与 MCP 不受影响。
-- 板级默认 10 分钟无操作深睡（断电 5V、USB 一并失联），联调版已关掉自动关机，保留 60 秒降亮度；长按侧键仍可休眠。
-- 设备通道目前只读，尚未接入平台智能体；设备侧 HudClient（固件定时拉 `/device/mcp`）仍是后续工作，现阶段用 USB 上的 MCP 调用驱动。
+- 设备通道已具备固件 HudClient（`battle_pull.cc`，NVS 配 `hud/url` 与 `hud/enabled`，默认关闭），尚未与平台真实链路联调；现阶段用 USB 上的 MCP 调用驱动。
+- 闪避的「三张脸」按屏幕宽度做了取舍：现为单张主脸 + 残影摆动，与设计稿的三脸残影构图不完全一致。
+- 设备绑定仍按 MAC：刷机后 `Client-Id` 会变，平台侧需要按新 MAC `e8:f6:0a:8b:f4:b4` 重新绑定。
