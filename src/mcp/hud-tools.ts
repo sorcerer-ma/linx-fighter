@@ -9,8 +9,9 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Logger } from '../log.js';
 import type { GameService } from '../game/service.js';
-import type { BattleState } from '../game/state.js';
-import { deriveHud, hudPayload, type HudState } from '../game/hud.js';
+import { frameOfState } from '../game/frame.js';
+import { factsOf, type Facts } from '../game/presentation.js';
+import { hudFromFacts, hudPayload, type HudState } from '../game/hud.js';
 import { battleKey, type DeviceContext } from './context.js';
 
 /** 长轮询的默认与上限：设备按需挂起，等不到变化也要及时返回上一帧 */
@@ -41,10 +42,10 @@ export class HudTracker {
   }
 
   /** 派生并记住这一帧；同一局面重复调用返回同样的帧号与 cue=null */
-  update(key: string, state: BattleState | null): HudState {
+  update(key: string, facts: Facts | null): HudState {
     const now = this.now();
     this.prune(now);
-    const hud = deriveHud(state, this.frames.get(key) ?? null, now);
+    const hud = hudFromFacts(facts, this.frames.get(key) ?? null, now);
     this.frames.set(key, hud);
     return hud;
   }
@@ -99,14 +100,14 @@ export function registerHudTools(server: McpServer, deps: HudToolDependencies): 
     }).strict(),
   }, async ({ wait_ms }) => {
     const key = resolve(ctx);
-    const first = tracker.update(key, readState(service, key));
+    const first = tracker.update(key, readFacts(service, key));
     const waitMs = wait_ms ?? DEFAULT_WAIT_MS;
     let hud = first;
     if (waitMs > 0) {
       const deadline = Date.now() + waitMs;
       while (Date.now() < deadline && hud.seq === first.seq) {
         await delay(POLL_STEP_MS);
-        hud = tracker.update(key, readState(service, key));
+        hud = tracker.update(key, readFacts(service, key));
       }
     }
     logger.debug('设备拉取 HUD', {
@@ -117,8 +118,10 @@ export function registerHudTools(server: McpServer, deps: HudToolDependencies): 
   });
 }
 
-function readState(service: GameService, key: string): BattleState | null {
-  return service.snapshot(key)?.state ?? null;
+function readFacts(service: GameService, key: string): Facts | null {
+  const state = service.snapshot(key)?.state ?? null;
+  if (!state) return factsOf(null, { kind: 'status' });
+  return factsOf(frameOfState(state), { kind: 'status', waiting: state.waiting });
 }
 
 function delay(ms: number): Promise<void> {

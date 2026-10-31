@@ -23,6 +23,21 @@ it('未知异常不声称未执行；明确拒绝是not-applied；未入房不�
  assert.equal(waiting.facts.next,'wait-join');assert.equal(waiting.facts.opponent,undefined);
 });
 
+it('事实带上限、轮次与最近战报，平台与屏幕读同一份',async()=>{
+ const initial=createBattle({now:1,seed:1,mode:'pvp',firstMover:'player'});
+ const locked=await resolveTurn(initial,'light',2);
+ const result=await resolveTurn(viewAs(locked.battle,'enemy'),'take',3);
+ const f=presentation('turn',result.battle,{events:result.events}).facts;
+ assert.equal(f.round,result.battle.round);
+ assert.equal(f.updatedAt,result.battle.updatedAt);
+ assert.equal(f.you?.maxHp,result.battle.player.maxHp);
+ assert.equal(f.you?.maxEnergy,result.battle.player.maxAp);
+ assert.equal(f.opponent?.maxHp,result.battle.enemy.maxHp);
+ assert.equal(f.opponent?.maxEnergy,result.battle.enemy.maxAp);
+ assert.equal(f.lastTurn?.actor,result.battle.history.at(-1)?.actor);
+ assert.equal(f.lastTurn?.action,result.battle.history.at(-1)?.action);
+});
+
 it('presentation 显式给出大招就绪事实，不用能量数值推断',()=>{
  const b=createBattle({now:1,seed:1,mode:'solo',firstMover:'player'});
  assert.equal(presentation('status',b).facts.you?.ultimateReady,false);

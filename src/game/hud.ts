@@ -1,13 +1,14 @@
 /**
- * 硬件 HUD 状态：把服务端的权威局面翻译成「精灵屏幕要显示什么」。
+ * 硬件 HUD 状态：把服务端的权威事实翻译成「精灵屏幕要显示什么」。
  *
- * 固件不认识生命值、能量这些玩法概念，只认表情名、数值和一个音效名；
- * 这里负责把 BattleState 派生为一份与屏幕一一对应的只读快照。
- * 页面、播报与规则都不依赖本模块，反过来这里也不产生任何玩法事实。
+ * 固件不认识生命值、能量这些玩法概念，只认表情名、数值和一个音效名。
+ * 这里不再直接读对局对象，而是把 [事实](presentation.ts) 投影成一帧画面：
+ * 平台演绎与屏幕画面读同一份事实，避免两边各写一遍「这一手算什么」的判断。
  */
 
-import { isUltimateReady } from './rules.js';
-import type { BattleState, HistoryEntryState } from './state.js';
+import type { BattleState } from './state.js';
+import { frameOfState, type FrameTurn } from './frame.js';
+import { factsOf, type Facts } from './presentation.js';
 
 /** 与设计文档「八种表情」一一对应，也是固件表情资源的文件名 */
 export type HudExpression =
@@ -44,6 +45,8 @@ export interface HudState {
   battle: boolean;
   room: string | null;
   waiting: boolean;
+  /** 这是第几轮；与事实的 round 同源，方便日志对齐「这是哪一手的画面」 */
+  round: number;
   expression: HudExpression;
   hp: number;
   maxHp: number;
@@ -65,6 +68,7 @@ export function idleHud(updatedAt: number): HudState {
     battle: false,
     room: null,
     waiting: false,
+    round: 0,
     expression: 'neutral',
     hp: 0,
     maxHp: 1,
@@ -79,59 +83,46 @@ export function idleHud(updatedAt: number): HudState {
 }
 
 /** 主动阶段的三种攻击都由「进攻」表情代表 */
-function isAttack(entry: HistoryEntryState): boolean {
-  return entry.actor === 'player' && (entry.action === 'light' || entry.action === 'heavy' || entry.action === 'ult');
+function isAttack(turn: FrameTurn): boolean {
+  return turn.actor === 'player' && (turn.action === 'light' || turn.action === 'heavy' || turn.action === 'ult');
 }
 
 /**
- * 最近一条战报够不够新：够新才播瞬间表情。
+ * 最近一条战报读瞬间表情。
  *
- * 快照里没有逐条时间戳，用对局的 updatedAt 当「最后一次变化」的时间，
- * 误差最多是一次无关的等待状态刷新，可以接受。
+ * 事实里没有逐条时间戳，用对局的 updatedAt 当「最后一次变化」的时间；
+ * 超过展示窗口就不再播瞬间表情，避免开局回看旧战报时重放。
  */
-function isFresh(state: BattleState, now: number): boolean {
-  return now - state.updatedAt <= HUD_TRANSIENT_MS;
-}
-
-/** 从最近一条战报读瞬间表情；不在窗口内或没有战报返回 null */
-function transientExpression(state: BattleState, now: number): HudExpression | null {
-  if (!isFresh(state, now)) return null;
-  const entry = state.history.at(-1);
-  if (!entry) return null;
-  if (isAttack(entry)) return 'attack';
+function transientExpression(facts: Facts, now: number): HudExpression | null {
+  if (!facts.lastTurn || !facts.updatedAt) return null;
+  if (now - facts.updatedAt > HUD_TRANSIENT_MS) return null;
+  const turn = facts.lastTurn;
+  if (isAttack(turn)) return 'attack';
   // 对手的出手要按我方的应对来读：闪避成功、格挡、挨打
-  if (entry.actor === 'enemy') {
-    if (entry.dodged) return 'dodge';
-    if (entry.response === 'guard') return 'guard';
+  if (turn.actor === 'enemy') {
+    if (turn.dodged) return 'dodge';
+    if (turn.response === 'guard') return 'guard';
     return 'hurt';
   }
   return null;
 }
 
-/** 当前是否应该显示「大招就绪」：轮到自己主动、没有待应对、能量够且本局还有次数 */
-function isUltTurn(state: BattleState): boolean {
-  return state.phase === 'battle'
-    && !state.waiting
-    && state.pending === null
-    && state.active === 'player'
-    && isUltimateReady(state.you);
+/** 决定这一帧表情：胜负 > 瞬间动作 > 大招就绪 > 待命 */
+function expressionOf(facts: Facts, now: number): HudExpression {
+  if (facts.next === 'wait-join') return 'neutral';
+  if (facts.phase === 'victory') return 'victory';
+  if (facts.phase === 'defeat') return 'defeat';
+  const transient = transientExpression(facts, now);
+  if (transient) return transient;
+  // next==='act' 已经包含「轮到我主动、没有待应对、不是等对手加入」
+  if (facts.next === 'act' && facts.you?.ultimateReady) return 'ultready';
+  return 'neutral';
 }
 
 /** 大招徽记三态：本局次数用完优先显示「已用」 */
-function ultState(state: BattleState): HudUltState {
-  if (state.you.ultLeft <= 0) return 2;
-  return isUltTurn(state) ? 1 : 0;
-}
-
-/** 决定这一帧表情：胜负 > 瞬间动作 > 大招就绪 > 待命 */
-function expressionOf(state: BattleState, now: number): HudExpression {
-  if (state.waiting) return 'neutral';
-  if (state.phase === 'victory') return 'victory';
-  if (state.phase === 'defeat') return 'defeat';
-  const transient = transientExpression(state, now);
-  if (transient) return transient;
-  if (isUltTurn(state)) return 'ultready';
-  return 'neutral';
+function ultState(facts: Facts): HudUltState {
+  if ((facts.you?.ultimateRemaining ?? 0) <= 0) return 2;
+  return facts.next === 'act' && facts.you?.ultimateReady ? 1 : 0;
 }
 
 /** 两帧是否等价：只有等价才不涨帧号、不重复播音效 */
@@ -139,6 +130,7 @@ function sameFrame(a: HudState, b: HudState): boolean {
   return a.battle === b.battle
     && a.room === b.room
     && a.waiting === b.waiting
+    && a.round === b.round
     && a.expression === b.expression
     && a.hp === b.hp
     && a.maxHp === b.maxHp
@@ -149,42 +141,55 @@ function sameFrame(a: HudState, b: HudState): boolean {
 }
 
 /**
- * 派生下一帧 HUD；入参局面不会被修改。
+ * 把一局事实投影成下发给设备的一帧。
  *
  * `previous` 是同一设备上一帧，用来决定帧号与是否播音效：
  * 表情没变就不播，避免每次轮询都把同一段音效重放一遍。
  */
-export function deriveHud(state: BattleState | null, previous: HudState | null, now = Date.now()): HudState {
-  if (!state) {
-    const idle = idleHud(now);
+export function hudFromFacts(facts: Facts | null, previous: HudState | null, now = Date.now()): HudState {
+  if (!facts || !facts.you) {
+    const idle = idleHud(facts?.updatedAt ?? now);
     const same = previous !== null && sameFrame(previous, idle);
     return { ...idle, seq: previous ? previous.seq + (same ? 0 : 1) : 1 };
   }
 
-  const expression = expressionOf(state, now);
+  const expression = expressionOf(facts, now);
   const holdMs = expression === 'victory' || expression === 'defeat' || expression === 'ultready' || expression === 'neutral'
     ? 0
     : HUD_TRANSIENT_MS;
   const frame: HudState = {
     battle: true,
-    room: state.room,
-    waiting: state.waiting,
+    room: facts.room ?? null,
+    waiting: facts.next === 'wait-join',
+    round: facts.round ?? 0,
     expression,
-    hp: state.you.hp,
-    maxHp: state.you.maxHp,
-    energy: state.you.ap,
-    maxEnergy: state.you.maxAp,
-    ult: ultState(state),
+    hp: facts.you.hp,
+    maxHp: facts.you.maxHp,
+    energy: facts.you.energy,
+    maxEnergy: facts.you.maxEnergy,
+    ult: ultState(facts),
     cue: null,
     seq: 0,
     holdMs,
-    updatedAt: state.updatedAt,
+    updatedAt: facts.updatedAt ?? now,
   };
   const changed = previous === null || !sameFrame(previous, frame);
   // 音效跟着表情走：只有表情真的换了才给 cue，并且待命没有音效
   frame.cue = previous === null || previous.expression !== expression ? CUE_OF[expression] : null;
   frame.seq = previous ? previous.seq + (changed ? 1 : 0) : 1;
   return frame;
+}
+
+/**
+ * 从对局快照派生一帧；内部先归一成事实再投影。
+ *
+ * 保留这个入口是为了页面、测试与旧调用点：语义与设备通道完全一致。
+ */
+export function deriveHud(state: BattleState | null, previous: HudState | null, now = Date.now()): HudState {
+  const facts = state
+    ? factsOf(frameOfState(state), { kind: 'status', waiting: state.waiting })
+    : factsOf(null, { kind: 'status' });
+  return hudFromFacts(facts, previous, now);
 }
 
 /** 设备工具返回的 JSON：字段名直接用固件里约定的下划线风格 */
@@ -194,6 +199,7 @@ export function hudPayload(hud: HudState): Record<string, unknown> {
     battle: hud.battle,
     room: hud.room,
     waiting: hud.waiting,
+    round: hud.round,
     expression: hud.expression,
     hp: hud.hp,
     max_hp: hud.maxHp,

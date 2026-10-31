@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   deriveHud,
+  hudFromFacts,
   HUD_TRANSIENT_MS,
   hudPayload,
   idleHud,
   type HudState,
 } from '../src/game/hud.js';
 import type { BattleState, HistoryEntryState } from '../src/game/state.js';
+import { factsOf } from '../src/game/presentation.js';
+import { frameOfState } from '../src/game/frame.js';
 
 const NOW = 1_700_000_000_000;
 
@@ -188,5 +191,43 @@ describe('下发字段', () => {
     assert.equal(payload.hold_ms, hud.holdMs);
     assert.equal(payload.battle, true);
     assert.equal(payload.room, '1234');
+    assert.equal(payload.round, hud.round);
+  });
+});
+
+describe('事实投影', () => {
+  it('同一局面下设备帧完全由事实投影得到', () => {
+    const snapshot = state({
+      round: 3,
+      history: [history({ actor: 'enemy', action: 'light', actionLabel: '普攻', response: 'dodge', dodged: true })],
+    });
+    const facts = factsOf(frameOfState(snapshot), { kind: 'status', waiting: snapshot.waiting });
+    assert.deepEqual(hudFromFacts(facts, null, NOW), deriveHud(snapshot, null, NOW), '两条入口必须同源同值');
+  });
+
+  it('帧的轮次与最近战报来自事实，不在投影里另算', () => {
+    const facts = factsOf(frameOfState(state({
+      round: 5,
+      history: [history({ actor: 'enemy', action: 'light', actionLabel: '普攻', damage: 3 })],
+    })), { kind: 'status' });
+    assert.equal(facts.round, 5);
+    assert.equal(facts.lastTurn?.actor, 'enemy');
+    const hud = hudFromFacts(facts, null, NOW);
+    assert.equal(hud.round, 5);
+    assert.equal(hud.expression, 'hurt');
+    assert.equal(hud.cue, 'hurt');
+  });
+
+  it('没有对局事实时投影成待命帧', () => {
+    const hud = hudFromFacts(factsOf(null, { kind: 'status' }), null, NOW);
+    assert.equal(hud.battle, false);
+    assert.equal(hud.expression, 'neutral');
+    assert.equal(hud.seq, 1);
+  });
+
+  it('事实里的上限直接进画面，不需要再读对局对象', () => {
+    const hud = hudFromFacts(factsOf(frameOfState(state()), { kind: 'status' }), null, NOW);
+    assert.equal(hud.maxHp, 14);
+    assert.equal(hud.maxEnergy, 5);
   });
 });

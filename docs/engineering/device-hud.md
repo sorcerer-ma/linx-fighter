@@ -7,11 +7,20 @@
 平台给设备的 MCP 是「平台调设备」：设备是 server、平台是 client，且工具描述 API 只能改提示词，无法确定性驱动屏幕。反向由平台智能体转述战斗状态既慢也不可靠。因此设备另做 MCP client，主动拉服务端派生好的画面状态：
 
 ```
-战斗规则/事件 ──► deriveHud() ──► HudState ──(长轮询 /device/mcp)──► 设备 HUD
-                                        └──(载荷沿用 MCP content.text)
+权威对局 ──► BattleFrame ──► Facts ──┬──► 平台事实（/mcp 的 content.text）
+                                     └──► hudFromFacts() ──► HudState ──(长轮询 /device/mcp)──► 设备 HUD
 ```
 
 服务端仍是唯一裁决方：设备只渲染，不推导数值。
+
+## 一条事实，两个投影
+
+屏幕不是第二条协议，而是**事实的投影**：表情只可能在「收到一局事实」之后出现，没有新事实时设备停在待命（只有本地的眨眼与呼吸）。
+
+- `src/game/frame.ts` 把基准对局与镜像快照统一成视角化局面 `BattleFrame`（`you` / `opponent` / `pending` / `lastTurn`），平台事实与屏幕画面都只读这一份；
+- `src/game/presentation.ts` 的 `factsOf()` 从同一份局面装配 `Facts`（新增 `room`、`updatedAt`、`lastTurn` 与资源上限 `maxHp`/`maxEnergy`），仍是加法式扩展，`v:2` 事实字段与平台调用方式不变；
+- `src/game/hud.ts` 的 `hudFromFacts()` 只吃 `Facts`：帧里的轮次、资源、最近一手、下一步都来自事实，不在投影里另算；
+- 因此「平台收到的样子」与「屏幕显示的样子」不会各写一遍判断；以后新增一种战报，两边同时生效。
 
 ## 设备通道契约
 
@@ -23,6 +32,7 @@
 | --- | --- |
 | `ok` | 恒为 `true`，设备据此判断载荷有效 |
 | `battle` / `room` / `waiting` | 是否在局、房间号、是否在等对手或对手出招 |
+| `round` | 第几轮，与事实的 `round` 同源，便于日志对齐 |
 | `expression` | 8 表情之一：`neutral`、`attack`、`hurt`、`guard`、`dodge`、`ultready`、`victory`、`defeat` |
 | `hp` / `max_hp` | 生命值，设备画爱心与加粗辅助条，不显示数字 |
 | `energy` / `max_energy` | 能量，设备画 5 个闪电（实心/空心） |
@@ -35,10 +45,10 @@
 
 ## 画面派生规则
 
-实现在 `src/game/hud.ts`：
+实现在 `src/game/hud.ts` 的 `hudFromFacts()`，输入只有 `Facts`：
 
-- 表情优先级：等对手/等对手出招 → `neutral`；`victory`/`defeat` 直接对应；最近一次战报（按 `state.updatedAt` 判断是否新帧）→ `attack`（自己出招）、`hurt`（对手命中）、`guard`（自己格挡）、`dodge`（闪避成功）；可释放大招时 → `ultready`；其余 → `neutral`。
-- 大招可释放沿用 `isUltimateReady`：对局进行中、轮到自己主动、没有待应对招式、能量达到门槛且本局还有大招次数。
+- 表情优先级：`next==='wait-join'` → `neutral`；`phase` 为 `victory`/`defeat` 直接对应；`lastTurn` 在展示窗口内（按 `facts.updatedAt` 判断新帧）→ `attack`（自己出招）、`hurt`（对手命中）、`guard`（自己格挡）、`dodge`（闪避成功）；`next==='act'` 且 `you.ultimateReady` → `ultready`；其余 → `neutral`。
+- 大招就绪沿用事实里的 `you.ultimateReady`（对局进行中、轮到自己主动、没有待应对招式、能量达到门槛且本局还有大招次数），描述符不再自己拼条件。
 - 瞬时表情由设备按 `hold_ms` 回落，服务端不额外计时；重复拉取同一帧不重复给 `cue`，避免音效连播。
 - 待命帧（无对局）`battle:false`、`hp:0`、`max_hp:1`，避免设备除零或画出满血条。
 
