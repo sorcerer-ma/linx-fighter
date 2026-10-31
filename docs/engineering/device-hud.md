@@ -102,9 +102,16 @@
 
 8 段 16kHz 单声道 ogg 放在 `main/assets/common/`，`scripts/gen_lang.py` 生成 `Lang::Sounds::OGG_READY/ATTACK/HURT/GUARD/DODGE/ULT/VICTORY/DEFEAT`，经 `AudioService::PlaySound` 与 TTS 共用解码队列（顺序播放，不混音）。
 
+### 设备取帧（推送）
+
+- 固件 `main/display/battle_link.{h,cc}` 连 `/device/ws`：地址存 NVS `hud/ws_url` + `hud/ws_on`，串口/平台工具 `self.hud.link`（`url` + `enabled`）配置；地址缺 `device` 参数时自动补本机 MAC。
+- 连上后服务端立即推当前帧，之后 `seq` 变化才推；设备与轮询通道共用 `battle_pull_apply_json()` 的 seq 去重与渲染，两条通道不会重复播效。
+- 断线 3 秒重连、20 秒 ping；设备状态机在 `starting`/`wifi_configuring`/`activating`/`upgrading`/`audio_testing` 时先不发包，避免 lwIP 未就绪触发断言（踩坑 12）。
+- 启用推送会自动关闭轮询，轮询仍可用作兜底。
+
 ### MCP 与联调
 
-- 设备侧注册 `self.hud.set_state` / `self.hud.get_state` / `self.hud.demo` / `self.hud.invert`（平台智能体可见）。
+- 设备侧注册 `self.hud.set_state` / `self.hud.get_state` / `self.hud.demo` / `self.hud.invert` / `self.hud.pull` / `self.hud.link`（平台智能体可见）。
 - USB Serial/JTAG 上另跑一套标准 MCP JSON-RPC（`initialize`、`tools/list`、`tools/call`），供本机联调；工具表与平台侧同名，另加 `hud.screenshot`（分块 base64 回传整屏，默认关闭）。
 - 主机脚本：`hud/host/mcp_drive.py`（`info` / `set` / `demo` / `shots`；`_readline()` 跳过 ESP_LOG 行只认 JSON）。
 
