@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   deriveHud,
   hudFromFacts,
+  HUD_ENDED_HOLD_MS,
   HUD_TRANSIENT_MS,
   hudPayload,
   idleHud,
@@ -254,5 +255,40 @@ describe('事实投影', () => {
     const hud = hudFromFacts(factsOf(frameOfState(state()), { kind: 'status' }), null, NOW);
     assert.equal(hud.maxHp, 14);
     assert.equal(hud.maxEnergy, 5);
+  });
+});
+
+describe('结局定格', () => {
+  it('结束后几秒内保留结局表情与双方资源，超时后收回待命', () => {
+    const ended = state({ phase: 'victory', updatedAt: NOW });
+    const facts = factsOf(frameOfState(ended), { kind: 'status' });
+
+    // 刚结束：结局表情 + 资源都在
+    const justEnded = hudFromFacts(facts, null, NOW + 1000);
+    assert.equal(justEnded.battle, true);
+    assert.equal(justEnded.expression, 'victory');
+    assert.equal(justEnded.cue, 'victory');
+    assert.equal(justEnded.opponent?.hp, 14);
+
+    // 超过定格时长：只剩表情
+    const idleAfter = hudFromFacts(facts, justEnded, NOW + HUD_ENDED_HOLD_MS + 500);
+    assert.equal(idleAfter.battle, false);
+    assert.equal(idleAfter.expression, 'neutral');
+    assert.equal(idleAfter.opponent, null);
+    assert.equal(idleAfter.ult, 0);
+    assert.equal(idleAfter.seq, justEnded.seq + 1, '回到待命只该涨一帧');
+
+    const later = hudFromFacts(facts, idleAfter, NOW + HUD_ENDED_HOLD_MS + 4000);
+    assert.equal(later.seq, idleAfter.seq, '回到待命后局面没变就不再涨帧');
+  });
+
+  it('失败同样定格后收回，且不会提前收起', () => {
+    const facts = factsOf(frameOfState(state({ phase: 'defeat', updatedAt: NOW })), { kind: 'status' });
+    const atFive = hudFromFacts(facts, null, NOW + HUD_ENDED_HOLD_MS - 1000);
+    assert.equal(atFive.battle, true);
+    assert.equal(atFive.expression, 'defeat');
+    const atSeven = hudFromFacts(facts, atFive, NOW + HUD_ENDED_HOLD_MS + 1000);
+    assert.equal(atSeven.battle, false);
+    assert.equal(atSeven.expression, 'neutral');
   });
 });

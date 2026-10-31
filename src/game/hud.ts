@@ -23,6 +23,9 @@ export type HudExpression =
   | 'defeat';
 
 /** 短时表情的展示时长：进攻、受击、格挡、闪避这类瞬间动作过后回到待命 */
+/** 对局结束后结局定格多久，之后屏幕收回待命（用户选定的 B 口径） */
+export const HUD_ENDED_HOLD_MS = 6000;
+
 export const HUD_TRANSIENT_MS = 2500;
 
 /** 表情对应的音效名（与固件 main/assets/common 下的 ogg 同名）；待命不发声 */
@@ -189,6 +192,16 @@ export function hudFromFacts(facts: Facts | null, previous: HudState | null, now
     const idle = idleHud(facts?.updatedAt ?? now);
     const same = previous !== null && sameFrame(previous, idle);
     return { ...idle, seq: previous ? previous.seq + (same ? 0 : 1) : 1 };
+  }
+
+  // 结局定格：先让人看清胜利/失败，再自动把屏幕收回「只显示表情」
+  if (facts.phase === 'victory' || facts.phase === 'defeat') {
+    const endedAt = facts.updatedAt ?? now;
+    if (now - endedAt >= HUD_ENDED_HOLD_MS) {
+      const idle = idleHud(endedAt);
+      const same = previous !== null && sameFrame(previous, idle);
+      return { ...idle, seq: previous ? previous.seq + (same ? 0 : 1) : 1 };
+    }
   }
 
   const expression = expressionOf(facts, now);

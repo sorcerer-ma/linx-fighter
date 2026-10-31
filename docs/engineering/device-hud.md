@@ -43,6 +43,8 @@
 | `seq` | 画面帧号，同帧重复拉取不涨号，设备据此去重 |
 | `hold_ms` | 瞬时表情停留时长，0 表示常驻 |
 
+对局结束（`victory` / `defeat`）后先定格 6 秒展示结局与双方资源，超时后派生为待命帧：`battle:false`、表情回 `neutral`、资源与徽记全部收起，设备同时把表情控制权交回平台情绪。定格时长由 `src/game/hud.ts` 的 `HUD_ENDED_HOLD_MS` 控制。
+
 - 身份：优先按 `deviceId#agentId` 精确命中；设备只带 MAC 时，扫 `store.list()` 中前缀为 `deviceId#` 的房间，取 `battle.updatedAt` 最新的一局，避免「同一台设备上一个 agentId」导致取不到对局。
 
 ## 画面派生规则
