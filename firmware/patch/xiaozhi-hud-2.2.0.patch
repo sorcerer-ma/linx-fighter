@@ -1,0 +1,3175 @@
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./CMakeLists.txt /tmp/fwsrc/xiaozhi-esp32-2.1.0/CMakeLists.txt
+--- ./CMakeLists.txt	2025-12-29 15:04:29
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/CMakeLists.txt	2026-10-31 17:12:49
+@@ -4,7 +4,7 @@
+ # CMakeLists in this exact order for cmake to work correctly
+ cmake_minimum_required(VERSION 3.16)
+ 
+-set(PROJECT_VER "2.1.0")
++set(PROJECT_VER "2.2.0")
+ 
+ # Add this line to disable the specific warning
+ add_compile_options(-Wno-missing-field-initializers)
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./dependencies.lock /tmp/fwsrc/xiaozhi-esp32-2.1.0/dependencies.lock
+--- ./dependencies.lock	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/dependencies.lock	2026-10-31 04:02:10
+@@ -0,0 +1,791 @@
++dependencies:
++  78/esp-ml307:
++    component_hash: d4de9738baaaa5e6655c686a6083e699f3605de54dc83233ff3328cf55a4f543
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 3.5.3
++  78/esp-opus:
++    component_hash: 8182b733f071d7bfe1e837f4c9f8649a63e4c937177f089e65772880c02f2e17
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.0'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 1.0.5
++  78/esp-opus-encoder:
++    component_hash: b80e5b6d6dc4bf6b0bf1a3729f52b80500e9e6b1003b3e827b78ba738283a296
++    dependencies:
++    - name: 78/esp-opus
++      registry_url: https://components.espressif.com
++      require: private
++      version: ^1.0.5
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 2.4.1
++  78/esp-wifi-connect:
++    component_hash: bf996fc603af1ff529668c788c7b38a8d94b1d43455af56d116d27ebb04b742a
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 3.0.2
++  78/esp_lcd_nv3023:
++    component_hash: 2d1c227ae9c8d7303c0be9b2f2b45e595169a2ccb3055aad93b5f1600110b236
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>=4.4'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.1
++  78/xiaozhi-fonts:
++    component_hash: e5526ea3c290742963ef6ab64023669260b72aefdc37bb218c34c618962ef2a8
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.5.5
++  espressif/adc_battery_estimation:
++    component_hash: 878dd59e1bb60de314d5ecb52dce7e59a83598a41bf48cdbdec60e08e2bb907d
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: '*'
++    - name: idf
++      require: private
++      version: '>=5.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 0.2.2
++  espressif/adc_mic:
++    component_hash: dd39c1142555f41ee06671355e91d6dc1fd9f1ef424f78f3dcfbafd8ac030df4
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: '*'
++    - name: espressif/esp_codec_dev
++      registry_url: https://components.espressif.com
++      require: private
++      version: '>=1.3.0,<1.5.5'
++    - name: idf
++      require: private
++      version: '>=5.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 0.2.3
++  espressif/bmi270_sensor:
++    component_hash: 10f18ccc44bc71b09c0680c003c24cfb273905b079314efe1095e8ea9d714147
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/i2c_bus
++      registry_url: https://components.espressif.com
++      require: public
++      version: '*'
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 0.1.2
++  espressif/button:
++    component_hash: 95babe831403e301511a22a4dfcd599abcf32cf72c7f8ac5352a61662363c9ea
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: '*'
++    - name: idf
++      require: private
++      version: '>=4.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 4.1.7
++  espressif/cmake_utilities:
++    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=4.1'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 0.5.3
++  espressif/dl_fft:
++    component_hash: 965be7152132b365061abf5fc5fc7b85e525f73b94a204cdda61cfe9572c0d77
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 0.8.0
++  espressif/esp-dsp:
++    component_hash: 619639efc18cfa361a9e423739b9b0ffc14991effc6c027f955c2f2c3bf1754b
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=4.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.6.0
++  espressif/esp_cam_sensor:
++    component_hash: 35c1648ea87aac81da7a085d35f61b6d5ad88574bd0c5fdc4ab75efdef4ee6c1
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/esp_sccb_intf
++      registry_url: https://components.espressif.com
++      require: private
++      version: '>=0.0.5'
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    targets:
++    - esp32p4
++    - esp32s3
++    - esp32c3
++    - esp32c5
++    - esp32c6
++    - esp32c61
++    version: 1.5.2
++  espressif/esp_codec_dev:
++    component_hash: 0d9e9bc288156eb55f79338d312e1ebf8c9dfbd5e7d13ef0f20ccb031b4e15cf
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=4.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.5.4
++  espressif/esp_image_effects:
++    component_hash: 7f605dcd1ebe56ce4adb76cfb1326d6e25e9455d15d60c547397a85929ba1228
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.2.0
++  espressif/esp_io_expander:
++    component_hash: 7b7f91270172e46ca4597e3874f48d8412e280e8c295559f5922ec38656e3e5f
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=4.4.2'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 1.2.1
++  espressif/esp_io_expander_tca9554:
++    component_hash: 8a9e3a7dbef589a54f814ff22e9121da86bce19d0e1ccffa53f5df6bb346a140
++    dependencies:
++    - name: espressif/esp_io_expander
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1.0.1
++    - name: idf
++      require: private
++      version: '>=5.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 2.0.0
++  espressif/esp_io_expander_tca95xx_16bit:
++    component_hash: a9608ba5753ae2a72e79fccd376fc4283343c0306d23505fbf8a46fafdbde2a2
++    dependencies:
++    - name: espressif/esp_io_expander
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1.2.0
++    - name: idf
++      require: private
++      version: '>=5.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 2.0.2
++  espressif/esp_lcd_axs15231b:
++    component_hash: e614bd75827e95800e39df1ba9474166060ab26c3807d06df9cc312a27021cda
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/esp_lcd_touch
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1
++    - name: idf
++      require: private
++      version: '>5.0.4,!=5.1.1'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.1~1
++  espressif/esp_lcd_gc9a01:
++    component_hash: 09ddc8f5c9d718a659ffa30a4040e1ae75077e68492c38aec8c2beaaa7b3a9bc
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>=4.4'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 2.0.1
++  espressif/esp_lcd_ili9341:
++    component_hash: 31f1b793aa2110dd2ae071c21ccbff0a4eb20d9a4ee40b6294c0dc0ad9552c4e
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=4.4'
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.2.0
++  espressif/esp_lcd_panel_io_additions:
++    component_hash: 1856c8b2c11aaa8a9fd67481582162bcad25f7064661a995f35c2ee8dd10ebcc
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/esp_io_expander
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1
++    - name: idf
++      require: private
++      version: '>=4.4.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.1~1
++  espressif/esp_lcd_spd2010:
++    component_hash: 8637c97feeb8d83ba637599f6bf4ef30e83595486930e7df17ffa24f3fef1242
++    dependencies:
++    - name: idf
++      require: private
++      version: '>5.0.4,!=5.1.1'
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.2
++  espressif/esp_lcd_st7701:
++    component_hash: 0b11e8733e51e12da83003b9d475777eaf47bfbdce01379879bd2504d14f4f83
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>5.0.4,!=5.1.1'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    targets:
++    - esp32s3
++    - esp32p4
++    version: 1.1.5
++  espressif/esp_lcd_st77916:
++    component_hash: 5fa0f8b1274576d4484e2b8d9358e2a5d09c721511bef0dce6a55b4206b5f0e9
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>5.0.4,!=5.1.1'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.1
++  espressif/esp_lcd_st7796:
++    component_hash: c37b10363125eb3b4757d509392ffca963c27262b61939fdb49a7b18eeef975c
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>=4.4'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    targets:
++    - esp32
++    - esp32s2
++    - esp32s3
++    - esp32p4
++    version: 1.3.5
++  espressif/esp_lcd_touch:
++    component_hash: 3f85a7d95af876f1a6ecca8eb90a81614890d0f03a038390804e5a77e2caf862
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=4.4.2'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 1.2.1
++  espressif/esp_lcd_touch_cst816s:
++    component_hash: f017808eb754d3fe16987d413a2385f6356890f5737ee3fe36b6a548ea1d1d74
++    dependencies:
++    - name: espressif/esp_lcd_touch
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1.2.0
++    - name: idf
++      require: private
++      version: '>=5.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.1.2
++  espressif/esp_lcd_touch_ft5x06:
++    component_hash: abaec05f46a793549b60afdda9eff86e3c8e87782c8c169007911232388d2858
++    dependencies:
++    - name: espressif/esp_lcd_touch
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1.0.4
++    - name: idf
++      require: private
++      version: '>=4.4.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.7
++  espressif/esp_lcd_touch_gt1151:
++    component_hash: b00201a367fd60092db414efd2f477b36cb58d3bd66cef631165d628a7fe982c
++    dependencies:
++    - name: espressif/esp_lcd_touch
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1.2.0
++    - name: idf
++      require: private
++      version: '>=5.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.1.1
++  espressif/esp_lcd_touch_gt911:
++    component_hash: 737bdf29e0823eacf041381e81db2aaf5d378f3b5417df7f415f83319e3e790b
++    dependencies:
++    - name: espressif/esp_lcd_touch
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1.2.0
++    - name: idf
++      require: private
++      version: '>=5.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.2.1
++  espressif/esp_lcd_touch_st7123:
++    component_hash: c43fd76fb12b4dd1bf30d60e99e4ec150b16e17cafc942a58e6274d4b68e71fe
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/esp_lcd_touch
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1
++    - name: idf
++      require: private
++      version: '>=4.4.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.2
++  espressif/esp_lvgl_port:
++    component_hash: 3264cc85d86a7c32b67d26a1353a57c67e7986bb293ebb1731801936b056e632
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.1'
++    - name: lvgl/lvgl
++      registry_url: https://components.espressif.com
++      require: public
++      version: '>=8,<10'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 2.6.3
++  espressif/esp_mmap_assets:
++    component_hash: 42310c362596de2a37248c2937b1754bc29cd0356b9839e2a77cf791e6bcdde1
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>=5.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 2.0.1
++  espressif/esp_new_jpeg:
++    component_hash: e6af208a875abd0ecfc0213d3751a11b504b463ebde6930f24096047925fa5c1
++    dependencies: []
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    targets:
++    - esp32
++    - esp32s2
++    - esp32s3
++    - esp32p4
++    - esp32c2
++    - esp32c3
++    - esp32c5
++    - esp32c6
++    version: 0.6.1
++  espressif/esp_sccb_intf:
++    component_hash: fcf118cd29a1caaf3b09bacd99975bc035c996b470474dfb950202c16e06d7b5
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 1.0.0
++  espressif/esp_video:
++    component_hash: fbad1178f39cb5a81ed808c460c851b911a9858db833e2e667ada988022c0660
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/esp_cam_sensor
++      registry_url: https://components.espressif.com
++      require: private
++      version: 1.5.*
++    - name: espressif/esp_h264
++      registry_url: https://components.espressif.com
++      require: private
++      rules:
++      - if: target in [esp32p4]
++      version: 1.0.4
++    - name: espressif/esp_ipa
++      registry_url: https://components.espressif.com
++      require: private
++      rules:
++      - if: target in [esp32p4]
++      version: ~1.2.0
++    - name: idf
++      require: private
++      version: '>=5.4'
++    - name: espressif/usb
++      registry_url: https://components.espressif.com
++      require: private
++      rules:
++      - if: target in [esp32p4, esp32s3]
++      - if: idf_version >=6.0
++      version: '*'
++    - name: espressif/usb_host_uvc
++      registry_url: https://components.espressif.com
++      require: private
++      rules:
++      - if: target in [esp32p4, esp32s3]
++      version: 2.3.*
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    targets:
++    - esp32p4
++    - esp32s3
++    - esp32c3
++    - esp32c5
++    - esp32c6
++    - esp32c61
++    version: 1.3.1
++  espressif/freetype:
++    component_hash: aa9f7657a69b2b1c1f49044017fc424081d4e0fe6e97834cb43883548d44e3ca
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.1'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 2.14.3~1
++  espressif/i2c_bus:
++    component_hash: 483112c1619c54c38d0b734fb25f1678733267858a77b7af2f48cc7db6dbbd84
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: '*'
++    - name: idf
++      require: private
++      version: '>=4.0'
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    version: 1.5.2
++  espressif/knob:
++    component_hash: b56694054cd34a683ac2a6f3661963ba00b1dab741a4f3bb59ed6666cbc9f3fb
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>=4.4.1'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.1.0
++  espressif/led_strip:
++    component_hash: 28621486f77229aaf81c71f5e15d6fbf36c2949cf11094e07090593e659e7639
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 3.0.3
++  espressif/usb_host_uvc:
++    component_hash: b0cb9a3a2eaa09dc6e5cc3e47e04d0a73e47c2d3dcfb3afce959224a1fe5fb5e
++    dependencies:
++    - name: idf
++      require: private
++      version: '>=5.0'
++    - name: espressif/usb
++      registry_url: https://components.espressif.com
++      require: public
++      rules:
++      - if: idf_version >=6.0
++      - if: target not in ["linux"]
++      version: ^1.0.0
++    source:
++      registry_url: https://components.espressif.com
++      type: service
++    targets:
++    - esp32s2
++    - esp32s3
++    - esp32p4
++    - esp32h4
++    - linux
++    version: 2.3.1
++  espressif2022/esp_emote_gfx:
++    component_hash: 67986ead33c11de895eb7ba9a069ea89949ec911ce7cf0989478cc9da2e54735
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: espressif/esp_new_jpeg
++      registry_url: https://components.espressif.com
++      require: public
++      version: 0.6.*
++    - name: espressif/freetype
++      registry_url: https://components.espressif.com
++      require: private
++      version: 2.*
++    - name: idf
++      require: private
++      version: '>=5.0'
++    - name: lvgl/lvgl
++      registry_url: https://components.espressif.com
++      require: public
++      version: '*'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 2.0.0
++  espressif2022/image_player:
++    component_hash: 0e42ed1c9665debd15f2f3e7e56519100e75e446410962226cb5e5402da3fa43
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>=5.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.1.1
++  idf:
++    source:
++      type: idf
++    version: 5.4.1
++  lvgl/lvgl:
++    component_hash: b702d642e03e95928046d5c6726558e6444e112420c77efa5fdb6650b0a13c5d
++    dependencies: []
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 9.3.0
++  tny-robotics/sh1106-esp-idf:
++    component_hash: 036f5aad73224c563c3edb5db6f9833f3eb47c41b3d479740edddf49488ced69
++    dependencies: []
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.2
++  txp666/otto-emoji-gif-component:
++    component_hash: 9b002d58f60831c415f51ccddc43bdd51784b9fcf9b0fec52f5b957f2ebc3dd2
++    dependencies:
++    - name: lvgl/lvgl
++      registry_url: https://components.espressif.com
++      require: private
++      version: '>=9.0'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.4.0
++  waveshare/esp_lcd_sh8601:
++    component_hash: 1a2829e9db4e0515bad6ce83368f199dec60519fbba40251d6c8249f5d070ae1
++    dependencies:
++    - name: espressif/cmake_utilities
++      registry_url: https://components.espressif.com
++      require: private
++      version: 0.*
++    - name: idf
++      require: private
++      version: '>=5.3'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.2
++  waveshare/esp_lcd_touch_cst9217:
++    component_hash: 27a00845832b7987cacf4c4125cbed5415d940987583065b01870ac080930856
++    dependencies:
++    - name: espressif/esp_lcd_touch
++      registry_url: https://components.espressif.com
++      require: public
++      version: ^1.1.0
++    - name: idf
++      require: private
++      version: '>=4.4.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.4
++  wvirgil123/sscma_client:
++    component_hash: bf7d4a1f157303f4850d0b9b465c733ce38e8689ff40ac4743a44520524c41d5
++    dependencies:
++    - name: espressif/esp_io_expander
++      registry_url: https://components.espressif.com
++      require: private
++      version: ^1.0.1
++    - name: idf
++      require: private
++      version: '>=4.4.2'
++    source:
++      registry_url: https://components.espressif.com/
++      type: service
++    version: 1.0.2
++direct_dependencies:
++- 78/esp-ml307
++- 78/esp-opus-encoder
++- 78/esp-wifi-connect
++- 78/esp_lcd_nv3023
++- 78/xiaozhi-fonts
++- espressif/adc_battery_estimation
++- espressif/adc_mic
++- espressif/bmi270_sensor
++- espressif/button
++- espressif/dl_fft
++- espressif/esp-dsp
++- espressif/esp_codec_dev
++- espressif/esp_image_effects
++- espressif/esp_io_expander_tca9554
++- espressif/esp_io_expander_tca95xx_16bit
++- espressif/esp_lcd_axs15231b
++- espressif/esp_lcd_gc9a01
++- espressif/esp_lcd_ili9341
++- espressif/esp_lcd_panel_io_additions
++- espressif/esp_lcd_spd2010
++- espressif/esp_lcd_st7701
++- espressif/esp_lcd_st77916
++- espressif/esp_lcd_st7796
++- espressif/esp_lcd_touch_cst816s
++- espressif/esp_lcd_touch_ft5x06
++- espressif/esp_lcd_touch_gt1151
++- espressif/esp_lcd_touch_gt911
++- espressif/esp_lcd_touch_st7123
++- espressif/esp_lvgl_port
++- espressif/esp_mmap_assets
++- espressif/esp_new_jpeg
++- espressif/esp_video
++- espressif/knob
++- espressif/led_strip
++- espressif2022/esp_emote_gfx
++- espressif2022/image_player
++- idf
++- lvgl/lvgl
++- tny-robotics/sh1106-esp-idf
++- txp666/otto-emoji-gif-component
++- waveshare/esp_lcd_sh8601
++- waveshare/esp_lcd_touch_cst9217
++- wvirgil123/sscma_client
++manifest_hash: 2c4e2b6e2dbdc0c37c0afaf42cf4a670d25248d67e5c6a90c779829a8f99df50
++target: esp32s3
++version: 2.0.0
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/CMakeLists.txt /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/CMakeLists.txt
+--- ./main/CMakeLists.txt	2025-12-29 15:04:29
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/CMakeLists.txt	2026-10-31 15:15:40
+@@ -14,6 +14,13 @@
+             "led/gpio_led.cc"
+             "display/display.cc"
+             "display/lcd_display.cc"
++            "display/battle_assets.c"
++            "display/battle_hud.cc"
++            "display/face_assets.c"
++            "display/face_view.cc"
++        "display/panel_ctrl.cc"
++            "display/battle_pull.cc"
++            "display/battle_ctl.cc"
+             "display/oled_display.cc"
+             "display/lvgl_display/lvgl_display.cc"
+             "display/emote_display.cc"
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/application.cc /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/application.cc
+--- ./main/application.cc	2025-12-29 15:04:29
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/application.cc	2026-10-31 10:15:05
+@@ -1,4 +1,6 @@
+ #include "application.h"
++#include "display/battle_hud.h"
++#include "display/battle_pull.h"
+ #include "board.h"
+ #include "display.h"
+ #include "system_info.h"
+@@ -67,6 +69,11 @@
+ 
+     // Print board name/version info
+     display->SetChatMessage("system", SystemInfo::GetUserAgent().c_str());
++
++    // 战斗 HUD 与 MCP/串口控制通道：必须在 Board 单例构造完成后启动
++    battle_hud_create(display);
++    battle_ctl_start();
++    battle_pull_start();
+ 
+     // Setup the audio service
+     auto codec = board.GetAudioCodec();
+Binary files ./main/assets/common/attack.ogg and /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/assets/common/attack.ogg differ
+Binary files ./main/assets/common/defeat.ogg and /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/assets/common/defeat.ogg differ
+Binary files ./main/assets/common/dodge.ogg and /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/assets/common/dodge.ogg differ
+Binary files ./main/assets/common/guard.ogg and /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/assets/common/guard.ogg differ
+Binary files ./main/assets/common/hurt.ogg and /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/assets/common/hurt.ogg differ
+Binary files ./main/assets/common/ult.ogg and /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/assets/common/ult.ogg differ
+Binary files ./main/assets/common/victory.ogg and /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/assets/common/victory.ogg differ
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/boards/yunliao-s3/yunliao_s3.cc /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/boards/yunliao-s3/yunliao_s3.cc
+--- ./main/boards/yunliao-s3/yunliao_s3.cc	2025-12-29 15:04:29
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/boards/yunliao-s3/yunliao_s3.cc	2026-10-31 15:15:26
+@@ -7,6 +7,7 @@
+ #include "codecs/es8388_audio_codec.h"
+ #include "config.h"
+ #include "display/lcd_display.h"
++#include "display/panel_ctrl.h"
+ #include "dual_network_board.h"
+ #include "lvgl_theme.h"
+ #include "power_manager.h"
+@@ -20,11 +21,14 @@
+     i2c_master_bus_handle_t codec_i2c_bus_;
+     Button boot_button_;
+     SpiLcdDisplay* display_;
++    esp_lcd_panel_handle_t panel_ = nullptr;
+     PowerSaveTimer* power_save_timer_;
+     PowerManager* power_manager_;
+ 
+     void InitializePowerSaveTimer() {
+-        power_save_timer_ = new PowerSaveTimer(-1, 60, 600);
++        // 原厂 10 分钟无操作就深睡（断电 5V、USB 一并失联）；
++        // 战斗 HUD 需要长期亮屏联调，这里改成永不自动关机，仍保留 60 秒降亮度。
++        power_save_timer_ = new PowerSaveTimer(-1, 60, -1);
+         power_save_timer_->OnEnterSleepMode([this]() {
+             GetDisplay()->SetPowerSaveMode(true);
+             GetBacklight()->SetBrightness(10);
+@@ -120,7 +124,9 @@
+         // 初始化液晶屏驱动芯片ST7789
+         ESP_LOGD(TAG, "Install LCD driver");
+         Settings settings("display", false);
+-        bool currentIpsMode = settings.GetBool("ips_mode", DISPLAY_INVERT_COLOR);
++        // 这块屏 INVOFF 时颜色是反的（深绿显成粉红），默认按需要反转；可通过
++        // self.system.invert_colors / 串口 hud.invert 切换
++        bool currentIpsMode = settings.GetBool("ips_mode", true);
+         esp_lcd_panel_dev_config_t panel_config = {};
+         panel_config.reset_gpio_num = DISPLAY_SPI_PIN_LCD_RST;
+         panel_config.rgb_ele_order = DISPLAY_RGB_ORDER_COLOR;
+@@ -133,6 +139,10 @@
+         esp_lcd_panel_invert_color(panel, currentIpsMode);
+         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
+         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
++        // 记下面板句柄，运行时可切换颜色反转（不同批次的 ST7789 屏 INVOFF/INVON 有别）
++        panel_ = panel;
++        panel_ctrl_set_handle(panel);
++        ESP_LOGI(TAG, "IPS mode: %d", (int)currentIpsMode);
+         display_ = new SpiLcdDisplay(panel_io, panel, DISPLAY_WIDTH,
+                                      DISPLAY_HEIGHT, DISPLAY_OFFSET_X,
+                                      DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X,
+@@ -145,6 +155,22 @@
+     }
+     void InitializeTools(){
+         auto& mcp_server = McpServer::GetInstance();
++
++        // 运行时切换颜色反转：用来在当前屏上找出正确的一档，并持久化到 NVS
++        mcp_server.AddTool("self.system.invert_colors",
++            "Enable or disable panel color inversion (fix wrong colors). Persists to NVS.",
++            PropertyList({
++                Property("enable", kPropertyTypeBoolean, true)
++            }), [this](const PropertyList& properties) {
++                bool enable = properties["enable"].value<bool>();
++                if (panel_ != nullptr) {
++                    esp_lcd_panel_invert_color(panel_, enable);
++                }
++                Settings settings("display", true);
++                settings.SetBool("ips_mode", enable);
++                ESP_LOGI(TAG, "invert_colors set to %d", (int)enable);
++                return true;
++            });
+         
+         mcp_server.AddTool("self.system.set_aec",
+             "Enable or disable voice interruption mode (AEC:Acoustic Echo Cancellation). When enabled, the device can detect voice interruptions and respond accordingly.",
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/battle_assets.h /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_assets.h
+--- ./main/display/battle_assets.h	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_assets.h	2026-10-31 13:07:43
+@@ -0,0 +1,19 @@
++#pragma once
++
++#include <lvgl.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++// 战斗 HUD 位图资源：只保留图标，表情改由矢量 face_view 绘制
++extern const lv_image_dsc_t icon_heart;
++extern const lv_image_dsc_t icon_bolt_on;
++extern const lv_image_dsc_t icon_bolt_off;
++extern const lv_image_dsc_t ult_idle;
++extern const lv_image_dsc_t ult_ready;
++extern const lv_image_dsc_t ult_used;
++
++#ifdef __cplusplus
++}
++#endif
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/battle_ctl.cc /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_ctl.cc
+--- ./main/display/battle_ctl.cc	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_ctl.cc	2026-10-31 17:12:42
+@@ -0,0 +1,593 @@
++// 战斗 HUD 控制通道：
++// 1) USB Serial/JTAG 上的行式 JSON 命令（本机联调、出问题可远程排查）
++// 2) 设备 MCP 工具 self.hud.*（平台智能体可调用，实现「状态改变通过 MCP 驱动」）
++#include "battle_hud.h"
++#include "battle_pull.h"
++#include "panel_ctrl.h"
++
++#include "application.h"
++#include "mcp_server.h"
++
++#include <driver/usb_serial_jtag.h>
++#include <driver/usb_serial_jtag_vfs.h>
++#include <esp_log.h>
++#include <freertos/FreeRTOS.h>
++#include <freertos/task.h>
++
++#include <cJSON.h>
++#include <cstdio>
++#include <cstring>
++#include <string>
++#include <unistd.h>
++#include <esp_heap_caps.h>
++
++// 当控制台就是 USB Serial/JTAG 时，输入输出走 VFS（stdin/stdout），
++// 不能再安装 usb_serial_jtag 驱动，否则会抢同一份硬件。
++#if defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG)
++#define HUD_USE_USB_CONSOLE 1
++#else
++#define HUD_USE_USB_CONSOLE 0
++#endif
++
++// 取屏能力默认关闭：整帧 15 万字节走 CDC，一旦主机读到一半断开，
++// 阻塞写会把服务它的任务卡死（实测能把整机拖到没有任何输出）。
++// 只在本机调试需要取图时才改成 1，并确保主机脚本一直读到 end。
++// 截图用于联调取证：整帧约 150KB，走分块 base64 传输，单次 3 秒超时保护
++#ifndef HUD_ENABLE_SCREENSHOT
++#define HUD_ENABLE_SCREENSHOT 1
++#endif
++
++namespace {
++constexpr char TAG[] = "BattleCtl";
++constexpr int kLineMax = 640;
++
++// 串口回复统一前缀，便于与 ESP_LOG 输出区分
++constexpr char kReplyPrefix[] = "@@HUD ";
++
++struct HudArgs {
++    battle_hud_state_t state{};
++    std::string expression;
++    std::string cue;
++    std::string mode;
++};
++
++bool ParseState(cJSON *params, HudArgs *out, std::string *error) {
++    if (params == nullptr) {
++        *error = "missing params";
++        return false;
++    }
++    auto expr = cJSON_GetObjectItem(params, "expression");
++    if (!cJSON_IsString(expr)) {
++        *error = "expression must be string";
++        return false;
++    }
++    out->expression = expr->valuestring;
++    out->state.expression = out->expression.c_str();
++
++    auto get_int = [params](const char *name, int fallback) -> int {
++        auto item = cJSON_GetObjectItem(params, name);
++        return cJSON_IsNumber(item) ? item->valueint : fallback;
++    };
++    out->state.hp = get_int("hp", 10);
++    out->state.max_hp = get_int("max_hp", 10);
++    out->state.energy = get_int("energy", 0);
++    out->state.max_energy = get_int("max_energy", 5);
++    out->state.ult = get_int("ult", 0);
++    out->state.seq = get_int("seq", -1);
++    out->state.hold_ms = get_int("hold_ms", 0);
++
++    // 是否在战斗中：闲聊/未开局只画表情，不画资源
++    auto battle = cJSON_GetObjectItem(params, "battle");
++    out->state.battle = cJSON_IsBool(battle) ? cJSON_IsTrue(battle) : true;
++    // 对局形态决定上排画谁：pvp 上排对手，solo 上排自己
++    auto mode = cJSON_GetObjectItem(params, "mode");
++    out->mode = (cJSON_IsString(mode) && mode->valuestring != nullptr) ? mode->valuestring : "pvp";
++    out->state.mode = out->mode.c_str();
++
++    // 对手资源：与自己的字段同构；没有对手时不下发这一块
++    auto opponent = cJSON_GetObjectItem(params, "opponent");
++    if (cJSON_IsObject(opponent)) {
++        auto get_opp_int = [opponent](const char *name, int fallback) -> int {
++            auto item = cJSON_GetObjectItem(opponent, name);
++            return cJSON_IsNumber(item) ? item->valueint : fallback;
++        };
++        out->state.has_opponent = true;
++        out->state.opp_hp = get_opp_int("hp", 10);
++        out->state.opp_max_hp = get_opp_int("max_hp", 10);
++        out->state.opp_energy = get_opp_int("energy", 0);
++        out->state.opp_max_energy = get_opp_int("max_energy", 5);
++        out->state.opp_ult = get_opp_int("ult", 0);
++    }
++
++    auto cue = cJSON_GetObjectItem(params, "cue");
++    if (cJSON_IsString(cue)) {
++        out->cue = cue->valuestring;
++        out->state.cue = out->cue.c_str();
++    }
++    return true;
++}
++
++void FillDemoOpponent(battle_hud_state_t *state) {
++    // 演示用对手数据：血量、能量与大招都和自己略有差异，便于一眼区分两行
++    state->has_opponent = true;
++    state->opp_max_hp = 14;
++    state->opp_hp = state->hp < 10 ? 14 : 11;
++    state->opp_max_energy = 5;
++    state->opp_energy = state->energy > 0 ? state->energy - 1 : 2;
++    state->opp_ult = state->hp < 10 ? 1 : 0;
++}
++
++void DemoTask(void *) {
++    static const char *kOrder[] = {"neutral", "attack", "hurt", "guard",
++                                   "dodge",   "ultready", "victory", "defeat"};
++    int hp = 8;
++    for (const char *expression : kOrder) {
++        battle_hud_state_t state{};
++        state.expression = expression;
++        state.hp = hp;
++        state.max_hp = 10;
++        state.energy = (hp + 1) / 2;
++        state.max_energy = 5;
++        state.ult = strcmp(expression, "ultready") == 0 ? 1 : 0;
++        state.seq = -1;
++        state.cue = strcmp(expression, "neutral") == 0 ? nullptr : expression;
++        state.hold_ms = 0;
++        state.battle = true;
++        state.mode = "pvp";
++        FillDemoOpponent(&state);
++        battle_hud_apply(&state);
++        vTaskDelay(pdMS_TO_TICKS(900));
++        hp = hp > 3 ? hp - 2 : 10;
++    }
++    // 演示结束后回到待命，避免屏幕定格在「失败」让人以为卡住
++    battle_hud_state_t idle{};
++    idle.expression = "neutral";
++    idle.hp = 10;
++    idle.max_hp = 10;
++    idle.energy = 2;
++    idle.max_energy = 5;
++    idle.ult = 0;
++    idle.seq = -1;
++    idle.cue = nullptr;
++    idle.hold_ms = 0;
++    idle.battle = true;
++    idle.mode = "pvp";
++    FillDemoOpponent(&idle);
++    battle_hud_apply(&idle);
++    ESP_LOGI(TAG, "demo finished, back to neutral");
++    vTaskDelete(nullptr);
++}
++
++size_t HudWrite(const uint8_t *data, size_t len) {
++#if HUD_USE_USB_CONSOLE
++    size_t n = fwrite(data, 1, len, stdout);
++    fflush(stdout);
++    return n;
++#else
++    int n = usb_serial_jtag_write_bytes(data, len, pdMS_TO_TICKS(1000));
++    return n > 0 ? static_cast<size_t>(n) : 0;
++#endif
++}
++
++void Reply(const char *line) {
++    std::string out(kReplyPrefix);
++    out += line;
++    out += '\n';
++    HudWrite(reinterpret_cast<const uint8_t *>(out.data()), out.size());
++}
++
++
++void WriteAll(const uint8_t *data, size_t len) {
++    size_t off = 0;
++    const TickType_t start = xTaskGetTickCount();
++    while (off < len) {
++        // 主机中途断开时不能无限重试：超时就把剩下的字节丢掉，保住整机
++        if (xTaskGetTickCount() - start > pdMS_TO_TICKS(3000)) {
++            ESP_LOGW(TAG, "usb write timeout, dropped %u bytes", static_cast<unsigned>(len - off));
++            return;
++        }
++        // 分块写：一次 4KB，块间让出 1ms，避免 CDC 端没有及时取走导致丢字节
++        size_t chunk = len - off > 4096 ? 4096 : len - off;
++        size_t n = HudWrite(data + off, chunk);
++        if (n == 0) {
++            vTaskDelay(pdMS_TO_TICKS(10));
++            continue;
++        }
++        off += n;
++        if (n == chunk) {
++            vTaskDelay(pdMS_TO_TICKS(1));
++        }
++    }
++}
++
++#if HUD_ENABLE_SCREENSHOT
++// 截屏命令：按行分块传 base64，避免二进制流被 ESP_LOG 插行或 CDC 缓冲丢字节打乱
++struct B64Chunk {
++    int id;
++    const uint8_t *data;
++    int len;
++};
++
++void EmitShotChunk(int id, const uint8_t *data, size_t len) {
++    static const char kTable[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++    std::string out;
++    out.reserve(((len + 2) / 3) * 4);
++    for (size_t i = 0; i < len; i += 3) {
++        uint32_t v = static_cast<uint32_t>(data[i]) << 16;
++        if (i + 1 < len) v |= static_cast<uint32_t>(data[i + 1]) << 8;
++        if (i + 2 < len) v |= data[i + 2];
++        out += kTable[(v >> 18) & 0x3F];
++        out += kTable[(v >> 12) & 0x3F];
++        out += (i + 1 < len) ? kTable[(v >> 6) & 0x3F] : '=';
++        out += (i + 2 < len) ? kTable[v & 0x3F] : '=';
++    }
++    std::string line = "{\"id\":";
++    line += std::to_string(id);
++    line += ",\"shot\":\"";
++    line += out;
++    line += "\"}\n";
++    WriteAll(reinterpret_cast<const uint8_t *>(line.data()), line.size());
++}
++
++void HandleScreenshot(int request_id) {
++    uint8_t *data = nullptr;
++    size_t len = 0;
++    int w = 0;
++    int h = 0;
++    if (!battle_hud_snapshot(&data, &len, &w, &h)) {
++        char buf[96];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"error\":\"snapshot failed\"}", request_id);
++        Reply(buf);
++        return;
++    }
++    char head[128];
++    snprintf(head, sizeof(head), "{\"id\":%d,\"result\":\"shot\",\"w\":%d,\"h\":%d,\"cf\":\"RGB565\",\"len\":%u}",
++             request_id, w, h, static_cast<unsigned>(len));
++    Reply(head);
++    constexpr size_t kChunk = 1024;
++    for (size_t off = 0; off < len; off += kChunk) {
++        size_t n = len - off > kChunk ? kChunk : len - off;
++        EmitShotChunk(request_id, data + off, n);
++        vTaskDelay(pdMS_TO_TICKS(2));
++    }
++    char done[64];
++    snprintf(done, sizeof(done), "{\"id\":%d,\"shot\":\"end\",\"total\":%u}", request_id,
++             static_cast<unsigned>(len));
++    Reply(done);
++    heap_caps_free(data);
++    ESP_LOGI(TAG, "screenshot %dx%d %u bytes", w, h, static_cast<unsigned>(len));
++}
++
++
++#endif  // HUD_ENABLE_SCREENSHOT
++
++// 单行 JSON 输出（MCP 响应不带 @@HUD 前缀，便于标准 MCP 客户端直接解析）
++void PrintJsonLine(cJSON *obj) {
++    char *text = cJSON_PrintUnformatted(obj);
++    if (text == nullptr) {
++        return;
++    }
++    std::string line(text);
++    line += '\n';
++    HudWrite(reinterpret_cast<const uint8_t *>(line.data()), line.size());
++    cJSON_free(text);
++}
++
++// 把参数应用到 HUD，成功返回 true，并给出简短结果文本
++bool ApplyStateFromParams(cJSON *params, std::string *text_out) {
++    HudArgs args;
++    std::string error;
++    if (!ParseState(params, &args, &error)) {
++        if (text_out != nullptr) {
++            *text_out = "{\"ok\":false,\"reason\":\"" + error + "\"}";
++        }
++        return false;
++    }
++    bool ok = battle_hud_apply(&args.state);
++    if (text_out != nullptr) {
++        *text_out = ok ? "{\"ok\":true}" : "{\"ok\":false,\"reason\":\"invalid expression\"}";
++    }
++    return ok;
++}
++
++const char kToolsListJson[] =
++    "[{\"name\":\"self.hud.set_state\",\"description\":\"显示战斗状态：表情、生命条、能量闪电、大招徽记，并按 cue 播放音效\","
++    "\"inputSchema\":{\"type\":\"object\",\"properties\":{"
++    "\"expression\":{\"type\":\"string\",\"enum\":[\"neutral\",\"attack\",\"hurt\",\"guard\",\"dodge\",\"ultready\",\"victory\",\"defeat\"]},"
++    "\"hp\":{\"type\":\"integer\"},\"max_hp\":{\"type\":\"integer\"},"
++    "\"energy\":{\"type\":\"integer\"},\"max_energy\":{\"type\":\"integer\"},"
++    "\"ult\":{\"type\":\"integer\",\"enum\":[0,1,2]},"
++    "\"battle\":{\"type\":\"boolean\",\"description\":\"是否在战斗中；false 时只显示表情\"},"
++    "\"mode\":{\"type\":\"string\",\"enum\":[\"solo\",\"pvp\"],\"description\":\"对局形态：pvp 上排对手，solo 上排自己\"},"
++    "\"cue\":{\"type\":\"string\"},\"hold_ms\":{\"type\":\"integer\"},\"seq\":{\"type\":\"integer\"},"
++    "\"opponent\":{\"type\":\"object\",\"description\":\"对面玩家的资源；两块屏相对摆放时显示在上排\","
++    "\"properties\":{\"hp\":{\"type\":\"integer\"},\"max_hp\":{\"type\":\"integer\"},"
++    "\"energy\":{\"type\":\"integer\"},\"max_energy\":{\"type\":\"integer\"},"
++    "\"ult\":{\"type\":\"integer\",\"enum\":[0,1,2]}}}},"
++    "\"required\":[\"expression\"]}},"
++    "{\"name\":\"self.hud.get_state\",\"description\":\"读取当前 HUD 状态\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
++    "{\"name\":\"self.hud.demo\",\"description\":\"依次演示 8 种表情与音效\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
++    "{\"name\":\"self.hud.invert\",\"description\":\"面板颜色反转开关（不同批次 ST7789 屏 INVOFF/INVON 相反）\","
++    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"enable\":{\"type\":\"boolean\"}}}},"
++    "{\"name\":\"self.hud.pull\",\"description\":\"设置从服务端拉取战斗画面的地址并开关\","
++    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\"},"
++    "\"enabled\":{\"type\":\"boolean\"}}}}]";
++
++// MCP JSON-RPC：initialize / notifications/initialized / tools/list / tools/call / ping
++void HandleMcp(cJSON *root) {
++    auto method = cJSON_GetObjectItem(root, "method");
++    auto id = cJSON_GetObjectItem(root, "id");
++    if (!cJSON_IsString(method)) {
++        return;
++    }
++    const char *m = method->valuestring;
++
++    cJSON *resp = cJSON_CreateObject();
++    cJSON_AddStringToObject(resp, "jsonrpc", "2.0");
++    if (id != nullptr) {
++        cJSON_AddItemToObject(resp, "id", cJSON_Duplicate(id, true));
++    }
++
++    if (strcmp(m, "initialize") == 0) {
++        cJSON *result = cJSON_AddObjectToObject(resp, "result");
++        cJSON_AddStringToObject(result, "protocolVersion", "2024-11-05");
++        cJSON *caps = cJSON_AddObjectToObject(result, "capabilities");
++        cJSON_AddObjectToObject(caps, "tools");
++        cJSON *info = cJSON_AddObjectToObject(result, "serverInfo");
++        cJSON_AddStringToObject(info, "name", "yunliao-s3-hud");
++        cJSON_AddStringToObject(info, "version", "0.1.0");
++    } else if (strcmp(m, "notifications/initialized") == 0) {
++        cJSON_Delete(resp);
++        return;  // 通知不需要响应
++    } else if (strcmp(m, "tools/list") == 0) {
++        cJSON *result = cJSON_AddObjectToObject(resp, "result");
++        cJSON_AddItemToObject(result, "tools", cJSON_Parse(kToolsListJson));
++    } else if (strcmp(m, "tools/call") == 0) {
++        auto params = cJSON_GetObjectItem(root, "params");
++        auto name = cJSON_GetObjectItem(params, "name");
++        auto args = cJSON_GetObjectItem(params, "arguments");
++        std::string text = "{\"ok\":false,\"reason\":\"unknown tool\"}";
++        bool is_error = false;
++        if (cJSON_IsString(name) && strcmp(name->valuestring, "self.hud.set_state") == 0) {
++            is_error = !ApplyStateFromParams(args, &text);
++        } else if (cJSON_IsString(name) && strcmp(name->valuestring, "self.hud.get_state") == 0) {
++            char state[512];
++            battle_hud_get_state_json(state, sizeof(state));
++            text = state;
++        } else if (cJSON_IsString(name) && strcmp(name->valuestring, "self.hud.demo") == 0) {
++            battle_demo_start();
++            text = "{\"ok\":true,\"result\":\"demo started\"}";
++        } else if (cJSON_IsString(name) && strcmp(name->valuestring, "self.hud.pull") == 0) {
++            const cJSON *url = cJSON_GetObjectItemCaseSensitive(args, "url");
++            const cJSON *en = cJSON_GetObjectItemCaseSensitive(args, "enabled");
++            char buffer[320];
++            battle_pull_configure(cJSON_IsString(url) ? url->valuestring : "",
++                                  cJSON_IsBool(en) ? cJSON_IsTrue(en) : true, buffer, sizeof(buffer));
++            text = buffer;
++        } else if (cJSON_IsString(name) && strcmp(name->valuestring, "self.hud.invert") == 0) {
++            const cJSON *en = cJSON_GetObjectItemCaseSensitive(args, "enable");
++            const bool on = cJSON_IsBool(en) ? cJSON_IsTrue(en) : true;
++            const bool done = panel_ctrl_invert(on);
++            text = done ? (on ? "{\"ok\":true,\"inverted\":true}" : "{\"ok\":true,\"inverted\":false}")
++                        : "{\"ok\":false,\"reason\":\"panel not ready\"}";
++            is_error = !done;
++        } else {
++            is_error = true;
++        }
++        cJSON *result = cJSON_AddObjectToObject(resp, "result");
++        cJSON *content = cJSON_AddArrayToObject(result, "content");
++        cJSON *item = cJSON_CreateObject();
++        cJSON_AddStringToObject(item, "type", "text");
++        cJSON_AddStringToObject(item, "text", text.c_str());
++        cJSON_AddItemToArray(content, item);
++        cJSON_AddBoolToObject(result, "isError", is_error);
++    } else if (strcmp(m, "ping") == 0) {
++        cJSON_AddObjectToObject(resp, "result");
++    } else {
++        cJSON *error = cJSON_AddObjectToObject(resp, "error");
++        cJSON_AddNumberToObject(error, "code", -32601);
++        cJSON_AddStringToObject(error, "message", "method not found");
++    }
++
++    if (id != nullptr) {
++        PrintJsonLine(resp);
++    }
++    cJSON_Delete(resp);
++}
++
++void HandleCommand(cJSON *root) {
++    auto id = cJSON_GetObjectItem(root, "id");
++    int request_id = cJSON_IsNumber(id) ? id->valueint : 0;
++    auto method = cJSON_GetObjectItem(root, "method");
++    auto params = cJSON_GetObjectItem(root, "params");
++    if (!cJSON_IsString(method)) {
++        char buf[96];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"error\":\"missing method\"}", request_id);
++        Reply(buf);
++        return;
++    }
++
++    if (strcmp(method->valuestring, "hud.set_state") == 0) {
++        std::string text;
++        ApplyStateFromParams(params, &text);
++        char buf[256];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"result\":%s}", request_id, text.c_str());
++        Reply(buf);
++    } else if (strcmp(method->valuestring, "hud.get_state") == 0) {
++        char state[256];
++        battle_hud_get_state_json(state, sizeof(state));
++        char buf[320];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"result\":%s}", request_id, state);
++        Reply(buf);
++    } else if (strcmp(method->valuestring, "hud.pull") == 0) {
++        const cJSON *url = cJSON_GetObjectItemCaseSensitive(root, "url");
++        const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(root, "enabled");
++        char buffer[320];
++        battle_pull_configure(cJSON_IsString(url) ? url->valuestring : "",
++                              cJSON_IsBool(enabled) ? cJSON_IsTrue(enabled) : true,
++                              buffer, sizeof(buffer));
++        char buf[380];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"result\":%s}", request_id, buffer);
++        Reply(buf);
++    } else if (strcmp(method->valuestring, "hud.invert") == 0) {
++        const cJSON *enable = cJSON_GetObjectItemCaseSensitive(root, "enable");
++        const bool on = cJSON_IsBool(enable) ? cJSON_IsTrue(enable) : true;
++        char buf[96];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"result\":%s}", request_id,
++                 panel_ctrl_invert(on) ? "true" : "false");
++        Reply(buf);
++    } else if (strcmp(method->valuestring, "hud.unlock") == 0) {
++        battle_hud_unlock();
++        char buf[96];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"result\":\"ok\"}", request_id);
++        Reply(buf);
++    } else if (strcmp(method->valuestring, "hud.demo") == 0) {
++        xTaskCreate(DemoTask, "hud_demo", 4096, nullptr, 1, nullptr);
++        char buf[96];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"result\":\"demo started\"}", request_id);
++        Reply(buf);
++#if HUD_ENABLE_SCREENSHOT
++    } else if (strcmp(method->valuestring, "hud.screenshot") == 0) {
++        HandleScreenshot(request_id);
++#endif
++    } else if (strcmp(method->valuestring, "ping") == 0) {
++        char buf[96];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"result\":\"pong\"}", request_id);
++        Reply(buf);
++    } else {
++        char buf[128];
++        snprintf(buf, sizeof(buf), "{\"id\":%d,\"error\":\"unknown method\"}", request_id);
++        Reply(buf);
++    }
++}
++
++void ControlTask(void *) {
++    char line[kLineMax];
++    int line_len = 0;
++
++#if !HUD_USE_USB_CONSOLE
++    // 控制台不是 USB Serial/JTAG 时由这里接管驱动；是控制台时让 VFS 独占，避免抢硬件
++    usb_serial_jtag_driver_config_t config{};
++    config.tx_buffer_size = 8192;
++    config.rx_buffer_size = 4096;
++    esp_err_t err = usb_serial_jtag_driver_install(&config);
++    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
++        ESP_LOGE(TAG, "usb_serial_jtag_driver_install failed: %s", esp_err_to_name(err));
++        vTaskDelete(nullptr);
++        return;
++    }
++#endif
++
++    // 启动横幅：主机脚本以此为握手信号
++    Reply("{\"event\":\"ready\",\"protocol\":\"hud-jsonl/1\"}");
++    ESP_LOGI(TAG, "control channel ready on USB Serial/JTAG");
++
++    while (true) {
++        uint8_t chunk[128];
++#if HUD_USE_USB_CONSOLE
++        ssize_t n = read(STDIN_FILENO, chunk, sizeof(chunk));
++        if (n <= 0) {
++            vTaskDelay(pdMS_TO_TICKS(20));
++            continue;
++        }
++        int got = static_cast<int>(n);
++#else
++        int got = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(50));
++#endif
++        for (int i = 0; i < got; ++i) {
++            char c = static_cast<char>(chunk[i]);
++            if (c == '\r') {
++                continue;
++            }
++            if (c == '\n') {
++                line[line_len] = '\0';
++                if (line_len > 0) {
++                    cJSON *root = cJSON_Parse(line);
++                    if (root == nullptr) {
++                        Reply("{\"id\":0,\"error\":\"invalid json\"}");
++                    } else {
++                        auto jr = cJSON_GetObjectItem(root, "jsonrpc");
++                        if (cJSON_IsString(jr) && strcmp(jr->valuestring, "2.0") == 0) {
++                            HandleMcp(root);
++                        } else {
++                            HandleCommand(root);
++                        }
++                        cJSON_Delete(root);
++                    }
++                }
++                line_len = 0;
++                continue;
++            }
++            if (line_len < kLineMax - 1) {
++                line[line_len++] = c;
++            } else {
++                line_len = 0;  // 超长行直接丢弃，避免污染后续命令
++            }
++        }
++    }
++}
++
++// MCP 工具：把平台智能体的调用映射到同一套 HUD 状态
++Property HudIntegerProperty(const char *name, int default_value, int min_value, int max_value) {
++    return Property(name, kPropertyTypeInteger, default_value, min_value, max_value);
++}
++}  // namespace
++
++void battle_demo_start() {
++    xTaskCreate(DemoTask, "hud_demo", 4096, nullptr, 1, nullptr);
++}
++
++void battle_mcp_register() {
++    auto &server = McpServer::GetInstance();
++
++    server.AddTool(
++        "self.hud.set_state",
++        "显示战斗状态：表情、生命条、能量闪电、大招徽记，并可播放音效。仅在收到服务端战斗状态时调用。",
++        PropertyList({Property("expression", kPropertyTypeString),
++                      HudIntegerProperty("hp", 10, 0, 999),
++                      HudIntegerProperty("max_hp", 10, 1, 999),
++                      HudIntegerProperty("energy", 0, 0, 5),
++                      HudIntegerProperty("max_energy", 5, 0, 5),
++                      HudIntegerProperty("ult", 0, 0, 2),
++                      HudIntegerProperty("seq", 0, 0, 999999),
++                      Property("cue", kPropertyTypeString, std::string{}),
++                      HudIntegerProperty("hold_ms", 0, 0, 60000)}),
++        [](const PropertyList &properties) -> ReturnValue {
++            battle_hud_state_t state{};
++            // 注意：value<std::string>() 返回副本，这里必须用局部变量承接生命周期
++            std::string expression = properties["expression"].value<std::string>();
++            std::string cue = properties["cue"].value<std::string>();
++            state.expression = expression.c_str();
++            state.hp = properties["hp"].value<int>();
++            state.max_hp = properties["max_hp"].value<int>();
++            state.energy = properties["energy"].value<int>();
++            state.max_energy = properties["max_energy"].value<int>();
++            state.ult = properties["ult"].value<int>();
++            state.seq = properties["seq"].value<int>();
++            state.hold_ms = properties["hold_ms"].value<int>();
++            state.cue = cue.c_str();
++            if (!battle_hud_apply(&state)) {
++                return std::string("{\"ok\":false,\"reason\":\"invalid expression\"}");
++            }
++            return std::string("{\"ok\":true}");
++        });
++
++    server.AddTool("self.hud.get_state", "读取设备当前战斗界面状态（表情/生命/能量/大招/音效）。",
++                   PropertyList(), [](const PropertyList &) -> ReturnValue {
++                       char state[512];
++                       battle_hud_get_state_json(state, sizeof(state));
++                       return std::string(state);
++                   });
++
++    server.AddTool("self.hud.demo", "依次演示 8 种表情与对应音效，用于真机自检。",
++                   PropertyList(), [](const PropertyList &) -> ReturnValue {
++                       battle_demo_start();
++                       return true;
++                   });
++}
++
++void battle_ctl_start() {
++    battle_mcp_register();
++    ESP_LOGI(TAG, "HUD MCP tools registered: self.hud.set_state / self.hud.get_state / self.hud.demo");
++    xTaskCreate(ControlTask, "battle_ctl", 8192, nullptr, 2, nullptr);
++}
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/battle_hud.cc /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_hud.cc
+--- ./main/display/battle_hud.cc	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_hud.cc	2026-10-31 17:12:18
+@@ -0,0 +1,518 @@
++// 战斗 HUD 渲染层：8 表情、生命条、5 闪电能量、大招徽记三态
++#include "battle_hud.h"
++#include "battle_assets.h"
++#include "face_view.h"
++
++#include "application.h"
++#include "board.h"
++#include "display.h"
++#include "assets/lang_config.h"
++
++#include <esp_heap_caps.h>
++#include <esp_log.h>
++#include <cstdio>
++#include <cstring>
++#include <functional>
++#include <optional>
++#include <string_view>
++
++namespace {
++constexpr char TAG[] = "BattleHud";
++
++// 颜色沿用移动端原型（docs/product/prototypes/mobile-companion.html）
++constexpr uint32_t kHpTrackColor = 0x223A2C;
++constexpr uint32_t kHpColor = 0x7FC98A;
++constexpr uint32_t kHpLowColor = 0xE0A34A;
++
++lv_obj_t *root_ = nullptr;
++lv_timer_t *hold_timer_ = nullptr;
++
++// 一屏两行资源：上排=对面玩家，下排=自己；每行都是「爱心+数字+血条+5 闪电+数字」
++struct ResourceRow {
++    lv_obj_t *heart = nullptr;
++    lv_obj_t *hp_label = nullptr;
++    lv_obj_t *hp_track = nullptr;
++    lv_obj_t *hp_fill = nullptr;
++    lv_obj_t *energy_icons[5] = {};
++};
++ResourceRow rows_[2];
++// 大招徽记：左上=对面，右上=自己（两块屏相对摆放时两边都能看到对方的大招）
++lv_obj_t *ult_left_ = nullptr;
++lv_obj_t *ult_right_ = nullptr;
++
++// 行内布局（行高 14px：数字只写当前生命值、能量只画闪电，避免占高度）
++constexpr int kRowY[2] = {190, 212};      // 上排对手 / 下排自己
++constexpr int kHeartX = 8;
++constexpr int kHpLabelX = 27;
++constexpr int kHpTrackX = 50;
++constexpr int kHpTrackW = 164;            // 血条拉通整行，和最初单行版一样占满底部
++constexpr int kHpFillInnerW = 158;
++constexpr int kBoltsX = 224;              // 5 闪电贴右边对齐（末颗收在 314）
++constexpr int kBoltsStep = 19;
++constexpr uint32_t kSelfTextColor = 0xD6F9B6;
++constexpr uint32_t kOpponentTextColor = 0xC0D6B8;
++
++char current_expression_[16] = "neutral";
++char current_cue_[16] = "";
++int current_hp_ = 10;
++int current_max_hp_ = 10;
++int current_energy_ = 0;
++int current_max_energy_ = 5;
++int current_ult_ = 0;
++int current_seq_ = -1;
++int current_hold_ms_ = 0;
++bool locked_ = false;
++bool current_battle_ = true;
++char current_mode_[8] = "pvp";
++bool current_has_opponent_ = false;
++int current_opp_hp_ = 0;
++int current_opp_max_hp_ = 1;
++int current_opp_energy_ = 0;
++int current_opp_max_energy_ = 5;
++int current_opp_ult_ = 0;
++
++// LVGL 只在持有显示锁时访问；串口任务与主任务共用同一把递归锁
++// 显示对象由 battle_hud_create() 显式注入：板级构造期间 Board 单例仍处于
++// 初始化中，此时再调用 Board::GetInstance() 会递归等待静态初始化保护而挂死。
++Display* g_display = nullptr;
++
++class HudLock {
++public:
++    HudLock() {
++        if (g_display != nullptr) {
++            guard_.emplace(g_display);
++        }
++    }
++
++private:
++    std::optional<DisplayLockGuard> guard_;
++};
++
++int Clamp(int value, int low, int high) {
++    return value < low ? low : (value > high ? high : value);
++}
++
++bool IsKnownExpression(const char *name) {
++    return face_expression_from_name(name) >= 0;
++}
++
++void ApplyExpression(const char *name) {
++    int expr = face_expression_from_name(name);
++    if (expr < 0) {
++        ESP_LOGW(TAG, "unknown expression: %s", name ? name : "(null)");
++        return;
++    }
++    face_view_set(expr, true);
++    snprintf(current_expression_, sizeof(current_expression_), "%s", name);
++}
++
++void SetUltIcon(lv_obj_t *icon, int ult) {
++    if (icon == nullptr) {
++        return;
++    }
++    switch (ult) {
++        case 1:
++            lv_image_set_src(icon, &ult_ready);
++            break;
++        case 2:
++            lv_image_set_src(icon, &ult_used);
++            break;
++        default:
++            lv_image_set_src(icon, &ult_idle);
++            break;
++    }
++}
++
++// 画一行资源；visible=false 时整行隐藏（单人等待对手加入时只有自己那一行）
++void ApplyRow(ResourceRow &row, bool visible, int hp, int max_hp, int energy, int max_energy,
++              uint32_t text_color) {
++    lv_obj_t *all[] = {row.heart, row.hp_label, row.hp_track};
++    for (lv_obj_t *obj : all) {
++        if (obj == nullptr) {
++            continue;
++        }
++        if (visible) {
++            lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
++        } else {
++            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
++        }
++    }
++    for (lv_obj_t *icon : row.energy_icons) {
++        if (icon != nullptr) {
++            lv_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
++        }
++    }
++    if (!visible || row.hp_fill == nullptr) {
++        return;
++    }
++
++    // 生命条：按比例填充，低血量改琥珀色；数字给出准确值（如 13/14）
++    int ratio_hp = max_hp > 0 ? Clamp(hp * 100 / max_hp, 0, 100) : 0;
++    lv_obj_set_width(row.hp_fill, kHpFillInnerW * ratio_hp / 100);
++    lv_obj_set_style_bg_color(row.hp_fill, lv_color_hex(ratio_hp <= 30 ? kHpLowColor : kHpColor), 0);
++    // 只写当前生命值：上限由血条长度表达，不再堆「14/14」这种总数
++    lv_label_set_text_fmt(row.hp_label, "%d", hp);
++    lv_obj_set_style_text_color(row.hp_label, lv_color_hex(text_color), 0);
++
++    // 能量：min(max_energy,5) 个闪电，点评亮，数字给出准确值（如 3/5）
++    const int max_icons = static_cast<int>(sizeof(row.energy_icons) / sizeof(row.energy_icons[0]));
++    for (int i = 0; i < max_icons; ++i) {
++        if (row.energy_icons[i] == nullptr) {
++            continue;
++        }
++        if (i < max_energy) {
++            lv_obj_remove_flag(row.energy_icons[i], LV_OBJ_FLAG_HIDDEN);
++            lv_image_set_src(row.energy_icons[i], i < energy ? &icon_bolt_on : &icon_bolt_off);
++        } else {
++            lv_obj_add_flag(row.energy_icons[i], LV_OBJ_FLAG_HIDDEN);
++        }
++    }
++}
++
++// 一行资源的两个来源：自己或对面
++struct SideView {
++    bool visible;
++    int hp;
++    int max_hp;
++    int energy;
++    int max_energy;
++    int ult;
++    uint32_t color;
++};
++
++void HideAllResources() {
++    for (ResourceRow &row : rows_) {
++        ApplyRow(row, false, 0, 1, 0, 5, kSelfTextColor);
++    }
++    if (ult_left_ != nullptr) {
++        lv_obj_add_flag(ult_left_, LV_OBJ_FLAG_HIDDEN);
++    }
++    if (ult_right_ != nullptr) {
++        lv_obj_add_flag(ult_right_, LV_OBJ_FLAG_HIDDEN);
++    }
++}
++
++void ApplyResources() {
++    if (rows_[1].hp_fill == nullptr) {
++        return;
++    }
++    // 闲聊/未开局只留表情：生命值、能量、大招全部不显示
++    if (!current_battle_) {
++        HideAllResources();
++        return;
++    }
++
++    const SideView self{true, current_hp_, current_max_hp_, current_energy_, current_max_energy_,
++                        current_ult_, kSelfTextColor};
++    const SideView opponent{current_has_opponent_, current_opp_hp_, current_opp_max_hp_,
++                            current_opp_energy_, current_opp_max_energy_, current_opp_ult_,
++                            kOpponentTextColor};
++
++    // 上排永远是「看屏幕的人」：双人房两块屏相对，看屏的是对面玩家，所以上排是对手；
++    // 单人局看屏的是本人，所以上排换成自己。
++    const bool pvp = strcmp(current_mode_, "solo") != 0;
++    const SideView &top = pvp ? opponent : self;
++    const SideView &bottom = pvp ? self : opponent;
++
++    ApplyRow(rows_[0], top.visible, top.hp, top.max_hp, top.energy, top.max_energy, top.color);
++    ApplyRow(rows_[1], bottom.visible, bottom.hp, bottom.max_hp, bottom.energy, bottom.max_energy,
++             bottom.color);
++
++    if (ult_left_ != nullptr) {
++        if (top.visible) {
++            lv_obj_remove_flag(ult_left_, LV_OBJ_FLAG_HIDDEN);
++            SetUltIcon(ult_left_, top.ult);
++        } else {
++            lv_obj_add_flag(ult_left_, LV_OBJ_FLAG_HIDDEN);
++        }
++    }
++    if (ult_right_ != nullptr) {
++        if (bottom.visible) {
++            lv_obj_remove_flag(ult_right_, LV_OBJ_FLAG_HIDDEN);
++            SetUltIcon(ult_right_, bottom.ult);
++        } else {
++            lv_obj_add_flag(ult_right_, LV_OBJ_FLAG_HIDDEN);
++        }
++    }
++}
++
++void HoldTimerCallback(lv_timer_t *timer) {
++    (void)timer;
++    hold_timer_ = nullptr;
++    // 短时表情（受击/闪避）结束后回到待命，避免定格
++    ApplyExpression("neutral");
++}
++
++void ScheduleExpressionHold(int hold_ms) {
++    if (hold_timer_ != nullptr) {
++        lv_timer_delete(hold_timer_);
++        hold_timer_ = nullptr;
++    }
++    if (hold_ms <= 0) {
++        return;
++    }
++    hold_timer_ = lv_timer_create(HoldTimerCallback, hold_ms, nullptr);
++    lv_timer_set_repeat_count(hold_timer_, 1);
++}
++
++const std::string_view *FindCue(const char *cue) {
++    if (cue == nullptr) {
++        return nullptr;
++    }
++    // 兼容表情名与音效名两套写法：演示/服务端都按表情名下发
++    // 待命不配音：静默即「待命」的听觉标识
++    if (strcmp(cue, "neutral") == 0) return nullptr;
++    if (strcmp(cue, "ultready") == 0) return &Lang::Sounds::OGG_ULT;
++    if (strcmp(cue, "attack") == 0) return &Lang::Sounds::OGG_ATTACK;
++    if (strcmp(cue, "hurt") == 0) return &Lang::Sounds::OGG_HURT;
++    if (strcmp(cue, "guard") == 0) return &Lang::Sounds::OGG_GUARD;
++    if (strcmp(cue, "dodge") == 0) return &Lang::Sounds::OGG_DODGE;
++    if (strcmp(cue, "ult") == 0) return &Lang::Sounds::OGG_ULT;
++    if (strcmp(cue, "victory") == 0) return &Lang::Sounds::OGG_VICTORY;
++    if (strcmp(cue, "defeat") == 0) return &Lang::Sounds::OGG_DEFEAT;
++    return nullptr;
++}
++}  // namespace
++
++void battle_hud_create(Display* display) {
++    g_display = display;
++    HudLock lock;
++    if (root_ != nullptr) {
++        return;
++    }
++
++    // HUD 根层：透明、不可点击，覆盖在隐藏后的原界面上
++    root_ = lv_obj_create(lv_screen_active());
++    lv_obj_set_size(root_, lv_display_get_horizontal_resolution(nullptr),
++                    lv_display_get_vertical_resolution(nullptr));
++    lv_obj_set_pos(root_, 0, 0);
++    lv_obj_set_style_bg_opa(root_, LV_OPA_TRANSP, 0);
++    lv_obj_set_style_border_width(root_, 0, 0);
++    lv_obj_set_style_pad_all(root_, 0, 0);
++    lv_obj_remove_flag(root_, LV_OBJ_FLAG_SCROLLABLE);
++    lv_obj_remove_flag(root_, LV_OBJ_FLAG_CLICKABLE);
++
++    // 表情：矢量绘制，背景铺满整屏（设计稿要求底色全屏）
++    face_view_create(root_);
++
++    // 两行资源：上排对手、下排自己；每行「爱心 + hp 数字 + 血条 + 5 闪电 + 能量数字」
++    for (int row = 0; row < 2; ++row) {
++        const int y = kRowY[row];
++        ResourceRow &r = rows_[row];
++
++        r.heart = lv_image_create(root_);
++        lv_image_set_src(r.heart, &icon_heart);
++        lv_obj_set_pos(r.heart, kHeartX, y + 1);
++
++        r.hp_label = lv_label_create(root_);
++        lv_label_set_text(r.hp_label, "10");
++        lv_obj_set_pos(r.hp_label, kHpLabelX, y - 3);
++        lv_obj_set_style_text_font(r.hp_label, &lv_font_montserrat_12, 0);
++        lv_obj_set_style_text_color(r.hp_label, lv_color_hex(kSelfTextColor), 0);
++
++        r.hp_track = lv_obj_create(root_);
++        lv_obj_set_size(r.hp_track, kHpTrackW, 12);
++        lv_obj_set_pos(r.hp_track, kHpTrackX, y + 1);
++        lv_obj_set_style_radius(r.hp_track, 6, 0);
++        lv_obj_set_style_bg_color(r.hp_track, lv_color_hex(kHpTrackColor), 0);
++        lv_obj_set_style_bg_opa(r.hp_track, LV_OPA_COVER, 0);
++        lv_obj_set_style_border_width(r.hp_track, 0, 0);
++        lv_obj_set_style_pad_all(r.hp_track, 0, 0);
++        lv_obj_remove_flag(r.hp_track, LV_OBJ_FLAG_SCROLLABLE);
++
++        r.hp_fill = lv_obj_create(r.hp_track);
++        lv_obj_set_size(r.hp_fill, kHpFillInnerW, 8);
++        lv_obj_set_pos(r.hp_fill, 3, 2);
++        lv_obj_set_style_radius(r.hp_fill, 4, 0);
++        lv_obj_set_style_bg_color(r.hp_fill, lv_color_hex(kHpColor), 0);
++        lv_obj_set_style_bg_opa(r.hp_fill, LV_OPA_COVER, 0);
++        lv_obj_set_style_border_width(r.hp_fill, 0, 0);
++
++        for (int i = 0; i < 5; ++i) {
++            r.energy_icons[i] = lv_image_create(root_);
++            lv_image_set_src(r.energy_icons[i], &icon_bolt_off);
++            lv_obj_set_pos(r.energy_icons[i], kBoltsX + i * kBoltsStep, y + 1);
++        }
++    }
++
++    // 大招徽记：左上=对面玩家，右上=自己；三态由服务端决定
++    ult_left_ = lv_image_create(root_);
++    lv_image_set_src(ult_left_, &ult_idle);
++    lv_obj_set_pos(ult_left_, 6, 4);
++
++    ult_right_ = lv_image_create(root_);
++    lv_image_set_src(ult_right_, &ult_idle);
++    lv_obj_set_pos(ult_right_, 284, 4);
++
++    lv_obj_move_foreground(root_);
++    ApplyResources();
++    ESP_LOGI(TAG, "HUD created: 8 expressions, two resource rows (opponent/self), dual ult badges");
++
++    // 开机自检：3 秒后自动播放一遍 8 表情与对应音效（串口 hud.demo 可随时重放）
++    lv_timer_t *boot = lv_timer_create([](lv_timer_t *t) {
++        lv_timer_delete(t);
++        battle_demo_start();
++    }, 3000, nullptr);
++    if (boot != nullptr) {
++        lv_timer_set_repeat_count(boot, 1);
++    }
++}
++
++bool battle_hud_apply(const battle_hud_state_t *state) {
++    HudLock lock;
++    if (state == nullptr || root_ == nullptr) {
++        return false;
++    }
++    if (!IsKnownExpression(state->expression)) {
++        return false;
++    }
++
++    locked_ = true;
++    ApplyExpression(state->expression);
++    current_battle_ = state->battle;
++    snprintf(current_mode_, sizeof(current_mode_), "%s",
++             (state->mode != nullptr && state->mode[0] != '\0') ? state->mode : "pvp");
++    current_hp_ = state->max_hp > 0 ? Clamp(state->hp, 0, state->max_hp) : 0;
++    current_max_hp_ = state->max_hp > 0 ? state->max_hp : 1;
++    current_max_energy_ = Clamp(state->max_energy, 0, 5);
++    current_energy_ = Clamp(state->energy, 0, current_max_energy_);
++    current_ult_ = Clamp(state->ult, 0, 2);
++    current_has_opponent_ = state->has_opponent;
++    current_opp_max_hp_ = state->opp_max_hp > 0 ? state->opp_max_hp : 1;
++    current_opp_hp_ = state->has_opponent ? Clamp(state->opp_hp, 0, current_opp_max_hp_) : 0;
++    current_opp_max_energy_ = Clamp(state->opp_max_energy, 0, 5);
++    current_opp_energy_ = state->has_opponent ? Clamp(state->opp_energy, 0, current_opp_max_energy_) : 0;
++    current_opp_ult_ = Clamp(state->opp_ult, 0, 2);
++    current_seq_ = state->seq;
++    current_hold_ms_ = state->hold_ms;
++    ApplyResources();
++    ScheduleExpressionHold(state->hold_ms);
++
++    if (state->cue != nullptr && state->cue[0] != '\0') {
++        battle_hud_play_cue(state->cue);
++    }
++    ESP_LOGI(TAG, "apply seq=%d expr=%s battle=%d mode=%s self=%d/%d e%d/%d ult%d opp=%s(%d/%d e%d/%d ult%d) cue=%s hold=%dms",
++             current_seq_, current_expression_, current_battle_ ? 1 : 0, current_mode_,
++             current_hp_, current_max_hp_, current_energy_,
++             current_max_energy_, current_ult_, current_has_opponent_ ? "yes" : "no", current_opp_hp_,
++             current_opp_max_hp_, current_opp_energy_, current_opp_max_energy_, current_opp_ult_,
++             state->cue ? state->cue : "-", state->hold_ms);
++    return true;
++}
++
++void battle_hud_set_expression(const char *expression, int hold_ms) {
++    HudLock lock;
++    if (locked_ || root_ == nullptr || expression == nullptr) {
++        return;
++    }
++    if (!IsKnownExpression(expression)) {
++        return;
++    }
++    ApplyExpression(expression);
++    ScheduleExpressionHold(hold_ms);
++}
++
++void battle_hud_get_state_json(char *out, size_t out_len) {
++    if (out == nullptr || out_len == 0) {
++        return;
++    }
++    char opponent[144];
++    if (current_has_opponent_) {
++        snprintf(opponent, sizeof(opponent),
++                 "{\"hp\":%d,\"max_hp\":%d,\"energy\":%d,\"max_energy\":%d,\"ult\":%d}",
++                 current_opp_hp_, current_opp_max_hp_, current_opp_energy_,
++                 current_opp_max_energy_, current_opp_ult_);
++    } else {
++        snprintf(opponent, sizeof(opponent), "null");
++    }
++    snprintf(out, out_len,
++             "{\"expression\":\"%s\",\"hp\":%d,\"max_hp\":%d,\"energy\":%d,\"max_energy\":%d,"
++             "\"ult\":%d,\"seq\":%d,\"cue\":\"%s\",\"hold_ms\":%d,\"locked\":%s,"
++             "\"battle\":%s,\"mode\":\"%s\",\"opponent\":%s}",
++             current_expression_, current_hp_, current_max_hp_, current_energy_,
++             current_max_energy_, current_ult_, current_seq_, current_cue_, current_hold_ms_,
++             locked_ ? "true" : "false", current_battle_ ? "true" : "false", current_mode_,
++             opponent);
++}
++
++void battle_hud_play_cue(const char *cue) {
++    // 待命 / 空 cue 一律静音：静默就是「待命」的听觉标识，也避免回待命时多一段提示音
++    if (cue == nullptr || cue[0] == '\0' || strcmp(cue, "neutral") == 0) {
++        snprintf(current_cue_, sizeof(current_cue_), "%s", cue ? cue : "");
++        ESP_LOGI(TAG, "cue=%s (silent)", cue ? cue : "-");
++        return;
++    }
++    const std::string_view *sound = FindCue(cue);
++    if (sound == nullptr) {
++        ESP_LOGW(TAG, "unknown cue: %s", cue ? cue : "(null)");
++        return;
++    }
++    snprintf(current_cue_, sizeof(current_cue_), "%s", cue);
++    // 走主任务调度，避免在 LVGL/串口任务里直接操作音频解码队列
++    Application::GetInstance().Schedule([sound]() {
++        Application::GetInstance().PlaySound(*sound);
++    });
++    ESP_LOGI(TAG, "cue=%s", cue);
++}
++
++bool battle_hud_is_locked() {
++    return locked_;
++}
++
++void battle_hud_unlock() {
++    HudLock lock;
++    locked_ = false;
++    ApplyExpression("neutral");
++    ESP_LOGI(TAG, "HUD unlocked");
++}
++
++// 截屏：把当前屏幕快照成 RGB565 裸数据，便于本机核对「设备实际渲染成什么样」
++bool battle_hud_snapshot(uint8_t **out, size_t *len, int *w, int *h) {
++    if (out == nullptr || len == nullptr || w == nullptr || h == nullptr) {
++        return false;
++    }
++    *out = nullptr;
++#if !LV_USE_SNAPSHOT
++    ESP_LOGW(TAG, "snapshot: LV_USE_SNAPSHOT 未开启");
++    return false;
++#endif
++    HudLock lock;
++    lv_display_t *disp = lv_display_get_default();
++    if (disp == nullptr) {
++        ESP_LOGW(TAG, "snapshot: no display");
++        return false;
++    }
++    int32_t width = lv_display_get_horizontal_resolution(disp);
++    int32_t height = lv_display_get_vertical_resolution(disp);
++    lv_draw_buf_t *buf = lv_draw_buf_create(width, height, LV_COLOR_FORMAT_RGB565, 0);
++    if (buf == nullptr) {
++        ESP_LOGW(TAG, "snapshot: draw buf create failed");
++        return false;
++    }
++    if (lv_snapshot_take_to_draw_buf(lv_screen_active(), LV_COLOR_FORMAT_RGB565, buf) != LV_RESULT_OK) {
++        lv_draw_buf_destroy(buf);
++        ESP_LOGW(TAG, "snapshot: take failed");
++        return false;
++    }
++    size_t row_bytes = static_cast<size_t>(width) * 2;
++    size_t bytes = row_bytes * height;
++    uint8_t *mem = static_cast<uint8_t *>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM));
++    if (mem == nullptr) {
++        mem = static_cast<uint8_t *>(heap_caps_malloc(bytes, MALLOC_CAP_DEFAULT));
++    }
++    if (mem == nullptr) {
++        lv_draw_buf_destroy(buf);
++        return false;
++    }
++    uint32_t stride = buf->header.stride != 0 ? buf->header.stride : row_bytes;
++    for (int32_t y = 0; y < height; y++) {
++        memcpy(mem + static_cast<size_t>(y) * row_bytes,
++               static_cast<uint8_t *>(buf->data) + static_cast<size_t>(y) * stride, row_bytes);
++    }
++    lv_draw_buf_destroy(buf);
++    *out = mem;
++    *len = bytes;
++    *w = width;
++    *h = height;
++    return true;
++}
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/battle_hud.h /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_hud.h
+--- ./main/display/battle_hud.h	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_hud.h	2026-10-31 17:11:50
+@@ -0,0 +1,72 @@
++// 战斗 HUD：8 表情 + 生命条 + 5 闪电能量 + 大招徽记三态
++// 状态由服务端权威派生后通过 MCP / 串口命令下发，设备只负责渲染与提示音
++#pragma once
++
++#include <lvgl.h>
++
++#include "display.h"
++#include <stdbool.h>
++#include <stddef.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/** 一次 HUD 展示快照（字段与外观一一对应，不含文字） */
++typedef struct {
++    const char *expression;  /* 表情名：neutral/attack/hurt/guard/dodge/ultready/victory/defeat */
++    bool battle;             /* 是否在战斗中；false 时只画表情，不画资源行与徽记 */
++    const char *mode;        /* 对局形态："pvp" 上排对手、下排自己；"solo" 上排自己；NULL 按 pvp */
++    int hp;
++    int max_hp;
++    int energy;
++    int max_energy;
++    int ult;                 /* 0=未就绪 1=可释放 2=本局已用 */
++    int seq;                 /* 状态序号，用于去重与补发判断 */
++    const char *cue;         /* 音效名，可为 NULL */
++    int hold_ms;             /* 表情保持时长（毫秒），0 表示常驻 */
++
++    /* 对面玩家（两块屏相对摆放：本设备显示「对手在上一行、自己在下一行」）。
++       没有对手（单人等待加入）时 has_opponent=false，上排整行隐藏。 */
++    bool has_opponent;
++    int opp_hp;
++    int opp_max_hp;
++    int opp_energy;
++    int opp_max_energy;
++    int opp_ult;             /* 0=未就绪 1=可释放 2=本局已用 */
++} battle_hud_state_t;
++
++/** 创建 HUD 层（在 LcdDisplay::SetupUI 末尾调用，沿用同一块屏幕） */
++// 传入 display：板级构造函数里 Board::GetInstance() 尚未就绪，不能反查单例
++void battle_hud_create(Display* display);
++
++/** 应用一次状态；返回 false 表示入参非法 */
++bool battle_hud_apply(const battle_hud_state_t *state);
++
++/** 设置表情（platform 情绪或临时表情用；HUD 接管后忽略） */
++void battle_hud_set_expression(const char *expression, int hold_ms);
++
++/** 当前状态导出为 JSON（供 hud.get_state 与 MCP 工具返回） */
++void battle_hud_get_state_json(char *out, size_t out_len);
++
++/** 播报音效名对应的内置 ogg */
++void battle_hud_play_cue(const char *cue);
++
++/** 是否已由战斗状态接管显示（接管后忽略平台情绪） */
++bool battle_hud_is_locked(void);
++
++/** 解除接管：回到待命表情，恢复平台情绪可用 */
++void battle_hud_unlock(void);
++
++/** 启动串口命令通道（USB Serial/JTAG，JSON-RPC 风格） */
++// 截取当前屏幕为 RGB565 位图；成功时 *out 需调用方 heap_caps_free 释放
++bool battle_hud_snapshot(uint8_t **out, size_t *len, int *w, int *h);
++void battle_ctl_start(void);
++// 异步启动 8 表情/音效演示（开机自检与 hud.demo 共用）
++void battle_demo_start(void);
++// 注册 self.hud.* 设备 MCP 工具（由 battle_ctl_start 调用）
++void battle_mcp_register(void);
++
++#ifdef __cplusplus
++}
++#endif
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/battle_pull.cc /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_pull.cc
+--- ./main/display/battle_pull.cc	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_pull.cc	2026-10-31 17:12:05
+@@ -0,0 +1,284 @@
++// 战斗 HUD 拉取（HudClient）
++// 服务端在 /device/mcp 暴露只读工具 game_hud，返回一帧可直接渲染的画面状态；
++// 本模块按 seq 去重后交给 battle_hud 渲染，并负责把 cue 转成提示音。
++#include "battle_pull.h"
++
++#include "battle_hud.h"
++#include "board.h"
++#include "mcp_server.h"
++#include "settings.h"
++
++#include <cJSON.h>
++#include <esp_log.h>
++#include <esp_mac.h>
++#include <freertos/FreeRTOS.h>
++#include <freertos/task.h>
++
++#include <cstdio>
++#include <cstring>
++#include <string>
++
++namespace {
++constexpr char TAG[] = "BattlePull";
++
++// 配置存在 NVS 独立命名空间，避免写入语音/网络已有的键
++constexpr char kNamespace[] = "hud";
++constexpr char kKeyUrl[] = "url";
++constexpr char kKeyEnabled[] = "enabled";
++
++constexpr int kHttpTimeoutMs = 6000;   // 单次请求上限
++constexpr int kLongPollMs = 1500;      // 服务端长轮询等待，避免空转
++constexpr int kPollIntervalMs = 1200;  // 两次拉取间隔
++constexpr int kFailBackoffMs = 3000;   // 失败退避，避免打满网络
++
++int g_last_seq = -1;          // 已应用帧号，用于去重
++int g_request_id = 0;         // JSON-RPC 请求号
++int64_t g_last_warn_tick = 0; // 日志限频
++
++struct PullConfig {
++    std::string url;
++    bool enabled = false;
++};
++
++PullConfig LoadConfig() {
++    Settings settings(kNamespace, false);
++    PullConfig config;
++    config.url = settings.GetString(kKeyUrl, "");
++    config.enabled = settings.GetBool(kKeyEnabled, false);
++    return config;
++}
++
++// 设备身份用 WiFi STA MAC，与服务端 deviceId 口径一致
++std::string DeviceIdHeader() {
++    uint8_t mac[6] = {};
++    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) {
++        return {};
++    }
++    char buffer[18];
++    std::snprintf(buffer, sizeof(buffer), "%02x:%02x:%02x:%02x:%02x:%02x",
++                  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
++    return buffer;
++}
++
++void WarnThrottled(const char *message, int status) {
++    int64_t now = esp_log_timestamp();
++    if (now - g_last_warn_tick < 30000) {
++        return;
++    }
++    g_last_warn_tick = now;
++    ESP_LOGW(TAG, "%s (status=%d)", message, status);
++}
++
++// 从 JSON-RPC 响应体里取出 content[0].text（兼容 SSE 的 data: 行）
++std::string ExtractHudText(const std::string &body) {
++    const char *start = std::strchr(body.c_str(), '{');
++    if (start == nullptr) {
++        return {};
++    }
++    cJSON *root = cJSON_Parse(start);
++    if (root == nullptr) {
++        return {};
++    }
++    std::string text;
++    const cJSON *result = cJSON_GetObjectItemCaseSensitive(root, "result");
++    const cJSON *content = cJSON_GetObjectItemCaseSensitive(result, "content");
++    const cJSON *first = cJSON_GetArrayItem(content, 0);
++    const cJSON *text_item = cJSON_GetObjectItemCaseSensitive(first, "text");
++    if (cJSON_IsString(text_item) && text_item->valuestring != nullptr) {
++        text = text_item->valuestring;
++    }
++    cJSON_Delete(root);
++    return text;
++}
++
++int IntField(const cJSON *root, const char *key, int fallback) {
++    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
++    return cJSON_IsNumber(item) ? item->valueint : fallback;
++}
++
++bool BoolField(const cJSON *root, const char *key, bool fallback) {
++    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
++    if (cJSON_IsBool(item)) {
++        return cJSON_IsTrue(item);
++    }
++    return fallback;
++}
++
++std::string StringField(const cJSON *root, const char *key) {
++    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
++    return (cJSON_IsString(item) && item->valuestring != nullptr) ? item->valuestring : "";
++}
++
++// 解析一帧 HUD 状态；帧号未变化则直接忽略
++bool ApplyHudJson(const std::string &json) {
++    cJSON *root = cJSON_Parse(json.c_str());
++    if (root == nullptr) {
++        ESP_LOGW(TAG, "bad hud json: %s", json.c_str());
++        return false;
++    }
++
++    const int seq = IntField(root, "seq", -1);
++    if (seq >= 0 && seq == g_last_seq) {
++        cJSON_Delete(root);
++        return false;
++    }
++
++    // 字符串字段必须在 apply 调用期间保持有效
++    std::string expression = StringField(root, "expression");
++    std::string cue = StringField(root, "cue");
++    if (expression.empty()) {
++        expression = "neutral";
++    }
++
++    battle_hud_state_t state = {};
++    state.expression = expression.c_str();
++    state.hp = IntField(root, "hp", 0);
++    state.max_hp = IntField(root, "max_hp", 1);
++    state.energy = IntField(root, "energy", 0);
++    state.max_energy = IntField(root, "max_energy", 5);
++    state.ult = IntField(root, "ult", 0);
++    state.seq = seq;
++    state.cue = cue.empty() ? nullptr : cue.c_str();
++    state.hold_ms = IntField(root, "hold_ms", 0);
++    state.battle = BoolField(root, "battle", true);
++    std::string mode = StringField(root, "mode");
++    state.mode = mode.empty() ? nullptr : mode.c_str();
++
++    // 对手资源：服务端在同一帧里给出对面玩家的血/能量/大招，缺省时不画上排
++    cJSON *opponent = cJSON_GetObjectItem(root, "opponent");
++    if (cJSON_IsObject(opponent)) {
++        state.has_opponent = true;
++        state.opp_hp = IntField(opponent, "hp", 0);
++        state.opp_max_hp = IntField(opponent, "max_hp", 1);
++        state.opp_energy = IntField(opponent, "energy", 0);
++        state.opp_max_energy = IntField(opponent, "max_energy", 5);
++        state.opp_ult = IntField(opponent, "ult", 0);
++    }
++
++    const bool applied = battle_hud_apply(&state);
++    cJSON_Delete(root);
++    if (applied) {
++        g_last_seq = seq;
++        ESP_LOGI(TAG, "frame seq=%d %s self=%d/%d e%d/%d ult%d opp=%d/%d e%d/%d ult%d cue=%s",
++                 seq, expression.c_str(), state.hp, state.max_hp, state.energy, state.max_energy,
++                 state.ult, state.opp_hp, state.opp_max_hp, state.opp_energy, state.opp_max_energy,
++                 state.opp_ult, cue.empty() ? "-" : cue.c_str());
++    }
++    return applied;
++}
++
++// 一次拉取：POST JSON-RPC tools/call -> game_hud
++void PullOnce(const std::string &url) {
++    auto network = Board::GetInstance().GetNetwork();
++    if (network == nullptr) {
++        WarnThrottled("network not ready", 0);
++        return;
++    }
++    auto http = network->CreateHttp(4);
++    if (http == nullptr) {
++        WarnThrottled("cannot create http", 0);
++        return;
++    }
++
++    char body[256];
++    std::snprintf(body, sizeof(body),
++                  "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"tools/call\","
++                  "\"params\":{\"name\":\"game_hud\",\"arguments\":{\"wait_ms\":%d}}}",
++                  ++g_request_id, kLongPollMs);
++
++    http->SetTimeout(kHttpTimeoutMs);
++    http->SetHeader("Content-Type", "application/json");
++    http->SetHeader("Accept", "application/json, text/event-stream");
++    std::string device_id = DeviceIdHeader();
++    if (!device_id.empty()) {
++        http->SetHeader("X-Linx-Device-Id", device_id);
++    }
++    http->SetKeepAlive(false);
++    http->SetContent(std::string(body));
++
++    if (!http->Open("POST", url)) {
++        WarnThrottled("open failed", http->GetLastError());
++        return;
++    }
++
++    const int status = http->GetStatusCode();
++    std::string response = http->ReadAll();
++    http->Close();
++
++    if (status != 200) {
++        WarnThrottled("unexpected status", status);
++        return;
++    }
++    std::string hud_text = ExtractHudText(response);
++    if (hud_text.empty()) {
++        WarnThrottled("empty hud text", status);
++        return;
++    }
++    ApplyHudJson(hud_text);
++}
++
++void PullTask(void *) {
++    ESP_LOGI(TAG, "HUD pull task started");
++    PullConfig config;
++    while (true) {
++        PullConfig current = LoadConfig();
++        if (!current.enabled || current.url.empty()) {
++            vTaskDelay(pdMS_TO_TICKS(2000));
++            continue;
++        }
++        if (current.url != config.url) {
++            ESP_LOGI(TAG, "pull url -> %s", current.url.c_str());
++            g_last_seq = -1;
++        }
++        config = current;
++
++        PullOnce(config.url);
++        vTaskDelay(pdMS_TO_TICKS(kPollIntervalMs));
++    }
++}
++
++// 配置工具：设置服务端地址并开关拉取（地址留空表示沿用已保存值）
++void RegisterPullTool() {
++    McpServer::GetInstance().AddTool(
++        "self.hud.pull",
++        "设置或查看设备从服务端拉取战斗画面的地址，并开关拉取。"
++        "url 形如 http://192.168.1.10:3000/device/mcp；enabled 为 false 时停止拉取。",
++        PropertyList({
++            Property("url", kPropertyTypeString, ""),
++            Property("enabled", kPropertyTypeBoolean, true),
++        }),
++        [](const PropertyList &properties) -> ReturnValue {
++            const std::string url = properties["url"].value<std::string>();
++            const bool enabled = properties["enabled"].value<bool>();
++            char buffer[320];
++            battle_pull_configure(url.c_str(), enabled, buffer, sizeof(buffer));
++            return std::string(buffer);
++        });
++}
++}  // namespace
++
++bool battle_pull_configure(const char *url, bool enabled, char *out, size_t out_len) {
++    Settings settings(kNamespace, true);
++    std::string saved(url != nullptr ? url : "");
++    if (!saved.empty()) {
++        settings.SetString(kKeyUrl, saved);
++    } else {
++        saved = settings.GetString(kKeyUrl, "");
++    }
++    if (!saved.empty()) {
++        settings.SetBool(kKeyEnabled, enabled);
++    }
++    g_last_seq = -1;
++    g_last_warn_tick = 0;
++    if (out != nullptr && out_len > 0) {
++        std::snprintf(out, out_len, "{\"ok\":true,\"url\":\"%s\",\"enabled\":%s}",
++                      saved.c_str(), enabled ? "true" : "false");
++    }
++    ESP_LOGI(TAG, "pull configured: url=%s enabled=%d", saved.c_str(), enabled ? 1 : 0);
++    return !saved.empty();
++}
++
++void battle_pull_start(void) {
++    RegisterPullTool();
++    xTaskCreate(PullTask, "hud_pull", 6144, nullptr, 2, nullptr);
++}
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/battle_pull.h /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_pull.h
+--- ./main/display/battle_pull.h	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/battle_pull.h	2026-10-31 17:13:21
+@@ -0,0 +1,19 @@
++// 战斗 HUD 拉取（HudClient）：设备定时向服务端 /device/mcp 拉取权威画面状态
++#pragma once
++
++#include <stdbool.h>
++#include <stddef.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/** 启动拉取任务并注册 self.hud.pull 配置工具；未配置地址时不发请求 */
++void battle_pull_start(void);
++
++/** 写入拉取地址并开关（url 为空时沿用已保存值）；成功返回 true 并回填最终地址 */
++bool battle_pull_configure(const char *url, bool enabled, char *out, size_t out_len);
++
++#ifdef __cplusplus
++}
++#endif
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/face_assets.h /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/face_assets.h
+--- ./main/display/face_assets.h	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/face_assets.h	2026-10-31 15:04:07
+@@ -0,0 +1,41 @@
++/* 自动生成：表情位图资源声明与摆放偏移 */
++#pragma once
++#include <lvgl.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++extern const lv_image_dsc_t face_neutral;
++#define FACE_NEUTRAL_X 44
++#define FACE_NEUTRAL_Y 72
++extern const lv_image_dsc_t face_neutral_blink;
++#define FACE_NEUTRAL_BLINK_X 44
++#define FACE_NEUTRAL_BLINK_Y 100
++extern const lv_image_dsc_t face_attack_flat;
++#define FACE_ATTACK_FLAT_X 44
++#define FACE_ATTACK_FLAT_Y 48
++extern const lv_image_dsc_t face_attack;
++#define FACE_ATTACK_X 44
++#define FACE_ATTACK_Y 47
++extern const lv_image_dsc_t face_hurt;
++#define FACE_HURT_X 0
++#define FACE_HURT_Y 48
++extern const lv_image_dsc_t face_guard;
++#define FACE_GUARD_X 44
++#define FACE_GUARD_Y 47
++extern const lv_image_dsc_t face_dodge;
++#define FACE_DODGE_X 44
++#define FACE_DODGE_Y 47
++extern const lv_image_dsc_t face_ultready;
++#define FACE_ULTREADY_X 0
++#define FACE_ULTREADY_Y 47
++extern const lv_image_dsc_t face_victory;
++#define FACE_VICTORY_X 44
++#define FACE_VICTORY_Y 77
++extern const lv_image_dsc_t face_defeat;
++#define FACE_DEFEAT_X 44
++#define FACE_DEFEAT_Y 81
++
++#ifdef __cplusplus
++}
++#endif
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/face_view.cc /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/face_view.cc
+--- ./main/display/face_view.cc	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/face_view.cc	2026-10-31 15:09:45
+@@ -0,0 +1,511 @@
++/**
++ * @file face_view.cc
++ * 表情视图：用设计稿 SVG 渲染出的前景位图（RGB565A8 未压缩、按内容裁剪）合成 8 种表情，
++ * 并驱动交叉淡入、眨眼、受击抖动、闪避残影、举盾、胜利跳跃等动画。
++ *
++ * 为什么不在运行时画矢量：LVGL 9.3 的软件矢量渲染在分条带（partial）刷新下
++ * 坐标换算出错，整帧会被裁掉；预渲染位图 + LVGL 原生动画既保真又省 CPU。
++ */
++#include "face_view.h"
++
++#include <cmath>
++#include <cstring>
++
++#include "face_assets.h"
++
++namespace {
++
++constexpr int kScreenW = 320;
++constexpr int kScreenH = 240;
++
++/* 设计稿底色，顺序与 kFaceCount 一致 */
++constexpr uint32_t kBgColor[kFaceCount] = {
++    0x1A4038, /* neutral  */
++    0x1A4038, /* attack   */
++    0x663E31, /* hurt     */
++    0x273C4D, /* guard    */
++    0x1A4038, /* dodge    */
++    0x854725, /* ultready */
++    0x305426, /* victory  */
++    0x333C4B, /* defeat   */
++};
++
++const char *const kExpressionNames[kFaceCount] = {
++    "neutral", "attack", "hurt", "guard", "dodge", "ultready", "victory", "defeat",
++};
++
++const lv_image_dsc_t *const kFaceImage[kFaceCount] = {
++    &face_neutral, &face_attack, &face_hurt, &face_guard,
++    &face_dodge, &face_ultready, &face_victory, &face_defeat,
++};
++
++/* 前景图按内容裁剪过，摆放时要把裁剪左上角偏移加回来 */
++struct FaceAssetPos {
++    const lv_image_dsc_t *img;
++    int x;
++    int y;
++};
++
++const FaceAssetPos kAssetPos[] = {
++    {&face_neutral, FACE_NEUTRAL_X, FACE_NEUTRAL_Y},
++    {&face_neutral_blink, FACE_NEUTRAL_BLINK_X, FACE_NEUTRAL_BLINK_Y},
++    {&face_attack_flat, FACE_ATTACK_FLAT_X, FACE_ATTACK_FLAT_Y},
++    {&face_attack, FACE_ATTACK_X, FACE_ATTACK_Y},
++    {&face_hurt, FACE_HURT_X, FACE_HURT_Y},
++    {&face_guard, FACE_GUARD_X, FACE_GUARD_Y},
++    {&face_dodge, FACE_DODGE_X, FACE_DODGE_Y},
++    {&face_ultready, FACE_ULTREADY_X, FACE_ULTREADY_Y},
++    {&face_victory, FACE_VICTORY_X, FACE_VICTORY_Y},
++    {&face_defeat, FACE_DEFEAT_X, FACE_DEFEAT_Y},
++};
++
++FaceAssetPos PosOf(const lv_image_dsc_t *src)
++{
++    for (const auto &entry : kAssetPos) {
++        if (entry.img == src) {
++            return entry;
++        }
++    }
++    return {nullptr, 0, 0};
++}
++
++constexpr uint32_t kTickMs = 33;          /* 约 30fps */
++constexpr uint32_t kBgFadeMs = 300;       /* 底色渐变 */
++constexpr uint32_t kFadeMs = 300;         /* 常规表情交叉淡入 */
++constexpr uint32_t kAttackFlatMs = 140;   /* 进攻：平眉浮现 */
++constexpr uint32_t kAttackSlantMs = 380;  /* 进攻：眉变斜、嘴变直 */
++constexpr uint32_t kBlinkCloseMs = 120;   /* 眨眼闭眼时长 */
++constexpr uint32_t kBlinkPeriodMs = 3200; /* 眨眼间隔 */
++constexpr uint32_t kGhostHoldMs = 160;    /* 残影保持时长 */
++constexpr uint32_t kGhostFadeMs = 260;    /* 残影淡出时长 */
++constexpr uint32_t kSwayMs = 900;         /* 闪避摆动衰减时长 */
++
++enum FxKind {
++    kFxNone = 0,
++    kFxHurt = 1,     /* 受击抖动 */
++    kFxVictory = 2,  /* 胜利上跳 */
++    kFxDefeat = 3,   /* 失败下沉 */
++    kFxGuard = 4,    /* 举盾升起 */
++    kFxDodge = 5,    /* 闪避滑入 */
++};
++
++struct FadeAnim {
++    bool active = false;
++    uint32_t start = 0;
++    uint32_t dur = 0;
++    int expr = kFaceNeutral;       /* 淡入完成后上层对应的表情 */
++    int after_expr = -1;           /* 紧接的第二段淡入目标 */
++};
++
++struct FxAnim {
++    FxKind kind = kFxNone;
++    uint32_t start = 0;
++    uint32_t dur = 0;
++};
++
++lv_obj_t *g_root = nullptr;
++lv_obj_t *g_bg = nullptr;
++lv_obj_t *g_img[2] = {nullptr, nullptr};
++lv_obj_t *g_ghost[2] = {nullptr, nullptr};
++
++int g_top = 0;              /* 上层图片下标 */
++int g_expr = kFaceNeutral;  /* 目标表情 */
++int g_shown = kFaceNeutral; /* 上层图片对应的表情 */
++
++FadeAnim g_fade;
++FxAnim g_fx;
++
++float g_offset_x = 0.0f;
++float g_offset_y = 0.0f;
++
++bool g_ghosts_on = false;
++float g_ghost_opa = 0.0f;
++uint32_t g_ghost_start = 0;
++
++bool g_blinking = false;
++uint32_t g_blink_start = 0;
++uint32_t g_next_blink = 0;
++
++uint32_t g_bg_from = 0x1A4038; /* 0xRRGGBB，自己插值，避免 16 位色深下分量精度问题 */
++uint32_t g_bg_to = 0x1A4038;
++uint32_t g_bg_cur = 0x1A4038;
++uint32_t g_bg_start = 0;
++
++inline float EaseOut(float t)
++{
++    return 1.0f - (1.0f - t) * (1.0f - t);
++}
++
++inline float Clamp01(float v)
++{
++    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
++}
++
++inline float Progress(uint32_t now, uint32_t start, uint32_t dur)
++{
++    if (dur == 0) {
++        return 1.0f;
++    }
++    const uint32_t elapsed = now - start;
++    return elapsed >= dur ? 1.0f : static_cast<float>(elapsed) / static_cast<float>(dur);
++}
++
++const lv_image_dsc_t *FaceSource(int expression)
++{
++    if (expression < 0 || expression >= kFaceCount) {
++        return &face_neutral;
++    }
++    return kFaceImage[expression];
++}
++
++/* 把位移与残影透明度同步到所有图元（每张图各自带裁剪偏移） */
++void ApplyTransform(void)
++{
++    for (auto *img : g_img) {
++        if (img == nullptr) {
++            continue;
++        }
++        const FaceAssetPos pos = PosOf(static_cast<const lv_image_dsc_t *>(lv_image_get_src(img)));
++        lv_obj_set_pos(img, static_cast<int32_t>(pos.x + g_offset_x), static_cast<int32_t>(pos.y + g_offset_y));
++    }
++    for (int i = 0; i < 2; i++) {
++        if (g_ghost[i] == nullptr) {
++            continue;
++        }
++        const float dx = (i == 0 ? 28.0f : 56.0f) + g_offset_x;
++        lv_obj_set_pos(g_ghost[i], static_cast<int32_t>(FACE_DODGE_X + dx),
++                       static_cast<int32_t>(FACE_DODGE_Y + g_offset_y));
++        const float weight = (i == 0 ? 1.0f : 0.62f);
++        lv_obj_set_style_image_opa(g_ghost[i],
++                                   static_cast<lv_opa_t>(Clamp01(g_ghost_opa * weight) * 255.0f), 0);
++    }
++}
++
++/* 直接换上层图片，不做淡入 */
++void ShowImmediate(int expression)
++{
++    g_fade.active = false;
++    g_top = g_top;
++    lv_image_set_src(g_img[g_top], FaceSource(expression));
++    lv_obj_remove_flag(g_img[g_top], LV_OBJ_FLAG_HIDDEN);
++    lv_obj_set_style_opa(g_img[g_top], LV_OPA_COVER, 0);
++    lv_obj_add_flag(g_img[1 - g_top], LV_OBJ_FLAG_HIDDEN);
++    g_shown = expression;
++    g_blinking = false;
++    ApplyTransform();
++    if (g_root != nullptr) {
++        lv_obj_invalidate(g_root);
++    }
++}
++
++/* 交叉淡入：新画面画在另一层上，从透明渐显；完成后翻层 */
++void FadeTo(const lv_image_dsc_t *src, int expr, uint32_t dur, int after_expr)
++{
++    /* 上一段淡入未完成就先把它定格，避免两层都在半透明 */
++    if (g_fade.active) {
++        g_fade.active = false;
++        g_top = 1 - g_top;
++        lv_obj_add_flag(g_img[1 - g_top], LV_OBJ_FLAG_HIDDEN);
++        g_shown = g_fade.expr;
++    }
++    const int back = 1 - g_top;
++    lv_image_set_src(g_img[back], src);
++    lv_obj_remove_flag(g_img[back], LV_OBJ_FLAG_HIDDEN);
++    lv_obj_set_style_opa(g_img[back], LV_OPA_TRANSP, 0);
++    g_fade.active = true;
++    g_fade.start = lv_tick_get();
++    g_fade.dur = dur;
++    g_fade.expr = expr;
++    g_fade.after_expr = after_expr;
++    ApplyTransform();
++}
++
++/* 底色渐变起点取当前实际颜色，渐变中途再切换也不会跳变 */
++void StartBgFade(int expression)
++{
++    g_bg_from = g_bg_cur;
++    g_bg_to = kBgColor[expression];
++    g_bg_start = lv_tick_get();
++}
++
++void SetGhosts(bool on)
++{
++    g_ghosts_on = on;
++    g_ghost_opa = 0.0f;
++    g_ghost_start = lv_tick_get();
++    for (auto *ghost : g_ghost) {
++        if (ghost == nullptr) {
++            continue;
++        }
++        if (on && &ghost != &g_ghost[1]) {
++            lv_image_set_src(ghost, &face_dodge);
++            lv_obj_remove_flag(ghost, LV_OBJ_FLAG_HIDDEN);
++        } else {
++            lv_obj_add_flag(ghost, LV_OBJ_FLAG_HIDDEN);
++        }
++    }
++    ApplyTransform();
++}
++
++void TickCallback(lv_timer_t *)
++{
++    if (g_root == nullptr) {
++        return;
++    }
++    const uint32_t now = lv_tick_get();
++
++    /* 底色渐变 */
++    {
++        const float p = Progress(now, g_bg_start, kBgFadeMs);
++        const uint32_t from = g_bg_from;
++        const uint32_t to = g_bg_to;
++        const int32_t r0 = (from >> 16) & 0xFF, g0 = (from >> 8) & 0xFF, b0 = from & 0xFF;
++        const int32_t r1 = (to >> 16) & 0xFF, g1 = (to >> 8) & 0xFF, b1 = to & 0xFF;
++        const int32_t r = r0 + (r1 - r0) * p;
++        const int32_t g = g0 + (g1 - g0) * p;
++        const int32_t b = b0 + (b1 - b0) * p;
++        g_bg_cur = (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(b);
++        lv_obj_set_style_bg_color(g_bg, lv_color_hex(g_bg_cur), LV_PART_MAIN);
++    }
++
++    /* 交叉淡入 */
++    if (g_fade.active) {
++        const float p = Progress(now, g_fade.start, g_fade.dur);
++        lv_obj_set_style_opa(g_img[1 - g_top], static_cast<lv_opa_t>(Clamp01(p) * 255.0f), 0);
++        if (p >= 1.0f) {
++            g_fade.active = false;
++            g_top = 1 - g_top;
++            lv_obj_add_flag(g_img[1 - g_top], LV_OBJ_FLAG_HIDDEN);
++            g_shown = g_fade.expr;
++            const int after = g_fade.after_expr;
++            g_fade.after_expr = -1;
++            /* 进攻是两段式：平眉定格后再过渡到斜眉+平嘴。这里不能用 g_shown 比较，
++               因为第一段的目标表情已经是 attack，比较会把它当成已经到达而跳过第二段。 */
++            if (after >= 0) {
++                FadeTo(FaceSource(after), after, kAttackSlantMs, -1);
++            }
++        }
++    }
++
++    /* 位移动画 */
++    if (g_fx.kind != kFxNone) {
++        const float p = Progress(now, g_fx.start, g_fx.dur);
++        switch (g_fx.kind) {
++            case kFxHurt:
++                g_offset_x = std::sin(p * 3.14159f * 6.0f) * 7.0f * (1.0f - p);
++                break;
++            case kFxVictory:
++                g_offset_y = -std::fabs(std::sin(p * 3.14159f * 2.0f)) * 9.0f * (1.0f - p * 0.5f);
++                break;
++            case kFxDefeat:
++                g_offset_y = 2.5f * EaseOut(p);
++                break;
++            case kFxGuard:
++                g_offset_y = 40.0f * (1.0f - EaseOut(p));
++                break;
++            case kFxDodge:
++                /* 从右侧微微平移进来，落位后交给下方的来回摆动 */
++                g_offset_x = 40.0f * (1.0f - EaseOut(p));
++                break;
++            default:
++                break;
++        }
++        if (p >= 1.0f) {
++            if (g_fx.kind == kFxDefeat) {
++                g_offset_y = 2.5f;
++            } else {
++                g_offset_x = 0.0f;
++                g_offset_y = 0.0f;
++            }
++            g_fx.kind = kFxNone;
++        }
++    }
++
++    /* 闪避：残影渐显、来回摆动，随后缓慢淡出（用户要求残影不要消失太快） */
++    if (g_ghosts_on) {
++        const uint32_t life = now - g_ghost_start;
++        const float rise = Clamp01(static_cast<float>(life) / 220.0f);
++        const float fade = life <= kGhostHoldMs ? 1.0f
++                          : Clamp01(1.0f - static_cast<float>(life - kGhostHoldMs) / kGhostFadeMs);
++        g_ghost_opa = 0.38f * rise * fade;
++        if (g_expr == kFaceDodge) {
++            if (g_fx.kind == kFxNone) {
++                /* 摆幅随生命期衰减，最后静止 */
++                const float decay = Clamp01(1.0f - static_cast<float>(life) / static_cast<float>(kSwayMs));
++                g_offset_x = std::sin(static_cast<float>(now) / 70.0f) * 11.0f * decay;
++            }
++        }
++        if (fade <= 0.0f) {
++            SetGhosts(false);
++            g_offset_x = 0.0f;
++        }
++    }
++
++    /* 大招就绪：整脸轻微呼吸，衬托火焰 */
++    if (g_expr == kFaceUltReady && !g_fade.active) {
++        const float pulse = 0.94f + 0.06f * std::sin(static_cast<float>(now) / 700.0f);
++        lv_obj_set_style_opa(g_img[g_top], static_cast<lv_opa_t>(pulse * 255.0f), 0);
++    } else if (!g_fade.active) {
++        lv_obj_set_style_opa(g_img[g_top], LV_OPA_COVER, 0);
++    }
++
++    /* 待命眨眼 / 其余表情保持当前画面 */
++    if (g_expr == kFaceNeutral && g_shown == kFaceNeutral && !g_fade.active && !g_blinking &&
++        now >= g_next_blink) {
++        g_blinking = true;
++        g_blink_start = now;
++        lv_image_set_src(g_img[g_top], &face_neutral_blink);
++        lv_obj_invalidate(g_root);
++    } else if (g_blinking && now - g_blink_start >= kBlinkCloseMs) {
++        g_blinking = false;
++        g_next_blink = now + kBlinkPeriodMs;
++        lv_image_set_src(g_img[g_top], FaceSource(g_shown));
++        lv_obj_invalidate(g_root);
++    }
++
++    ApplyTransform();
++}
++
++} // namespace
++
++int face_expression_from_name(const char *name)
++{
++    if (name == nullptr) {
++        return -1;
++    }
++    for (int i = 0; i < kFaceCount; i++) {
++        if (strcmp(name, kExpressionNames[i]) == 0) {
++            return i;
++        }
++    }
++    return -1;
++}
++
++void face_view_create(lv_obj_t *parent)
++{
++    if (g_root != nullptr || parent == nullptr) {
++        return;
++    }
++    g_root = lv_obj_create(parent);
++    lv_obj_remove_style_all(g_root);
++    lv_obj_set_size(g_root, kScreenW, kScreenH);
++    lv_obj_set_pos(g_root, 0, 0);
++    lv_obj_remove_flag(g_root, LV_OBJ_FLAG_SCROLLABLE);
++
++    g_bg = lv_obj_create(g_root);
++    lv_obj_remove_style_all(g_bg);
++    lv_obj_set_size(g_bg, kScreenW, kScreenH);
++    lv_obj_set_pos(g_bg, 0, 0);
++    lv_obj_set_style_bg_opa(g_bg, LV_OPA_COVER, LV_PART_MAIN);
++    lv_obj_set_style_bg_color(g_bg, lv_color_hex(kBgColor[kFaceNeutral]), LV_PART_MAIN);
++
++    for (auto &ghost : g_ghost) {
++        ghost = lv_image_create(g_root);
++        lv_image_set_src(ghost, &face_dodge);
++        lv_obj_set_pos(ghost, 0, 0);
++        lv_obj_add_flag(ghost, LV_OBJ_FLAG_HIDDEN);
++        /* 用图片透明度而不是对象透明度：对象 opa=0 会让整块图元直接不可见 */
++        lv_obj_set_style_image_opa(ghost, LV_OPA_TRANSP, 0);
++    }
++    for (auto &img : g_img) {
++        img = lv_image_create(g_root);
++        lv_image_set_src(img, &face_neutral);
++        lv_obj_set_pos(img, 0, 0);
++        lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN);
++    }
++    for (auto &ghost : g_ghost) {
++        ghost = lv_image_create(g_root);
++        lv_image_set_src(ghost, &face_dodge);
++        lv_obj_set_pos(ghost, 0, 0);
++        lv_obj_add_flag(ghost, LV_OBJ_FLAG_HIDDEN);
++        /* 用图片透明度而不是对象透明度：对象 opa=0 会让整块图元直接不可见 */
++        lv_obj_set_style_image_opa(ghost, LV_OPA_TRANSP, 0);
++    }
++
++    g_top = 0;
++    ShowImmediate(kFaceNeutral);
++    g_bg_from = kBgColor[kFaceNeutral];
++    g_bg_to = g_bg_from;
++    g_bg_cur = g_bg_from;
++    g_next_blink = lv_tick_get() + kBlinkPeriodMs;
++    lv_timer_create(TickCallback, kTickMs, nullptr);
++}
++
++void face_view_set(int expression, bool animate)
++{
++    if (g_root == nullptr || expression < 0 || expression >= kFaceCount) {
++        return;
++    }
++    if (expression == g_expr && !g_fade.active && g_fx.kind == kFxNone) {
++        return;
++    }
++    const int prev = g_shown;
++    g_expr = expression;
++    SetGhosts(false);
++    StartBgFade(expression);
++
++    if (!animate) {
++        ShowImmediate(expression);
++        g_offset_x = 0.0f;
++        g_offset_y = 0.0f;
++        g_fx.kind = kFxNone;
++        ApplyTransform();
++        return;
++    }
++
++    switch (expression) {
++        case kFaceAttack:
++            if (prev == kFaceNeutral) {
++                /* 先浮现平直眉毛，再让眉毛变斜、嘴变直 */
++                FadeTo(&face_attack_flat, kFaceAttack, kAttackFlatMs, kFaceAttack);
++            } else {
++                FadeTo(&face_attack, kFaceAttack, kFadeMs, -1);
++            }
++            break;
++        case kFaceHurt:
++            ShowImmediate(kFaceHurt);
++            g_fx.kind = kFxHurt;
++            g_fx.start = lv_tick_get();
++            g_fx.dur = 320;
++            break;
++        case kFaceGuard:
++            FadeTo(&face_guard, kFaceGuard, 200, -1);
++            g_fx.kind = kFxGuard;
++            g_fx.start = lv_tick_get();
++            g_fx.dur = 240;
++            break;
++        case kFaceDodge:
++            SetGhosts(true);
++            FadeTo(&face_dodge, kFaceDodge, 160, -1);
++            g_fx.kind = kFxDodge;
++            g_fx.start = lv_tick_get();
++            g_fx.dur = 280;
++            break;
++        case kFaceVictory:
++            FadeTo(&face_victory, kFaceVictory, 200, -1);
++            g_fx.kind = kFxVictory;
++            g_fx.start = lv_tick_get();
++            g_fx.dur = 1500;
++            break;
++        case kFaceDefeat:
++            FadeTo(&face_defeat, kFaceDefeat, kFadeMs, -1);
++            g_fx.kind = kFxDefeat;
++            g_fx.start = lv_tick_get();
++            g_fx.dur = 700;
++            break;
++        default:
++            FadeTo(FaceSource(expression), expression, kFadeMs, -1);
++            break;
++    }
++    ApplyTransform();
++}
++
++int face_view_current(void)
++{
++    return g_expr;
++}
++
++void face_view_tick(void)
++{
++    TickCallback(nullptr);
++}
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/face_view.h /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/face_view.h
+--- ./main/display/face_view.h	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/face_view.h	2026-10-31 13:46:47
+@@ -0,0 +1,46 @@
++/**
++ * @file face_view.h
++ * 矢量表情视图：按设计稿 SVG 转出的图元数据绘制 8 种表情，并驱动待命/进攻/闪避等动画。
++ */
++#ifndef FACE_VIEW_H
++#define FACE_VIEW_H
++
++#include "lvgl.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/* 表情编号，顺序与 design 稿一致 */
++enum {
++    kFaceNeutral = 0,
++    kFaceAttack,
++    kFaceHurt,
++    kFaceGuard,
++    kFaceDodge,
++    kFaceUltReady,
++    kFaceVictory,
++    kFaceDefeat,
++    kFaceCount
++};
++
++/** 把 state 里的表情名（neutral/attack/...）转成编号，未知返回 -1 */
++int face_expression_from_name(const char *name);
++
++/** 在 parent 上创建整屏表情层 */
++void face_view_create(lv_obj_t *parent);
++
++/** 切换表情；animate=true 时按状态做过渡动画 */
++void face_view_set(int expression, bool animate);
++
++/** 当前表情编号 */
++int face_view_current(void);
++
++/** 主动刷新一帧（一般由内部定时器调用） */
++void face_view_tick(void);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* FACE_VIEW_H */
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/lcd_display.cc /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/lcd_display.cc
+--- ./main/display/lcd_display.cc	2025-12-29 15:04:29
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/lcd_display.cc	2026-10-31 14:13:33
+@@ -14,6 +14,7 @@
+ #include <cstring>
+ 
+ #include "board.h"
++#include "battle_hud.h"
+ 
+ #define TAG "LcdDisplay"
+ 
+@@ -923,6 +924,12 @@
+     lv_obj_set_style_text_color(low_battery_label_, lv_color_white(), 0);
+     lv_obj_center(low_battery_label_);
+     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
++
++    // 战斗 HUD：隐藏聊天式控件，改为表情 + 生命条 + 能量 + 大招徽记
++    lv_obj_add_flag(emoji_box_, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_add_flag(top_bar_, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_add_flag(status_bar_, LV_OBJ_FLAG_HIDDEN);
++    lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+ }
+ 
+ void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
+@@ -981,6 +988,20 @@
+     if (emoji_image_ == nullptr) {
+         return;
+     }
++
++    // 表情统一交给战斗 HUD：未进入对局时按平台情绪粗略映射，对局中由服务端状态接管
++    const char* hud_expression = "neutral";
++    if (emotion != nullptr) {
++        if (strcmp(emotion, "angry") == 0 || strcmp(emotion, "sad") == 0 ||
++            strcmp(emotion, "crying") == 0) {
++            hud_expression = "defeat";
++        } else if (strcmp(emotion, "surprised") == 0 || strcmp(emotion, "shocked") == 0) {
++            hud_expression = "hurt";
++        }
++    }
++    battle_hud_set_expression(hud_expression, 0);
++    ESP_LOGI(TAG, "emotion=%s -> hud %s", emotion ? emotion : "(null)", hud_expression);
++    return;
+ 
+     auto emoji_collection = static_cast<LvglTheme*>(current_theme_)->emoji_collection();
+     auto image = emoji_collection != nullptr ? emoji_collection->GetEmojiImage(emotion) : nullptr;
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/panel_ctrl.cc /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/panel_ctrl.cc
+--- ./main/display/panel_ctrl.cc	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/panel_ctrl.cc	2026-10-31 15:15:26
+@@ -0,0 +1,23 @@
++#include "panel_ctrl.h"
++
++#include "esp_lcd_panel_ops.h"
++#include "esp_log.h"
++
++namespace {
++esp_lcd_panel_handle_t g_panel = nullptr;
++} // namespace
++
++void panel_ctrl_set_handle(esp_lcd_panel_handle_t panel)
++{
++    g_panel = panel;
++}
++
++bool panel_ctrl_invert(bool enable)
++{
++    if (g_panel == nullptr) {
++        return false;
++    }
++    ESP_LOGI("PanelCtrl", "invert colors: %d", (int)enable);
++    esp_lcd_panel_invert_color(g_panel, enable);
++    return true;
++}
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/display/panel_ctrl.h /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/panel_ctrl.h
+--- ./main/display/panel_ctrl.h	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/display/panel_ctrl.h	2026-10-31 15:15:26
+@@ -0,0 +1,8 @@
++/* 面板级控制：颜色反转开关（不同批次 ST7789 的 INVON/INVOFF 相反） */
++#pragma once
++
++#include "esp_lcd_panel_io.h"
++#include "esp_lcd_types.h"
++
++void panel_ctrl_set_handle(esp_lcd_panel_handle_t panel);
++bool panel_ctrl_invert(bool enable);
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./main/idf_component.yml /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/idf_component.yml
+--- ./main/idf_component.yml	2025-12-29 15:04:29
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/main/idf_component.yml	2026-10-31 04:01:15
+@@ -24,7 +24,6 @@
+   78/xiaozhi-fonts: ~1.5.5
+   espressif/led_strip: ~3.0.1
+   espressif/esp_codec_dev: ~1.5
+-  espressif/esp-sr: ~2.2.0
+   espressif/button: ~4.1.3
+   espressif/knob: ^1.0.0
+   espressif/esp_video:
+diff -ruN --exclude=build --exclude=managed_components --exclude=components --exclude=face_assets.c --exclude=battle_assets.c --exclude=lang_config.h --exclude=sdkconfig --exclude=sdkconfig.old --exclude=*.pyc ./sdkconfig.defaults.local /tmp/fwsrc/xiaozhi-esp32-2.1.0/sdkconfig.defaults.local
+--- ./sdkconfig.defaults.local	1970-01-01 08:00:00
++++ /tmp/fwsrc/xiaozhi-esp32-2.1.0/sdkconfig.defaults.local	2026-10-31 16:33:23
+@@ -0,0 +1,12 @@
++# 本机验证用配置（不入库）
++CONFIG_BOARD_TYPE_YUNLIAO_S3=y
++CONFIG_USE_DEVICE_AEC=y
++CONFIG_OTA_URL="https://xrobo.qiniuapi.com/v1/ota/"
++CONFIG_FLASH_NONE_ASSETS=y
++# 控制台走 USB Serial/JTAG：日志与 HUD 串口命令共用一路
++CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
++CONFIG_LV_USE_SNAPSHOT=y
++# 矢量图元绘制（表情用）
++CONFIG_LV_BIN_DECODER_RAM_LOAD=y
++CONFIG_LV_CACHE_DEF_SIZE=4194304
++CONFIG_LV_FONT_MONTSERRAT_12=y

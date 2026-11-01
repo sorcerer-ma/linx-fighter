@@ -62,6 +62,8 @@
 
 ## 固件侧（小智上游 v2.1.0 + 本项目补丁）
 
+完整的可构建源码、历史镜像、补丁与设计资产在仓库 `firmware/` 下（`firmware/src`、`firmware/bin`、`firmware/patch`、`firmware/design`），目录说明见 `firmware/README.md`，版本明细见 `firmware/ARCHIVE.md`。下面只记录服务端需要知道的接口与关键取舍。
+
 固件源码在仓库外：二进制与补丁在 `~/Documents/linx-hud-spike/firmware/`，生成脚本与证据在 `hud/`；仓库只维护通道契约与画面派生规则。
 
 ### 显示栈
@@ -144,7 +146,7 @@
 
 - 服务端：`pnpm typecheck`、`pnpm test`（`test/hud.test.ts` 与 `test/hud-http.test.ts` 覆盖待命帧、瞬时表情、大招三态、帧号去重、长轮询与通道工具面）。
 - 真机：USB 连接后用 `hud/host/mcp_drive.py` 发 `initialize`/`tools/list`/`tools/call`；`self.hud.set_state` 驱动 8 表情与音效，`self.hud.get_state` 回读，`hud.screenshot` 抓整屏比对设计稿。**注意**：截图取自 LVGL 缓冲，看不到面板侧颜色反转，颜色必须人眼确认。
-- 证据（仓库外）：`~/Documents/linx-hud-spike/evidence/`（`final_sheet.png` 8 状态总览、`device_*.png`、`rle_sheet.png` 12 表情 RLE 版本总览、`mcp_transcript.jsonl`）、固件 `firmware/xiaozhi-hud-2.5.0.bin` 与 `xiaozhi-hud-2.5.0.patch`。
+- 证据（仓库内）：`firmware/EVIDENCE.md`、`firmware/ARCHIVE.md`、`firmware/OVERNIGHT-2.5.0.md`；镜像与补丁在 `firmware/bin`、`firmware/patch`。原始截图仍留在仓库外的 `~/Documents/linx-hud-spike/evidence/`（`final_sheet.png` 8 状态总览、`device_*.png`、`rle_sheet.png` 12 表情 RLE 版本总览、`mcp_transcript.jsonl`），体积较大不随仓库分发。
 
 ## 已知限制
 
