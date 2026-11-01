@@ -158,6 +158,7 @@ pnpm sandbox:selfplay --rounds 3
 | MCP 事实协议与事实格式 | [协议设计](docs/engineering/mcp-protocol.md) |
 | 本地开发、命令与调试入口 | [开发与运行](docs/engineering/development.md) |
 | 平台配置、部署与排障 | [接入灵矽平台](docs/engineering/linx-integration.md) |
+| 设备屏幕、表情与固件 | [设备 HUD](docs/engineering/device-hud.md) · [固件源码与归档](firmware/README.md) |
 | 本地沙箱、手机联调与用例 | [沙箱说明](docs/testing/sandbox.md) |
 | 测试矩阵与质量门禁 | [测试与质量](docs/testing/testing.md) |
 | 真机验收与试玩记录 | [验收与试玩](docs/product/acceptance-and-playtest.md) |
