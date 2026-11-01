@@ -384,11 +384,11 @@ void battle_hud_create(Display* display) {
     // 大招徽记：左上=对面玩家，右上=自己；三态由服务端决定
     ult_left_ = lv_image_create(root_);
     lv_image_set_src(ult_left_, &ult_idle);
-    lv_obj_set_pos(ult_left_, 6, 4);
+    lv_obj_set_pos(ult_left_, 6, 2);
 
     ult_right_ = lv_image_create(root_);
     lv_image_set_src(ult_right_, &ult_idle);
-    lv_obj_set_pos(ult_right_, 284, 4);
+    lv_obj_set_pos(ult_right_, 284, 2);
 
     lv_obj_move_foreground(root_);
     ApplyResources();

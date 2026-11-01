@@ -71,3 +71,15 @@
   5. 删除原厂「配网时单击录音再回放」的 AudioTesting 功能；
   6. 补上配网出口：单击退出配网、三击进/出切换，`Board::ExitWifiConfigMode()`。
 - 本地验证：4 张新脸 + 特效、蓝底/残影/状态覆盖三个 bug 已修；`self.hud.emotion` 验证 21→12 映射；`hud.cfg` 验证配网进出后能恢复对话与表情。
+
+---
+
+## 2.5.1 归档
+
+- 镜像：`xiaozhi-hud-2.5.1.bin`，3,137,376 字节，sha256 前 16 位 `ceae14faf1673737`
+- 补丁：`xiaozhi-hud-2.5.1.patch`（236,676 字节 / 4,761 行，对干净上游 v2.1.0，排除 `build/`、`managed_components/`、`components/`、`sdkconfig`、生成位图 `face_assets.c`、`lang_config.h`；本次**包含** `battle_assets.c`，否则图标改动无法从补丁复现）
+- 相对 2.5.0 的变化：
+  1. 三态大招徽记改用设计稿新图：`ult_idle`（双环，空心）、`ult_ready`（火焰 + 实心核心）、`ult_used`（半透明白色细环 + 斜划）各 28×40；
+  2. 徽记位置 `(6,2)` / `(284,2)`，左右分别对应上排（对手）与下排（自己）的大招；
+  3. 图标源文件在 `design/svg/`（`大招好了.svg`、`大招没好.svg`、`大招用完了.svg`），渲染中间产物在 `design/ult3/`。
+- 真机验证：通过串口 MCP 设 `ult=0/1/2` 抓图，三态分别为双环、火焰+实心核心、半透明斜划（`/tmp/hud/evidence/ult3_sheet.png`）。
