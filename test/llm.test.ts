@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { createServer } from 'node:http';
 import {
   askChat,
   askDecision,
@@ -375,21 +376,36 @@ describe('语言模型：askChat', () => {
     assert.equal(await askChat({ apiKey: 'k', timeoutMs: 100, fetchImpl }, CHAT), null);
   });
 
-  it('未注入 fetchImpl 时使用全局 fetch', async () => {
-    const original = globalThis.fetch;
-    const calls: string[] = [];
-    globalThis.fetch = (async (url: string | URL | Request) => {
-      calls.push(String(url));
-      return completion('用全局 fetch。');
-    }) as typeof fetch;
+  it('未注入 fetchImpl 时走内置连接池并复用连接', async () => {
+    // 生产不注入 fetch，默认走 keep-alive 连接池；这里用本地服务同时验证响应解析与连接复用
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk: Buffer) => {
+        body += chunk.toString('utf8');
+      });
+      req.on('end', () => {
+        assert.match(body, /"model":"deepseek\/deepseek-v4-flash"/);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        // 这里回原始响应体：内置连接池路径直接解析 JSON，不经过 Response
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '用连接池。' } }] }));
+      });
+    });
+    let connections = 0;
+    server.on('connection', () => {
+      connections += 1;
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    assert.ok(address !== null && typeof address === 'object');
+    const baseUrl = `http://127.0.0.1:${address.port}`;
     try {
-      assert.equal(
-        await askChat({ apiKey: 'k', timeoutMs: 500 }, CHAT),
-        '用全局 fetch。',
-      );
-      assert.deepEqual(calls, [`${DEFAULT_BASE_URL}/chat/completions`]);
+      const first = await askChat({ apiKey: 'k', baseUrl, timeoutMs: 1000 }, CHAT);
+      const second = await askChat({ apiKey: 'k', baseUrl, timeoutMs: 1000 }, CHAT);
+      assert.equal(first, '用连接池。');
+      assert.equal(second, '用连接池。');
+      assert.equal(connections, 1, '两次调用应复用同一条连接');
     } finally {
-      globalThis.fetch = original;
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 

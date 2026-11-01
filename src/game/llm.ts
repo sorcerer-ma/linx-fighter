@@ -11,6 +11,8 @@
  */
 
 import type { Logger } from '../log.js';
+import { Agent as HttpAgent, request as httpRequest } from 'node:http';
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 
 /** 默认网关根地址；换代理或自建网关时由调用方覆盖 */
 export const DEFAULT_BASE_URL = 'https://api.modelink.ai/v1';
@@ -87,9 +89,96 @@ function readUsage(payload: unknown): TokenUsage | undefined {
   };
 }
 
+/**
+ * 跨回合复用的连接池：决策网关通常在境外，新建连接要付一次 TCP + TLS（实测约 0.7s），
+ * 复用后每回合只付一次推理时间；地址是 http 时走对应的 agent。
+ */
+const httpsAgent = new HttpsAgent({ keepAlive: true, keepAliveMsecs: 60_000, maxSockets: 16 });
+const httpAgent = new HttpAgent({ keepAlive: true, keepAliveMsecs: 60_000, maxSockets: 16 });
+
+interface RawResponse {
+  status: number;
+  text: string;
+}
+
+/** 走连接池发 HTTP POST；传输失败返回 null，由调用方回退 */
+function postRaw(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+  timeoutMs: number,
+): Promise<RawResponse | null> {
+  return new Promise((resolve) => {
+    const target = new URL(url);
+    const isHttps = target.protocol === 'https:';
+    const request = isHttps ? httpsRequest : httpRequest;
+    const req = request(
+      target,
+      {
+        method: 'POST',
+        headers: { ...headers, 'Content-Length': Buffer.byteLength(body) },
+        agent: isHttps ? httpsAgent : httpAgent,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }),
+        );
+      },
+    );
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`timeout after ${timeoutMs}ms`)));
+    req.on('error', () => resolve(null));
+    req.end(body);
+  });
+}
+
+/** 走连接池发一个 JSON POST；返回解析后的负载，失败返回 null */
+async function postWithKeepAlive(
+  options: LlmOptions,
+  url: string,
+  path: string,
+  body: unknown,
+): Promise<unknown | null> {
+  const startedAt = Date.now();
+  const raw = await postRaw(
+    url,
+    {
+      Authorization: `Bearer ${options.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    JSON.stringify(body),
+    options.timeoutMs,
+  );
+  if (raw === null) {
+    options.logger?.warn('模型调用失败', { path, error: 'transport error' });
+    return null;
+  }
+  if (raw.status < 200 || raw.status >= 300) {
+    options.logger?.warn('模型返回异常状态', { path, status: raw.status });
+    return null;
+  }
+  try {
+    const payload: unknown = JSON.parse(raw.text);
+    options.logger?.debug('模型调用完成', {
+      path,
+      latencyMs: Date.now() - startedAt,
+      ...readUsage(payload),
+    });
+    return payload;
+  } catch {
+    options.logger?.warn('模型返回无法解析', { path });
+    return null;
+  }
+}
+
 /** 发一个 JSON POST；任何失败都吞掉并返回 null，细节写日志 */
 async function post(options: LlmOptions, path: string, body: unknown): Promise<unknown | null> {
   const url = `${options.baseUrl ?? DEFAULT_BASE_URL}${path}`;
+  // 测试注入的 fetch 走原路径；生产默认用连接池复用连接
+  if (!options.fetchImpl) {
+    return postWithKeepAlive(options, url, path, body);
+  }
   const fetchImpl = options.fetchImpl ?? fetch;
   const startedAt = Date.now();
   try {
