@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { SandboxAgent } from '../sandbox/platform/agent.js';
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
+import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 import { loadSandboxConfig } from '../sandbox/config.js';
@@ -47,6 +48,38 @@ function sandboxFor(upstream: string): Promise<Server> {
   return listen(createSandboxServer({ config, client }));
 }
 
+/** 起一套独立的游戏服务，供需要单独停掉上游的用例使用 */
+function gameFor(): Promise<Server> {
+  const logger = createLogger('error');
+  const store = new BattleStore({ ttlMs: 60_000 });
+  const rooms = new RoomStore({ ttlMs: 60_000 });
+  const service = new GameService({ store, rooms, logger, random: () => 0 });
+  return listen(createApp({
+    config: { ...loadConfig({}), enableDebugEndpoints: true },
+    logger,
+    store,
+    rooms,
+    service,
+  }));
+}
+
+/** 大厅载荷：与 /api/lobby 的对外契约同形 */
+interface LobbyBody {
+  ok: boolean;
+  generatedAt: number | null;
+  rooms: Array<{ code: string; status: 'waiting' | 'playing'; round: number; createdAt: number; updatedAt: number }>;
+  waiting: number;
+  playing: number;
+  error?: string;
+}
+
+async function lobby(base = sandboxUrl): Promise<LobbyBody> {
+  const response = await fetch(`${base}/api/lobby`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  return (await response.json()) as LobbyBody;
+}
+
 async function say(deviceId: string, text: string): Promise<Record<string, any>> {
   const response = await fetch(`${sandboxUrl}/api/say`, {
     method: 'POST',
@@ -58,18 +91,7 @@ async function say(deviceId: string, text: string): Promise<Record<string, any>>
 }
 
 before(async () => {
-  const logger = createLogger('error');
-  const store = new BattleStore({ ttlMs: 60_000 });
-  const rooms = new RoomStore({ ttlMs: 60_000 });
-  const service = new GameService({ store, rooms, logger, random: () => 0 });
-  const gameApp = createApp({
-    config: { ...loadConfig({}), enableDebugEndpoints: true },
-    logger,
-    store,
-    rooms,
-    service,
-  });
-  gameServer = await listen(gameApp);
+  gameServer = await gameFor();
   sandboxServer = await sandboxFor(urlOf(gameServer));
   sandboxUrl = urlOf(sandboxServer);
 });
@@ -153,6 +175,57 @@ describe('沙箱服务', () => {
     assert.equal(body.error, 'empty_text');
   });
 
+  it('/api/lobby 先看到等待中的挑战房，对方加入后变进行中', async () => {
+    const opened = await say('web-lobby-host', '共鸣对决，发起挑战');
+    assert.equal(opened.ok, true);
+    const code = String(opened.protocol.room);
+    assert.match(code, /^\d{4}$/);
+
+    const waiting = await lobby();
+    assert.equal(waiting.ok, true);
+    assert.equal(waiting.error, undefined);
+    assert.ok(waiting.generatedAt !== null && waiting.generatedAt > 0);
+    const pending = waiting.rooms.find((room) => room.code === code);
+    assert.ok(pending);
+    assert.equal(pending.status, 'waiting');
+    assert.ok(Number.isInteger(pending.round));
+    assert.ok(pending.updatedAt > 0);
+    assert.ok(waiting.waiting >= 1);
+
+    const joined = await say('web-lobby-guest', `接受挑战，编号${code}`);
+    assert.equal(joined.ok, true);
+
+    const playing = await lobby();
+    assert.equal(playing.ok, true);
+    const room = playing.rooms.find((entry) => entry.code === code);
+    assert.ok(room);
+    assert.equal(room.status, 'playing');
+    // 还是同一间房：开房时间不变，轮次跟着该房间的对局走
+    assert.equal(room.createdAt, pending.createdAt);
+    assert.ok(room.round >= 1);
+    assert.ok(playing.playing >= 1);
+  });
+
+  it('/api/lobby 上游停掉时回 ok:false，不抛 500', async () => {
+    const game = await gameFor();
+    const sandbox = await sandboxFor(urlOf(game));
+    try {
+      // 先确认同一套服务能正常读大厅，再停上游，排除「地址本来就错」的错误结论
+      const healthy = await lobby(urlOf(sandbox));
+      assert.equal(healthy.ok, true);
+
+      await new Promise<void>((resolve) => {
+        game.close(() => resolve());
+        game.closeAllConnections();
+      });
+
+      const body = await lobby(urlOf(sandbox));
+      assert.deepEqual(body, { ok: false, rooms: [], waiting: 0, playing: 0, generatedAt: null, error: 'upstream_unreachable' });
+    } finally {
+      await new Promise<void>((resolve) => sandbox.close(() => resolve()));
+    }
+  });
+
   it('未知 /api 路径回 JSON 404', async () => {
     const response = await fetch(`${sandboxUrl}/api/nothing`);
     assert.equal(response.status, 404);
@@ -177,6 +250,38 @@ describe('沙箱服务', () => {
       await new Promise<void>((resolve) => dead.close(() => resolve()));
     }
   });
+});
+
+it('SandboxClient.lobby 对非 2xx 抛 UpstreamError，坏字段归一成安全值', async () => {
+  let status = 500;
+  let payload: unknown = { ok: false, error: 'boom' };
+  const stub = createServer((_req, res) => {
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(payload));
+  });
+  await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${(stub.address() as AddressInfo).port}`;
+  const client = new SandboxClient({ upstream: base, agentId: 'lobby-test', timeoutMs: 3000, logger: createLogger('error') });
+  try {
+    // 非 2xx 一律按上游协议错误抛出，由 /api/lobby 决定降级
+    await assert.rejects(client.lobby(), (error: Error) => error.name === 'UpstreamError');
+
+    // 字段类型不可信：没有房间号的条目丢掉，越界数字换成兜底，缺计数按列表自己数
+    status = 200;
+    payload = {
+      generatedAt: 'yesterday',
+      rooms: [{ code: ' 1234 ', status: 'playing', round: '2', createdAt: 5, updatedAt: 6 }, { code: '' }, null, { code: 42 }],
+      waiting: 'x',
+      playing: -1,
+    };
+    const snapshot = await client.lobby();
+    assert.deepEqual(snapshot.rooms, [{ code: '1234', status: 'playing', round: 0, createdAt: 5, updatedAt: 6 }]);
+    assert.equal(snapshot.waiting, 0);
+    assert.equal(snapshot.playing, 1);
+    assert.equal(typeof snapshot.generatedAt, 'number');
+  } finally {
+    await new Promise<void>((resolve) => stub.close(() => resolve()));
+  }
 });
 
 it('原话Agent经真实MCP执行一次game_say；查询不出招、身份隔离', async () => {

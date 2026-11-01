@@ -22,13 +22,14 @@
 | `pnpm smoke` | 对本地运行中的服务做 MCP 冒烟 |
 | `pnpm demo` | 脱离 MCP，直接跑一局看玩法与播报 |
 | `pnpm sandbox` | 启动本地假平台与沙箱页面，默认 `0.0.0.0:8100` |
+| `pnpm build:sandbox` | 编译可独立运行的沙箱产物 `dist-sandbox/`（公网部署用） |
 | `pnpm sandbox:say --device web-p1 "强攻"` | 以指定身份说一句，观察播报与局面 |
 | `pnpm sandbox:state` / `sandbox:tools` | 查看沙箱当前视角与工具清单 |
 | `pnpm sandbox:selfplay --rounds 3` | 两个假玩家自动打完指定局数 |
 
 ## 配置与数据
 
-- 服务端环境变量见[接入灵矽平台 · 环境变量](linx-integration.md#7-环境变量)，沙箱自己的 `SANDBOX_*` 见[沙箱配置](../testing/sandbox.md#配置项)。
+- 服务端环境变量见[接入灵矽平台 · 环境变量](linx-integration.md#7-环境变量)，沙箱自己的 `SANDBOX_*` 见[沙箱配置](../testing/sandbox.md#配置项)；公网手机部署见[手机对战平台](mobile-platform.md)。
 - 对局、房间与补账都存内存，进程重启即清空；空闲过期由 `BATTLE_TTL_SECONDS` 控制。单实例演示不需要数据库或 Redis。
 - `LOG_LEVEL=debug` 会打印每条进出 MCP 的原始报文，排查平台调用时使用；生产环境不要开。
 

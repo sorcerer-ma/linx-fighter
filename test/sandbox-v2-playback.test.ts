@@ -4,6 +4,8 @@ import { it } from 'node:test';
 import vm from 'node:vm';
 
 const { wantsWait, runWaitLoop } = await import(new URL('../sandbox/public/wait-loop.js', import.meta.url).href);
+const { parseRoomParam, joinCommand, inviteLink, stripRoomParam, lobbyRooms, lobbyNotice, pageMode } = await import(new URL('../sandbox/public/lobby.js', import.meta.url).href);
+const { actionBarView } = await import(new URL('../sandbox/public/actions.js', import.meta.url).href);
 const script = readFileSync(new URL('../sandbox/public/app.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise<void>(resolve => setImmediate(resolve)); };
 const outcome = (reply: string, need = 'move') => ({ ok: true, isError: false, reply, silent: false, protocol: { v: 2, ok: true, need, phase: 'battle', events: [] } });
@@ -16,6 +18,7 @@ function harness(audio = true, cloud = false, configOverrides: Record<string, un
     if (!nodes.has(id)) nodes.set(id, {
       hidden: id === 'composer', textContent: '', value: '', dataset: {}, attrs: {}, events: {}, children: [],
       replaceChildren(...children: any[]) { this.children = children; },
+      appendChild(child: any) { this.children.push(child); },
       setAttribute(key: string, value: string) { this.attrs[key] = value; },
       addEventListener(key: string, value: unknown) { this.events[key] = value; },
       getBoundingClientRect() { return { bottom: 0, top: 0 }; }, focus() {},
@@ -26,7 +29,7 @@ function harness(audio = true, cloud = false, configOverrides: Record<string, un
     start() { this.enabled = true; }, stop() { this.enabled = false; this.active = false; },
     pause() { this.paused = true; }, resume() { this.resumes++; if (this.enabled) this.paused = false; },
   };
-  const document = { hidden: false, getElementById: node, createElement() { return { value: '', textContent: '' }; }, querySelector() { return null; },
+  const document = { hidden: false, visibilityState: 'visible', body: { dataset: {} }, getElementById: node, createElement() { return { value: '', textContent: '', dataset: {}, className: '', children: [] as any[], appendChild(child: any) { this.children.push(child); }, setAttribute() {}, addEventListener() {} }; }, querySelector() { return null; },
     addEventListener(name: string, fn: () => void) { docEvents[name] = fn; }, documentElement: { style: { setProperty() {} } },
   };
   const window: any = { location: { search: '?player=test' }, sessionStorage: { getItem() { return null; }, setItem() {} },
@@ -44,6 +47,8 @@ function harness(audio = true, cloud = false, configOverrides: Record<string, un
   }
   const fetch = (url: string, init: any = {}) => {
     if (url === '/api/config') return Promise.resolve({ ok: true, json: async () => ({ agentMode: 'relay', eventsUrl: '/events', voice:{asr:'browser',tts:cloud ? 'backend' : 'browser'}, ...profileConfig, ...configOverrides }) });
+    // 大厅轮询是页面后台请求，不占 say/wait 断言序列。
+    if (url === '/api/lobby') return Promise.resolve({ ok: true, json: async () => ({ ok: true, rooms: [] }) });
     let resolve: (data: any) => void = () => {};
     const promise = new Promise<any>(done => { resolve = done; });
     calls.push({ url, init, respond(data: any) { resolve({ ok: true, json: async () => data }); } });
@@ -61,6 +66,7 @@ function harness(audio = true, cloud = false, configOverrides: Record<string, un
     createConversation: () => ({ append(role: string, text: string) { messages.push({ role, text }); } }),
     createListeningSession(options: any) { listeningOptions = options; return listener; },
     companionView() { return {}; }, renderCompanion() {}, opponentDetails() { return ''; }, newSettlement() { return null; },
+    parseRoomParam, joinCommand, inviteLink, stripRoomParam, lobbyRooms, lobbyNotice, pageMode, actionBarView,
     setTimeout(fn: () => void) { const id = ++timerId; timers.set(id, fn); return id; }, clearTimeout(id: number) { timers.delete(id); },
   }));
   return { nodes, messages, utterances, calls, listener, cloudItems,
@@ -231,12 +237,12 @@ it('真实音频失败或取消清空剩余段，不等待、不重做MCP',async
   }
 });
 
-it('选择器恰好绑定三套音色与性格，默认为灿灿，改变选择不发起游戏调用', async () => {
+it('选择器恰好绑定三套精灵，默认为灿灿，改变选择不发起游戏调用', async () => {
   const h = harness(); await h.ready();
   assert.deepEqual(h.nodes.get('speech-profile').children.map((item: any) => [item.value, item.textContent]), profileConfig.speechProfiles.map(item => [item.id, item.name]));
   assert.equal(h.nodes.get('speech-profile').value, 'cancan');
   h.profile('qingcang');
-  assert.match(h.nodes.get('profile-status').textContent, /擎苍.*沉稳有斗志/);
+  assert.equal(h.nodes.get('speech-profile').value, 'qingcang');
   assert.equal(h.calls.length, 0); assert.equal(h.listener.enabled, true);
   h.input('开始'); assert.equal(JSON.parse(h.calls[0].init.body).profileId, 'qingcang');
 });
@@ -246,7 +252,7 @@ it('回合锁定同一 profile：say、逐段 TTS 和 wait 一致，切换后旧
   assert.equal(h.cloudItems[0].item.profileId, 'qingcang'); h.cloudItems[0].finish(); await flush();
   assert.equal(h.cloudItems[1].item.profileId, 'qingcang'); h.cloudItems[1].finish(); await flush();
   assert.equal(JSON.parse(h.calls[1].init.body).profileId, 'qingcang');
-  assert.match(h.nodes.get('speech-detail').textContent, /模型演绎.*speaker-qingcang.*情绪意图/);
+  assert.equal(h.nodes.get('replies').dataset.speechProfile, 'qingcang');
   h.profile('tiancai'); assert.equal(h.calls[1].init.signal.aborted, true);
   h.calls[1].respond({ ...outcome('旧音色回复'), profileId: 'qingcang' }); await flush();
   assert.equal(h.messages.some(item => item.text === '旧音色回复'), false);
@@ -266,7 +272,6 @@ it('切换取消正在播放的旧 profile 和剩余段，迟到 say 不播，�
 it('未知选择或回包 profile 不静默替换；错误配置阻止发送', async () => {
   const h = harness(); await h.ready(); h.profile('not-a-profile');
   assert.equal(h.nodes.get('speech-profile').value, 'cancan');
-  assert.match(h.nodes.get('profile-status').textContent, /未知/);
   h.input('开始'); h.calls[0].respond({ ...outcome('不能用的回包'), profileId: 'tiancai' }); await flush();
   assert.equal(h.utterances.length, 0);
   assert.equal(h.messages.some(item => item.text === '不能用的回包'), false);

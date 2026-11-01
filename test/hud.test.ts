@@ -256,6 +256,20 @@ describe('事实投影', () => {
     assert.equal(hud.maxHp, 14);
     assert.equal(hud.maxEnergy, 5);
   });
+
+  it('事实缺省房间、轮次、形态与更新时间时用空值兜底', () => {
+    const hud = hudFromFacts({
+      events: [],
+      next: 'act',
+      you: { hp: 14, maxHp: 14, energy: 3, maxEnergy: 5, ultimateRemaining: 1, ultimateReady: false },
+    }, null, NOW);
+
+    assert.equal(hud.room, null);
+    assert.equal(hud.round, 0);
+    assert.equal(hud.mode, null);
+    assert.equal(hud.waiting, false);
+    assert.equal(hud.updatedAt, NOW);
+  });
 });
 
 describe('结局定格', () => {

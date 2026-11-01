@@ -7,6 +7,7 @@ import { extractAdminToken, isAdminAllowed } from '../admin/access.js';
 import { buildAdminOverview } from '../admin/overview.js';
 import { ADMIN_PAGE_HTML, adminDeniedPage } from '../admin/page.js';
 import { createRateLimiter } from '../admin/ratelimit.js';
+import { buildLobby } from '../game/lobby.js';
 import { createPushEngine, type PushKind } from '../game/push.js';
 import type { GameService } from '../game/service.js';
 import type { BattleState } from '../game/state.js';
@@ -109,11 +110,12 @@ export function createApp(deps: AppDependencies): express.Express {
   // 否则恒为 127.0.0.1，按来源限速会退化成全局限速。
   app.set('trust proxy', 'loopback');
 
-  // 记下每一个入站请求：接入阶段用来看"平台到底有没有打过来、打的是哪个路径"
+  // 记下每一个入站请求：接入阶段用来看"平台到底有没有打过来、打的是哪个路径"。
+  // 健康检查与大厅轮询是页面按秒打的高频只读请求，不记，免得把日志刷满。
   app.use((req, res, next) => {
     const startedAt = Date.now();
     res.on('finish', () => {
-      if (req.path === '/health') return;
+      if (req.path === '/health' || req.path === '/rooms') return;
       logger.info(res.statusCode === 404 ? '收到未知路径请求' : '收到 HTTP 请求', {
         method: req.method,
         path: req.path,
@@ -151,6 +153,7 @@ export function createApp(deps: AppDependencies): express.Express {
         health: '/health',
         events: '/events',
         state: '/state',
+        rooms: '/rooms',
         device: '/device/mcp',
         admin: '/admin',
       },
@@ -281,6 +284,17 @@ export function createApp(deps: AppDependencies): express.Express {
     };
     res.on('close', close);
     res.on('error', close);
+  });
+
+  /**
+   * 公开大厅：手机页面按房间号找对手。
+   *
+   * 只读快照，不调 service、不推进任何对局；对外只有房间号、状态、轮次与时间，
+   * 设备身份不出这一层。允许任意来源跨域，页面部署在别的域也能轮询。
+   */
+  app.get('/rooms', (_req, res) => {
+    res.set({ 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+    res.json({ ok: true, ...buildLobby({ rooms: rooms.list(), battles: store.list() }) });
   });
 
   // 后台监控页：只读围观双人房与单人局，不提供开局、出招、改数值任何写操作

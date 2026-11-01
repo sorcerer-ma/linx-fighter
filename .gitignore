@@ -6,3 +6,5 @@ dist/
 coverage/
 __pycache__/
 docs/xrobot-dev-spec/
+
+dist-sandbox/

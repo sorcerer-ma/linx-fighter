@@ -1,0 +1,25 @@
+# 共鸣：闻声对决 —— 手机沙箱 systemd 单元
+# 安装：cp deploy/linx-sandbox.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now linx-sandbox
+[Unit]
+Description=Linx Fighter mobile sandbox
+# 沙箱只做转发与页面，游戏服务不在时也能起来，只是页面会提示上游不可用
+Wants=network-online.target
+After=network-online.target linx-fighter.service
+
+[Service]
+Type=simple
+User=linx
+Group=linx
+WorkingDirectory=/opt/linx-fighter
+# 运行配置只放这里，不进仓库；没有该文件时用 config.ts 的默认值
+EnvironmentFile=-/etc/linx-sandbox.env
+ExecStart=/usr/local/bin/node /opt/linx-fighter/dist-sandbox/sandbox/server.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

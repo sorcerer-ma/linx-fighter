@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import type { BattleState, HistoryEntryState } from '../src/game/state.js';
-const { companionView, newSettlement, opponentDetails } = await import(new URL('../sandbox/public/companion.js', import.meta.url).href);
+const { companionView, newSettlement, resourceRows, opponentUltimate } = await import(new URL('../sandbox/public/companion.js', import.meta.url).href);
 function battle(overrides: Partial<BattleState> = {}): BattleState {
   return {battleId:'test-battle',room:'1234',mode:'pvp',side:'player',phase:'battle',round:1,active:'player',firstMover:'player',pending:null,waiting:false,you:{name:'伙伴',hp:14,maxHp:14,ap:4,maxAp:5,ultLeft:1},opponent:{name:'对手',hp:18,maxHp:18,ap:3,maxAp:5,ultLeft:1},winner:null,history:[],updatedAt:1,...overrides};
 }
@@ -36,14 +36,19 @@ it('初次载入、查询重复、换房和历史替换不重播战果', () => {
   assert.equal(newSettlement(before,battle({history:[{...hit,action:'charge'}]})),null);
 });
 
-it('对手调试只显示可信公开快照，明确缺席与阶段视角', () => {
-  assert.ok(!opponentDetails(battle(),false).includes('18'));
-  assert.ok(opponentDetails(null,true).includes('尚无对局'));
-  assert.ok(opponentDetails(battle({waiting:true}),true).includes('还没有接受挑战'));
-  const b=battle({pending:{actor:'player',move:'light',moveLabel:'普攻',damage:999}});
-  const text=opponentDetails(b,true);
-  assert.ok(text.includes('18 / 18'));assert.ok(text.includes('需要应对'));assert.ok(!text.includes('999'));
-  assert.ok(opponentDetails(battle({phase:'victory'}),true).includes('对手已被击倒'));
+it('资源第一行自己、第二行对手，等对手加入时只留自己', () => {
+  assert.deepEqual(resourceRows(battle()).map((row: any) => row.key), ['self', 'opponent']);
+  assert.deepEqual(resourceRows(battle({waiting:true})).map((row: any) => row.key), ['self']);
+  assert.deepEqual(resourceRows(null), []);
+});
+
+it('对手大招徽记按公开资源显示，等待或没有对手时隐藏', () => {
+  assert.equal(opponentUltimate(battle()), 'insufficient');
+  assert.equal(opponentUltimate(battle({opponent:{...battle().opponent,ap:4}})), 'ready');
+  assert.equal(opponentUltimate(battle({opponent:{...battle().opponent,ultLeft:0}})), 'used');
+  assert.equal(opponentUltimate(battle({waiting:true})), 'hidden');
+  assert.equal(opponentUltimate(null), 'hidden');
+  assert.equal(opponentUltimate(battle({phase:'victory'})), 'ended');
 });
 
 it('终局胜负优先于实际收音，只有服务端新对局解除终局', () => {

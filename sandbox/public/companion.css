@@ -405,3 +405,126 @@ summary span{font-size:10px}
 @media(min-width:760px){
   .dock{position:static;margin-top:16px;padding-bottom:0;background:transparent;border-top:0;box-shadow:none}
 }
+
+/* ---- 大厅、等待房与出招按钮：同一套硬件面板质感，手机优先 ---- */
+
+.lobby{margin:10px 0 4px;padding:12px;border:1px solid #a5bca3;border-radius:14px;background:linear-gradient(180deg,#f7faf0,#e8efe1);box-shadow:inset 0 0 0 1px #ffffff8c}
+.lobby-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.lobby h2{margin:0;font-size:17px;letter-spacing:.06em}
+.lobby-summary{margin:0;font-size:12px;line-height:1.45;color:var(--muted)}
+.lobby-summary[data-tone="warn"]{color:#8a4a39}
+.lobby-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.lobby-button{min-height:44px;padding:0 14px;font:inherit;font-size:14px;font-weight:650;color:var(--ink);background:#eef4e7;border:1px solid #a5bca3;border-radius:10px;cursor:pointer;touch-action:manipulation}
+.lobby-button.primary{background:#345d4c;border-color:#2c5040;color:#f3f7e8}
+.lobby-button.danger{background:#f3e9dd;border-color:#c3a98c;color:#6b3f2c}
+.lobby-button:disabled{opacity:.55;cursor:not-allowed}
+.join-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.join-label{font-size:12px;font-weight:650;letter-spacing:.1em;color:var(--muted)}
+.room-code-input{flex:0 1 112px;min-width:88px;min-height:44px;padding:0 10px;font:inherit;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.2em;text-align:center;color:var(--ink);background:#fbfdf5;border:1px solid #a5bca3;border-radius:10px}
+.room-list-wrap{margin-top:12px;border-top:1px dashed #b6c6b1;padding-top:8px}
+.room-list-wrap h3{margin:0 0 6px;font-size:12px;letter-spacing:.12em;color:var(--muted)}
+.room-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.room-item{display:flex;align-items:center;gap:8px;min-width:0;min-height:44px;padding:4px 6px 4px 10px;border:1px solid #c2d0bd;border-radius:10px;background:#fbfdf5}
+.room-item[data-status="playing"]{background:#eef1e7;border-style:dashed}
+.room-item-code{font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.16em;font-size:15px}
+.room-item-meta{flex:1;min-width:0;font-size:12px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
+.room-item-join{flex:0 0 auto;min-height:44px;min-width:64px;padding:0 14px;font:inherit;font-size:14px;font-weight:700;color:#f3f7e8;background:#345d4c;border:1px solid #2c5040;border-radius:9px}
+.room-item-join:disabled{opacity:.55}
+.room-item-tag{flex:0 0 auto;padding:4px 8px;border:1px solid #aebdaa;border-radius:999px;font-size:11px;color:var(--muted);background:#e7ecdf}
+.room-empty{margin:6px 0 0;font-size:12px;line-height:1.55;color:var(--muted)}
+
+.room-card{margin:8px 0 0;padding:10px 12px;border:1px solid #a5bca3;border-radius:12px;background:linear-gradient(180deg,#f1f7e8,#e4ecdc)}
+.room-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.room-card h2{margin:0;font-size:15px;letter-spacing:.04em}
+.room-code-label{font-variant-numeric:tabular-nums;letter-spacing:.18em;font-size:18px;color:#2f5747}
+.room-state{font-size:11px;padding:3px 8px;border:1px solid #b7c8b1;border-radius:999px;color:var(--muted);background:#f7faf0}
+.room-hint{margin:6px 0 8px;font-size:12px;line-height:1.5;color:var(--muted)}
+.room-actions{display:flex;gap:8px;flex-wrap:wrap}
+.copy-status{margin:6px 0 0;font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+
+.battle-actions{padding:2px 0 8px}
+.action-hint{margin:0 0 6px;font-size:12px;line-height:1.4;color:var(--muted)}
+.action-buttons{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.action-buttons[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
+.action-buttons[data-count="1"]{grid-template-columns:minmax(0,1fr)}
+.action-button{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:44px;padding:6px 2px;font:inherit;font-size:14px;font-weight:700;line-height:1.15;color:var(--ink);background:#e8efe1;border:1px solid #a5bca3;border-radius:10px;touch-action:manipulation}
+.action-button[data-tone="attack"]{background:#dcebd3;border-color:#93b489}
+.action-button[data-tone="ult"]{background:#d6e9c3;border-color:#7fa96a;color:#22402f}
+.action-button[data-tone="calm"]{background:#e9f0e2}
+.action-button[data-tone="defend"]{background:#e0ece7;border-color:#93b3a8}
+.action-button[data-tone="risk"]{background:#efe9dc;border-color:#c0ae90}
+.action-button[data-tone="ghost"]{background:transparent}
+.action-button:disabled{opacity:.5;cursor:not-allowed}
+.action-label{white-space:nowrap}
+.action-cost{font-size:10px;font-weight:600;line-height:1;color:var(--muted);white-space:nowrap}
+.action-note{font-size:10px;font-weight:550;color:var(--muted);text-align:center}
+/* 退出入口独立一行，低干扰、不参与招式网格 */
+.action-utility{display:flex;justify-content:center;margin-top:6px}
+.action-utility[hidden]{display:none!important}
+.action-utility-button{min-height:44px;padding:0 16px;font:inherit;font-size:12px;color:var(--muted);background:transparent;border:1px dashed #b3c2ae;border-radius:10px;touch-action:manipulation}
+.action-utility-button:disabled{opacity:.45}
+
+/* 320px 一档：收窄左右留白与按钮间距，绝不横向滚动 */
+@media(max-width:359px){
+  .app{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+  .action-buttons{gap:4px}
+  .action-button{font-size:13px;padding:5px 1px}
+  .lobby-button{padding:0 11px}
+  .room-item-code{font-size:14px}
+}
+/* 矮屏优先保住输入区：提示压成一行高度，按钮仍保持 44px */
+@media(max-width:759px) and (max-height:700px){
+  .action-hint{font-size:11px;margin-bottom:4px}
+  .lobby{margin-top:6px;padding:10px}
+  .room-list-wrap{margin-top:8px}
+}
+/* 文字输入展开时按钮区由脚本隐藏，这里只保证底栏内边距不叠加 */
+.dock .battle-actions:not([hidden])+.composer{padding-top:0}
+
+/* ---- 固件式屏幕：左上自己的大招、右上对手的大招；第一行自己、第二行对手 ---- */
+.screen{height:190px}
+.ultimate{left:9px;right:auto;top:7px;width:28px;height:31px;z-index:2}
+.ultimate--enemy{left:auto;right:9px}
+.portrait{inset:30px 12px 48px}
+.buddy{width:132px;height:108px}
+.aura{width:150px;height:96px}
+.resources{left:10px;right:10px;bottom:8px;display:flex;flex-direction:column;align-items:stretch;gap:3px;min-height:0}
+.resource-row{display:grid;grid-template-columns:12px 17px minmax(0,1fr) auto;align-items:center;gap:4px;height:14px;color:#c9ecb2;font-size:8px;line-height:1}
+.resource-row.opponent{color:#c0d6b8}
+.resource-row .resource-icon{width:11px;height:11px;color:inherit}
+.hp-number{font-size:8px;font-variant-numeric:tabular-nums;text-align:left;opacity:.9}
+.resource-row .track{height:5px;background:#9ab09b35}
+.resource-row .fill{background:#b6ee9d}
+.resource-row.opponent .fill{background:#a9c6a8}
+.resource-row .energy-bolts{display:flex;gap:2px}
+.resource-row .energy-point{width:5px;height:8px;stroke-width:1}
+.resource-row .energy-point.on{fill:#f1d89d;stroke:#f1d89d}
+
+/* 精灵选择放在大厅，进对局后只留按钮 */
+.spirit-picker{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--muted)}
+.spirit-picker select{flex:1;min-width:0;min-height:40px;border:1px solid #a5bca3;border-radius:10px;background:#fcfdf5;color:var(--ink);padding:6px 8px;font-size:14px}
+
+/* 对局中收起麦克风/键盘图标，只保留出招按钮 */
+body[data-mode="battle"] .bar,body[data-mode="ended"] .bar{display:none}
+.conversation-scroll .replies:empty::before{content:"";display:none}
+.lobby-summary:empty{display:none}
+.resources{left:6px;right:6px}
+.resource-row{grid-template-columns:13px 18px minmax(0,1fr) auto;gap:4px}
+.hp-number{font-size:9px}
+.resource-row .resource-icon{width:12px;height:12px}
+.app{display:flex;flex-direction:column}
+.dock{margin-top:auto}
+.main{flex:1;display:flex;flex-direction:column;min-height:0}
+.stage{flex:1;display:flex;flex-direction:column;justify-content:center}
+/* 固件三态大招图标：好了 / 没好 / 用完了 */
+.ultimate{width:30px;height:34px;background-repeat:no-repeat;background-position:center;background-size:contain}
+.ultimate[data-availability="ready"]{background-image:url("/assets/ult-ready.svg")}
+.ultimate[data-availability="insufficient"],.ultimate[data-availability="unknown"]{background-image:url("/assets/ult-idle.svg")}
+.ultimate[data-availability="used"],.ultimate[data-availability="ended"]{background-image:url("/assets/ult-used.svg")}
+
+/* 手机端保持接近正方形的理想屏比例；4:3 只是硬件的现实限制。 */
+.front-wrap{min-height:290px}
+.screen{height:190px}
+.portrait{inset:30px 12px 48px}
+.buddy{width:132px;height:108px}
+.aura{width:150px;height:96px}
