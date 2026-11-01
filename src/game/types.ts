@@ -129,6 +129,21 @@ export interface LocalBattleAI {
 export interface BattleAI {
   chooseAction(view: ActionView): ActiveActionId | Promise<ActiveActionId>;
   chooseResponse(view: ResponseView): ResponseMove | Promise<ResponseMove>;
+  /**
+   * 可选：一次调用同时给出「怎么接这一手」和「接下来出手打什么」。
+   * 对手回合里这两问本来就要各调一次模型，合并后每回合少一次往返；
+   * 没实现就退回上面两次单独调用。
+   */
+  chooseTurn?(
+    view: ResponseView,
+    next: ActionView,
+  ): TurnPlan | Promise<TurnPlan>;
+}
+
+/** 一次合并决策的结果；action 为空表示这条没答出来，由调用方回退 */
+export interface TurnPlan {
+  response: ResponseMove;
+  action: ActiveActionId | null;
 }
 
 /** 结算依赖：生产用 seed 派生随机数，单测与仿真可注入固定序列 */

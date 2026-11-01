@@ -65,14 +65,14 @@ export interface JevEnemyOptions {
   fallback?: BattleAI;
 }
 
+interface JevChoice {
+  choice?: unknown;
+  confidence?: unknown;
+  probabilities?: unknown;
+}
+
 interface JevAnswer {
-  answers?: {
-    move?: {
-      choice?: unknown;
-      confidence?: unknown;
-      probabilities?: unknown;
-    };
-  };
+  answers?: Record<string, JevChoice | undefined>;
   usage?: { input_tokens?: unknown; output_tokens?: unknown };
 }
 
@@ -197,12 +197,34 @@ export function responseQuestion(view: ResponseView): { state: string; question:
 }
 
 /** 解析 JEV 返回；export 出来给单测用。choice 必须落在本地过滤后的合法选项内 */
-export function parseEnemyDecision(payload: unknown, legal: readonly string[]): string | null {
+export function parseEnemyDecision(
+  payload: unknown,
+  legal: readonly string[],
+  key = 'move',
+): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
-  const answer = (payload as JevAnswer).answers?.move;
+  const answers = (payload as JevAnswer).answers;
+  const answer = answers?.[key];
   if (typeof answer !== 'object' || answer === null) return null;
   const choice = answer.choice;
   return typeof choice === 'string' && legal.includes(choice) ? choice : null;
+}
+
+/** 从返回里取某一题的置信度，只用于日志 */
+function confidenceOf(payload: unknown, key: string): number | undefined {
+  const answer = (payload as JevAnswer | null)?.answers?.[key];
+  return typeof answer?.confidence === 'number' ? Number(answer.confidence.toFixed(3)) : undefined;
+}
+
+/** 应对题的视角里已经带着双方数值，可以直接拼出「下一手」的题干 */
+function nextActionView(view: ResponseView): ActionView {
+  return {
+    round: view.round,
+    bonus: view.bonus,
+    self: view.self,
+    enemy: view.attacker,
+    history: view.history,
+  };
 }
 
 export function createJevEnemyAI(options: JevEnemyOptions): BattleAI {
@@ -261,6 +283,60 @@ export function createJevEnemyAI(options: JevEnemyOptions): BattleAI {
     return choice;
   }
 
+  /** 一次往返问两题：先怎么接这一手，再接完之后出手打什么 */
+  async function askTurn(view: ResponseView) {
+    const startedAt = Date.now();
+    const next = nextActionView(view);
+    const legalResponse = legalResponses(view);
+    const legalAction = legalActiveActions(next);
+    const responsePart = responseQuestion(view);
+    const actionPart = activeQuestion(next);
+    const payload = await askDecision(
+      {
+        apiKey: options.apiKey,
+        baseUrl: options.baseUrl,
+        decisionPath: options.decisionPath,
+        timeoutMs,
+        fetchImpl: options.fetchImpl,
+        logger: options.logger,
+      },
+      {
+        model,
+        state: { kind: 'turn', situation: `${responsePart.state} ${actionPart.state}` },
+        questions: {
+          move: {
+            type: 'choice',
+            instructions: responsePart.question.instructions,
+            criteria: Object.fromEntries(
+              Object.entries(responsePart.question.criteria).filter(([id]) => (legalResponse as readonly string[]).includes(id)),
+            ),
+          },
+          next: {
+            type: 'choice',
+            instructions:
+              '接着上面的局面：刚刚这一手结算后轮到你出手，你打算打哪一招。' +
+              actionPart.question.instructions +
+              '如果这一手之后你已经被打倒，就随便选一个。',
+            criteria: Object.fromEntries(
+              Object.entries(actionPart.question.criteria).filter(([id]) => (legalAction as readonly string[]).includes(id)),
+            ),
+          },
+        },
+      },
+    );
+    const response = parseEnemyDecision(payload, legalResponse, 'move');
+    const action = parseEnemyDecision(payload, legalAction, 'next');
+    options.logger?.info('对手决策调用完成', {
+      kind: 'turn',
+      response: response ?? null,
+      action: action ?? null,
+      confidence: confidenceOf(payload, 'move'),
+      nextConfidence: confidenceOf(payload, 'next'),
+      latencyMs: Date.now() - startedAt,
+    });
+    return { response: response as ResponseMove | null, action: action as ActiveActionId | null };
+  }
+
   return {
     async chooseAction(view) {
       const legal = legalActiveActions(view);
@@ -276,6 +352,14 @@ export function createJevEnemyAI(options: JevEnemyOptions): BattleAI {
       const choice = await ask('response', state, question, legal);
       if (choice) return choice as ResponseMove;
       return fallback.chooseResponse(view);
+    },
+
+    async chooseTurn(view, next) {
+      const plan = await askTurn(view);
+      // 任一题没答出来就退回本地，避免再补一次模型调用
+      const response = plan.response ?? (await fallback.chooseResponse(view));
+      const action = plan.action ?? (await fallback.chooseAction(next));
+      return { response, action };
     },
   };
 }

@@ -37,6 +37,32 @@ function firstAttack(events: BattleEvent[]): Extract<BattleEvent, { type: 'attac
   return event;
 }
 
+
+  it('合并决策：玩家出手时只问模型一次，下一次出手直接用预定的招式', async () => {
+    let calls = 0;
+    const merged: BattleAI = {
+      chooseAction: () => {
+        throw new Error('合并后不应再单独问下一手');
+      },
+      chooseResponse: () => {
+        throw new Error('合并后不应再单独问应对');
+      },
+      chooseTurn: () => {
+        calls += 1;
+        return { response: 'guard', action: 'charge' };
+      },
+    };
+
+    const result = await resolveTurn(playerFirst(), 'light', 1, { random: NO_LUCK, ai: merged });
+    assert.equal(calls, 1);
+    const last = result.battle.history.at(-1);
+    assert.ok(last, '应有对手回合的战报');
+    assert.equal(last.actor, 'enemy');
+    assert.equal(last.action, 'charge');
+    // 对手蓄力后回到玩家操作
+    assert.equal(result.battle.active, 'player');
+  });
+
 describe('对局初始化', () => {
   it('先手 14点生命值、后手 18点生命值，双方 3 点能量、1 次大招', async () => {
     const battle = playerFirst();

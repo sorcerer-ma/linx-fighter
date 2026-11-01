@@ -75,6 +75,20 @@ function decision(choice: string, confidence?: number, probabilities?: Record<st
   });
 }
 
+/** 构造一条合并决策（move + next 两题）的返回 */
+function pairedDecision(
+  move: [choice: string, confidence?: number],
+  next: [choice: string, confidence?: number],
+): Response {
+  return jsonResponse({
+    answers: {
+      move: { type: 'choice', choice: move[0], confidence: move[1] },
+      next: { type: 'choice', choice: next[0], confidence: next[1] },
+    },
+    usage: { input_tokens: 700, output_tokens: 52, cost: 0.0000352 },
+  });
+}
+
 const fallback: BattleAI = { chooseAction: () => 'charge', chooseResponse: () => 'take' };
 
 describe('JEV 对手 AI：合法选项与题干', () => {
@@ -272,6 +286,45 @@ describe('JEV 对手 AI：调用与回退', () => {
     });
     assert.equal(await ai.chooseAction(actionViewFixture({ ap: 3 })), 'charge');
     assert.equal(await ai.chooseResponse(responseViewFixture({ ap: 3 })), 'take');
+  });
+
+
+  it('合并决策：一次请求带应对与下一手两题，都按返回解析', async () => {
+    let body: { state?: { kind?: string }; questions?: Record<string, { criteria: Record<string, string> }> } = {};
+    const ai = createJevEnemyAI({
+      apiKey: 'sk-test',
+      logger,
+      fetchImpl: (async (_url: unknown, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body));
+        return pairedDecision(['guard', 0.7], ['heavy', 0.6]);
+      }) as typeof fetch,
+    });
+
+    const plan = await ai.chooseTurn!(responseViewFixture({ ap: 3 }), actionViewFixture({ ap: 3 }));
+    assert.deepEqual(plan, { response: 'guard', action: 'heavy' });
+    assert.equal(body.state?.kind, 'turn');
+    assert.deepEqual(Object.keys(body.questions ?? {}).sort(), ['move', 'next']);
+    assert.deepEqual(Object.keys(body.questions?.move?.criteria ?? {}).sort(), ['dodge', 'guard', 'take']);
+    assert.deepEqual(Object.keys(body.questions?.next?.criteria ?? {}).sort(), ['charge', 'heavy', 'light']);
+  });
+
+  it('合并决策：一题没答出来就用本地兜底，不再补一次调用', async () => {
+    let calls = 0;
+    const ai = createJevEnemyAI({
+      apiKey: 'sk-test',
+      logger,
+      fallback,
+      fetchImpl: (async () => {
+        calls += 1;
+        // 应对题合法、下一手题缺答
+        return jsonResponse({ answers: { move: { type: 'choice', choice: 'dodge', confidence: 0.5 } } });
+      }) as typeof fetch,
+    });
+
+    const plan = await ai.chooseTurn!(responseViewFixture({ ap: 3 }), actionViewFixture({ ap: 3 }));
+    assert.equal(calls, 1);
+    assert.equal(plan.response, 'dodge');
+    assert.equal(plan.action, 'charge');
   });
 
   it('本地决策模型本身也能处理合法局面（兜底不会卡住回合）', () => {
