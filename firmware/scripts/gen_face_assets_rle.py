@@ -37,6 +37,8 @@ ASSETS = [
     ("face_ultready", "face_ultready.png", "RGB565A8", False),
     ("face_victory", "victory.png", "RGB565A8", False),
     ("face_defeat", "defeat.png", "RGB565A8", False),
+    ("face_charge", "charge.png", "RGB565A8", False),
+    ("face_heavy", "heavy.png", "RGB565A8", False),
     ("face_surprised", "face_surprised.png", "RGB565", True),
     ("face_kiss", "face_kiss.png", "RGB565", True),
     ("face_thinking", "face_thinking.png", "RGB565", True),

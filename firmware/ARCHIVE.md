@@ -83,3 +83,12 @@
   2. 徽记位置 `(6,2)` / `(284,2)`，左右分别对应上排（对手）与下排（自己）的大招；
   3. 图标源文件在 `design/svg/`（`大招好了.svg`、`大招没好.svg`、`大招用完了.svg`），渲染中间产物在 `design/ult3/`。
 - 真机验证：通过串口 MCP 设 `ult=0/1/2` 抓图，三态分别为双环、火焰+实心核心、半透明斜划（`/tmp/hud/evidence/ult3_sheet.png`）。
+
+## 2.5.3 归档
+
+- 镜像：`xiaozhi-hud-2.5.3.bin`，3,181,440 字节，sha256 前 16 位 `4f7ff87a5ca5c10e`
+- 补丁：`xiaozhi-hud-2.5.3.patch`（4,800 行，对干净上游 v2.1.0，排除 `build/`、`managed_components/`、`components/`、`sdkconfig`、生成位图 `face_assets.c`、`lang_config.h`；**包含** `battle_assets.c` 与手改的 `face_assets.h`）
+- 设计稿：`design/svg/蓄力.svg`、`design/svg/重击.svg`（锤头/锤柄角度为用户最终版）；位图在 `design/assets/2.5.2/charge.png`、`heavy.png`
+- 代码：`face_view` 增加 `kFaceCharge`/`kFaceHeavy` 与对应动画（蓄力脉动、重击下砸 320ms）；`battle_ctl` 的表情枚举补 `charge`/`heavy`；重击底色与格挡一致 `0x273C4D`
+- 服务端配套：`src/game/hud.ts` 区分 `charge`/`heavy` 表情，同回合「我出手→对手还手」按 1.6s / 1.0s 先后播两张脸
+- 验证：串口静音截图 `design/preview/2.5.3-charge.png`、`design/preview/2.5.3-heavy.png`；服务端帧轨迹 charge → hurt → ultready 已实测
