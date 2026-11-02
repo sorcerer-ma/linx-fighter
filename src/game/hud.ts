@@ -131,11 +131,11 @@ function transientExpression(facts: Facts, now: number): HudExpression | null {
   const age = now - facts.updatedAt;
   if (age > HUD_TRANSIENT_MS) return null;
   // 同一回合里我先出手、对手随后还手（例如蓄力后被反击）：
-  // 前 1.2 秒仍播我自己的动作，之后再切到对手造成的受击/格挡/闪避
+  // 前 1.6 秒仍播我自己的动作，之后再切到对手造成的受击/格挡/闪避
   if (age <= HUD_ACTION_HOLD_MS) {
     // 战报是「我出手 → 对手还手」成对出现的；回合号每手都会加一，不能用回合号配对
-    const pair = facts.recentTurns ?? [];
-    const mine = pair.length === 2 && pair[1] === facts.lastTurn && pair[0].actor === 'player' ? pair[0] : null;
+    const [prev, last] = facts.recentTurns ?? [];
+    const mine = prev && last && last === facts.lastTurn && prev.actor === 'player' ? prev : null;
     const own = mine ? ownActionExpression(mine) : null;
     if (own) return own;
   }
