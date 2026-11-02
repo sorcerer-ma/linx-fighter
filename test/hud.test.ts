@@ -84,8 +84,8 @@ describe('对局中的表情', () => {
     assert.equal(lose.cue, 'defeat');
   });
 
-  it('自己出手后短时显示进攻，过了窗口回到待命', () => {
-    const battle = state({ history: [history({ actor: 'player', action: 'heavy', actionLabel: '强攻' })] });
+  it('自己普攻后短时显示进攻，过了窗口回到待命', () => {
+    const battle = state({ history: [history({ actor: 'player', action: 'light', actionLabel: '普攻' })] });
     const fresh = deriveHud(battle, null, NOW);
     assert.equal(fresh.expression, 'attack');
     assert.equal(fresh.cue, 'attack');
@@ -94,6 +94,15 @@ describe('对局中的表情', () => {
     const stale = deriveHud(battle, fresh, NOW + HUD_TRANSIENT_MS + 1);
     assert.equal(stale.expression, 'neutral');
     assert.equal(stale.cue, null, '回落待命不发声');
+  });
+
+  it('蓄力与重击各用一张表情，重击带出手音效、蓄力静默', () => {
+    const charge = deriveHud(state({ history: [history({ actor: 'player', action: 'charge', actionLabel: '蓄力' })] }), null, NOW);
+    assert.equal(charge.expression, 'charge');
+    assert.equal(charge.cue, null, '蓄力不出声');
+    const heavy = deriveHud(state({ history: [history({ actor: 'player', action: 'heavy', actionLabel: '强攻' })] }), null, NOW);
+    assert.equal(heavy.expression, 'heavy');
+    assert.equal(heavy.cue, 'attack', '重击借用进攻音效');
   });
 
   it('对手命中自己显示受击，格挡与闪避各有表情', () => {

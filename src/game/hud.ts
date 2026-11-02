@@ -14,7 +14,9 @@ import { isUltimateReady } from './rules.js';
 /** 与设计文档「八种表情」一一对应，也是固件表情资源的文件名 */
 export type HudExpression =
   | 'neutral'
+  | 'charge'
   | 'attack'
+  | 'heavy'
   | 'hurt'
   | 'guard'
   | 'dodge'
@@ -31,7 +33,9 @@ export const HUD_TRANSIENT_MS = 2500;
 /** 表情对应的音效名（与固件 main/assets/common 下的 ogg 同名）；待命不发声 */
 const CUE_OF: Record<HudExpression, string | null> = {
   neutral: null,
+  charge: null,
   attack: 'attack',
+  heavy: 'attack',
   hurt: 'hurt',
   guard: 'guard',
   dodge: 'dodge',
@@ -116,6 +120,9 @@ function transientExpression(facts: Facts, now: number): HudExpression | null {
   if (!facts.lastTurn || !facts.updatedAt) return null;
   if (now - facts.updatedAt > HUD_TRANSIENT_MS) return null;
   const turn = facts.lastTurn;
+  // 我方出手：蓄力、重击、普攻各自一张表情（用户要求区分轻/重击）
+  if (turn.actor === 'player' && turn.action === 'charge') return 'charge';
+  if (turn.actor === 'player' && turn.action === 'heavy') return 'heavy';
   if (isAttack(turn)) return 'attack';
   // 对手的出手要按我方的应对来读：闪避成功、格挡、挨打
   if (turn.actor === 'enemy') {
