@@ -106,7 +106,7 @@ export function idleHud(updatedAt: number): HudState {
 }
 
 /** 同一回合里我方出手后对手又还手时：先亮自己这一手，再交回对手动作 */
-export const HUD_ACTION_HOLD_MS = 1200;
+export const HUD_ACTION_HOLD_MS = 1600;
 
 /** 主动阶段的三种攻击都由「进攻」表情代表 */
 function isAttack(turn: FrameTurn): boolean {
@@ -133,9 +133,9 @@ function transientExpression(facts: Facts, now: number): HudExpression | null {
   // 同一回合里我先出手、对手随后还手（例如蓄力后被反击）：
   // 前 1.2 秒仍播我自己的动作，之后再切到对手造成的受击/格挡/闪避
   if (age <= HUD_ACTION_HOLD_MS) {
-    const mine = (facts.recentTurns ?? [facts.lastTurn]).filter(
-      (entry) => entry.actor === 'player' && entry.round === facts.lastTurn?.round,
-    ).at(-1);
+    // 战报是「我出手 → 对手还手」成对出现的；回合号每手都会加一，不能用回合号配对
+    const pair = facts.recentTurns ?? [];
+    const mine = pair.length === 2 && pair[1] === facts.lastTurn && pair[0].actor === 'player' ? pair[0] : null;
     const own = mine ? ownActionExpression(mine) : null;
     if (own) return own;
   }
