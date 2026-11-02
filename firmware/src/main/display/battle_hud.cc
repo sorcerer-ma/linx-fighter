@@ -292,9 +292,9 @@ void StateFaceTask(void *arg) {
     bool last_system_ui = false;
     for (;;) {
         const DeviceState cur = Application::GetInstance().GetDeviceState();
-        // 配网/激活/升级时需要整屏显示原始提示文字：隐藏战斗 HUD，交给原始状态栏
-        const bool system_ui = (cur == kDeviceStateWifiConfiguring || cur == kDeviceStateActivating ||
-                                cur == kDeviceStateUpgrading);
+        // 配网/升级时需要整屏显示原始提示文字：隐藏战斗 HUD，交给原始状态栏；
+        // 联网激活阶段（含 OTA 检查）保持表情显示，避免网络慢时整块屏被黑底挡住
+        const bool system_ui = (cur == kDeviceStateWifiConfiguring || cur == kDeviceStateUpgrading);
         if (system_ui != last_system_ui) {
             last_system_ui = system_ui;
             battle_hud_set_overlay_visible(!system_ui);

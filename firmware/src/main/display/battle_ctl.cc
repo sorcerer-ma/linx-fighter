@@ -298,7 +298,7 @@ bool ApplyStateFromParams(cJSON *params, std::string *text_out) {
 const char kToolsListJson[] =
     "[{\"name\":\"self.hud.set_state\",\"description\":\"显示战斗状态：表情、生命条、能量闪电、大招徽记，并按 cue 播放音效\","
     "\"inputSchema\":{\"type\":\"object\",\"properties\":{"
-    "\"expression\":{\"type\":\"string\",\"enum\":[\"neutral\",\"attack\",\"hurt\",\"guard\",\"dodge\",\"ultready\",\"victory\",\"defeat\"]},"
+    "\"expression\":{\"type\":\"string\",\"enum\":[\"neutral\",\"attack\",\"hurt\",\"guard\",\"dodge\",\"ultready\",\"victory\",\"defeat\",\"charge\",\"heavy\",\"surprised\",\"kiss\",\"thinking\",\"sleep\"]},"
     "\"hp\":{\"type\":\"integer\"},\"max_hp\":{\"type\":\"integer\"},"
     "\"energy\":{\"type\":\"integer\"},\"max_energy\":{\"type\":\"integer\"},"
     "\"ult\":{\"type\":\"integer\",\"enum\":[0,1,2]},"

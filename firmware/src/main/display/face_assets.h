@@ -36,6 +36,12 @@ extern const lv_image_dsc_t face_defeat;
 #define FACE_DEFEAT_X 44
 #define FACE_DEFEAT_Y 81
 
+extern const lv_image_dsc_t face_charge;
+#define FACE_CHARGE_X 46
+#define FACE_CHARGE_Y 49
+extern const lv_image_dsc_t face_heavy;
+#define FACE_HEAVY_X 44
+#define FACE_HEAVY_Y 31
 extern const lv_image_dsc_t face_surprised;
 #define FACE_SURPRISED_X 44
 #define FACE_SURPRISED_Y 65
@@ -70,3 +76,26 @@ extern const lv_image_dsc_t fx_z3;
 #ifdef __cplusplus
 }
 #endif
+
+/* 重击挥动：锤头按弧线摆放的 7 帧 */
+#define FACE_HEAVY_SW0_X 44
+#define FACE_HEAVY_SW0_Y 25
+#define FACE_HEAVY_SW1_X 44
+#define FACE_HEAVY_SW1_Y 24
+#define FACE_HEAVY_SW2_X 44
+#define FACE_HEAVY_SW2_Y 25
+#define FACE_HEAVY_SW3_X 44
+#define FACE_HEAVY_SW3_Y 28
+#define FACE_HEAVY_SW4_X 44
+#define FACE_HEAVY_SW4_Y 31
+#define FACE_HEAVY_SW5_X 44
+#define FACE_HEAVY_SW5_Y 31
+#define FACE_HEAVY_SW6_X 44
+#define FACE_HEAVY_SW6_Y 31
+extern const lv_image_dsc_t face_heavy_sw0;
+extern const lv_image_dsc_t face_heavy_sw1;
+extern const lv_image_dsc_t face_heavy_sw2;
+extern const lv_image_dsc_t face_heavy_sw3;
+extern const lv_image_dsc_t face_heavy_sw4;
+extern const lv_image_dsc_t face_heavy_sw5;
+extern const lv_image_dsc_t face_heavy_sw6;

@@ -21,6 +21,9 @@ enum {
     kFaceUltReady,
     kFaceVictory,
     kFaceDefeat,
+    /* 战斗动作表情（设计稿单独画板） */
+    kFaceCharge,     /* 蓄力：闪电形眼睛 */
+    kFaceHeavy,      /* 重击：战锤横扫 */
     /* 日常对话表情（设计稿单独画板） */
     kFaceSurprised,  /* 吃惊：感叹号 */
     kFaceKiss,       /* 飞吻：单眼眨眼 + 爱心 */

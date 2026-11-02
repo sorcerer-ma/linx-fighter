@@ -92,3 +92,13 @@
 - 代码：`face_view` 增加 `kFaceCharge`/`kFaceHeavy` 与对应动画（蓄力脉动、重击下砸 320ms）；`battle_ctl` 的表情枚举补 `charge`/`heavy`；重击底色与格挡一致 `0x273C4D`
 - 服务端配套：`src/game/hud.ts` 区分 `charge`/`heavy` 表情，同回合「我出手→对手还手」按 1.6s / 1.0s 先后播两张脸
 - 验证：串口静音截图 `design/preview/2.5.3-charge.png`、`design/preview/2.5.3-heavy.png`；服务端帧轨迹 charge → hurt → ultready 已实测
+
+## 2.5.4 归档
+
+- 镜像：`xiaozhi-hud-2.5.4.bin`，3,427,952 字节，sha256 前 16 位 `4fc431298c445c13`
+- 补丁：`xiaozhi-hud-2.5.4.patch`（240KB，对干净上游 v2.1.0，排除 `build/`、`managed_components/`、`components/`、`sdkconfig`、生成位图 `face_assets.c`、`lang_config.h`）
+- 设计稿：`design/svg/重击.svg`（用户最终版，320×240 画板）、`design/svg/heavy-swing/`（7 个挥动角度与整帧 SVG）；位图 `design/assets/2.5.2/heavy.png`（落定帧）与 `heavy_sw0..6.png`
+- 代码：`face_view` 的 `kFaceHeavy` 改为整帧序列（`kHeavyFrames[7]`、`kHeavySwingMs=380`），TickCallback 里按时间换 `g_img[g_top]` 的 src，脸在各帧中位置一致、只有锤子转下来；不再新增任何界面图层
+- 踩坑：曾尝试「锤子独立图片层」，创建该 `lv_image` 即导致开机卡死（A/B 构建二分确认）；也试过复用残影层，但图片控件沿用旧尺寸会裁掉锤子（需显式 `lv_obj_set_size`）且会被闪避逻辑覆盖，最终回到整帧方案
+- 验证：串口静音连播 3–5 次，`design/preview/2.5.4-heavy-mid.png`（挥动中）、`2.5.4-heavy-end.png`（落定）
+- 已知：设备从 `Qiniu-Guest` 切回 `Simon 15` 才能通过 OTA 检查；激活阶段现在也保留表情显示，避免网络慢时整屏被系统提示挡住

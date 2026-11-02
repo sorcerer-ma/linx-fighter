@@ -7,6 +7,7 @@
  * 坐标换算出错，整帧会被裁掉；预渲染位图 + LVGL 原生动画既保真又省 CPU。
  */
 #include "face_view.h"
+#include <esp_log.h>
 
 #include <cmath>
 #include <cstring>
@@ -28,6 +29,8 @@ constexpr uint32_t kBgColor[kFaceCount] = {
     0x854725, /* ultready */
     0x305426, /* victory  */
     0x333C4B, /* defeat   */
+    0xB26000, /* charge   */
+    0x273C4D, /* heavy：与格挡同底色，突出武器换手 */
     /* 这四张脸把底色烘焙进了位图（省掉 3 倍透明位图空间），
        下面的值取位图经 RGB565 量化后的底色，保证整屏看不出版块边界 */
     0x1A3E33, /* surprised */
@@ -38,12 +41,14 @@ constexpr uint32_t kBgColor[kFaceCount] = {
 
 const char *const kExpressionNames[kFaceCount] = {
     "neutral", "attack", "hurt", "guard", "dodge", "ultready", "victory", "defeat",
+    "charge", "heavy",
     "surprised", "kiss", "thinking", "sleep",
 };
 
 const lv_image_dsc_t *const kFaceImage[kFaceCount] = {
     &face_neutral, &face_attack, &face_hurt, &face_guard,
     &face_dodge, &face_ultready, &face_victory, &face_defeat,
+    &face_charge, &face_heavy_sw6,
     &face_surprised, &face_kiss, &face_thinking, &face_sleep,
 };
 
@@ -65,11 +70,27 @@ const FaceAssetPos kAssetPos[] = {
     {&face_ultready, FACE_ULTREADY_X, FACE_ULTREADY_Y},
     {&face_victory, FACE_VICTORY_X, FACE_VICTORY_Y},
     {&face_defeat, FACE_DEFEAT_X, FACE_DEFEAT_Y},
+    {&face_charge, FACE_CHARGE_X, FACE_CHARGE_Y},
+    {&face_heavy, FACE_HEAVY_X, FACE_HEAVY_Y},
     {&face_surprised, FACE_SURPRISED_X, FACE_SURPRISED_Y},
     {&face_kiss, FACE_KISS_X, FACE_KISS_Y},
     {&face_thinking, FACE_THINKING_X, FACE_THINKING_Y},
     {&face_sleep, FACE_SLEEP_X, FACE_SLEEP_Y},
 };
+
+/* 重击：锤子按弧线挥动的 7 帧（握把为圆心，从抬手到落定） */
+const FaceAssetPos kHeavyFrames[] = {
+    {&face_heavy_sw0, FACE_HEAVY_SW0_X, FACE_HEAVY_SW0_Y},
+    {&face_heavy_sw1, FACE_HEAVY_SW1_X, FACE_HEAVY_SW1_Y},
+    {&face_heavy_sw2, FACE_HEAVY_SW2_X, FACE_HEAVY_SW2_Y},
+    {&face_heavy_sw3, FACE_HEAVY_SW3_X, FACE_HEAVY_SW3_Y},
+    {&face_heavy_sw4, FACE_HEAVY_SW4_X, FACE_HEAVY_SW4_Y},
+    {&face_heavy_sw5, FACE_HEAVY_SW5_X, FACE_HEAVY_SW5_Y},
+    {&face_heavy, FACE_HEAVY_X, FACE_HEAVY_Y},
+    {&face_heavy_sw6, FACE_HEAVY_SW6_X, FACE_HEAVY_SW6_Y},
+};
+constexpr int kHeavyFrameCount = 7;
+constexpr uint32_t kHeavySwingMs = 380;
 
 FaceAssetPos PosOf(const lv_image_dsc_t *src)
 {
@@ -99,6 +120,8 @@ enum FxKind {
     kFxDefeat = 3,   /* 失败下沉 */
     kFxGuard = 4,    /* 举盾升起 */
     kFxDodge = 5,    /* 闪避滑入 */
+    kFxCharge = 6,   /* 蓄力能量脉动 */
+    kFxHeavy = 7,    /* 重击下砸 */
 };
 
 struct FadeAnim {
@@ -118,10 +141,13 @@ struct FxAnim {
 lv_obj_t *g_root = nullptr;
 lv_obj_t *g_bg = nullptr;
 lv_obj_t *g_img[2] = {nullptr, nullptr};
+/* 重击时叠在脸上的锤子，单独一层才能按弧线挥动 */
 lv_obj_t *g_ghost[2] = {nullptr, nullptr};
 /* 表情特效层：吃惊的感叹号、飞吻的爱心、思考的问号、休眠的三枚 Z 字 */
 lv_obj_t *g_fx_img[3] = {nullptr, nullptr, nullptr};
 uint32_t g_fx_start = 0;
+uint32_t g_heavy_start = 0;
+int g_heavy_frame = -1;
 
 int g_top = 0;              /* 上层图片下标 */
 int g_expr = kFaceNeutral;  /* 目标表情 */
@@ -165,6 +191,7 @@ inline float Progress(uint32_t now, uint32_t start, uint32_t dur)
     return elapsed >= dur ? 1.0f : static_cast<float>(elapsed) / static_cast<float>(dur);
 }
 
+/* 前向声明：重击锤子的弧线层在下面实现，换图时要同步刷新 */
 const lv_image_dsc_t *FaceSource(int expression)
 {
     if (expression < 0 || expression >= kFaceCount) {
@@ -292,7 +319,8 @@ void ApplyTransform(void)
         const FaceAssetPos pos = PosOf(static_cast<const lv_image_dsc_t *>(lv_image_get_src(img)));
         lv_obj_set_pos(img, static_cast<int32_t>(pos.x + g_offset_x), static_cast<int32_t>(pos.y + g_offset_y));
     }
-    for (int i = 0; i < 2; i++) {
+    /* 闪避残影才统一摆位；重击的锤子层由 TickCallback 自己控制，别覆盖它 */
+    for (int i = 0; g_ghosts_on && i < 2; i++) {
         if (g_ghost[i] == nullptr) {
             continue;
         }
@@ -364,6 +392,7 @@ void SetGhosts(bool on)
         }
         if (on && &ghost != &g_ghost[1]) {
             lv_image_set_src(ghost, &face_dodge);
+            lv_obj_set_size(ghost, face_dodge.header.w, face_dodge.header.h);
             lv_obj_remove_flag(ghost, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(ghost, LV_OBJ_FLAG_HIDDEN);
@@ -432,6 +461,15 @@ void TickCallback(lv_timer_t *)
                 /* 从右侧微微平移进来，落位后交给下方的来回摆动 */
                 g_offset_x = 40.0f * (1.0f - EaseOut(p));
                 break;
+            case kFxCharge:
+                /* 蓄力：能量轻微脉动 */
+                g_offset_y = std::sin(p * 3.14159f * 4.0f) * 2.0f * (1.0f - p);
+                break;
+            case kFxHeavy:
+                /* 重击只让锤子落下，脸保持不动（用户口径：脸和锤子分开） */
+                (void)p;
+                break;
+                break;
             default:
                 break;
         }
@@ -491,6 +529,21 @@ void TickCallback(lv_timer_t *)
         lv_obj_invalidate(g_root);
     }
 
+    /* 重击：整帧序列推进，脸在各帧里位置不变，只有锤子沿弧线落下 */
+    if (!g_fade.active && g_shown == kFaceHeavy) {
+        const uint32_t elapsed = now - g_heavy_start;
+        int idx = static_cast<int>(elapsed * kHeavyFrameCount / kHeavySwingMs);
+        if (idx >= kHeavyFrameCount) {
+            idx = kHeavyFrameCount - 1;
+        }
+        if (idx != g_heavy_frame) {
+            const FaceAssetPos &pos = kHeavyFrames[idx];
+            lv_image_set_src(g_img[g_top], pos.img);
+            g_heavy_frame = idx;
+            lv_obj_invalidate(g_root);
+        }
+    }
+
     ApplyTransform();
 }
 
@@ -527,14 +580,6 @@ void face_view_create(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(g_bg, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_color(g_bg, lv_color_hex(kBgColor[kFaceNeutral]), LV_PART_MAIN);
 
-    for (auto &ghost : g_ghost) {
-        ghost = lv_image_create(g_root);
-        lv_image_set_src(ghost, &face_dodge);
-        lv_obj_set_pos(ghost, 0, 0);
-        lv_obj_add_flag(ghost, LV_OBJ_FLAG_HIDDEN);
-        /* 用图片透明度而不是对象透明度：对象 opa=0 会让整块图元直接不可见 */
-        lv_obj_set_style_image_opa(ghost, LV_OPA_TRANSP, 0);
-    }
     for (auto &img : g_img) {
         img = lv_image_create(g_root);
         lv_image_set_src(img, &face_neutral);
@@ -597,6 +642,15 @@ void face_view_set(int expression, bool animate)
                 FadeTo(&face_attack, kFaceAttack, kFadeMs, -1);
             }
             break;
+        case kFaceHeavy:
+            /* 脸保持不动，锤子单独一层沿弧线落下（复用闪避残影用的图片对象，不新建控件） */
+            ShowImmediate(kFaceHeavy);
+            g_heavy_start = lv_tick_get();
+            g_heavy_frame = -1;
+            g_fx.kind = kFxHeavy;
+            g_fx.start = lv_tick_get();
+            g_fx.dur = kHeavySwingMs;
+            break;
         case kFaceHurt:
             ShowImmediate(kFaceHurt);
             g_fx.kind = kFxHurt;
@@ -625,6 +679,13 @@ void face_view_set(int expression, bool animate)
         case kFaceDefeat:
             FadeTo(&face_defeat, kFaceDefeat, kFadeMs, -1);
             g_fx.kind = kFxDefeat;
+            g_fx.start = lv_tick_get();
+            g_fx.dur = 700;
+            break;
+        case kFaceCharge:
+            /* 蓄力：短淡入 + 轻微能量脉动 */
+            FadeTo(FaceSource(expression), expression, 180, -1);
+            g_fx.kind = kFxCharge;
             g_fx.start = lv_tick_get();
             g_fx.dur = 700;
             break;

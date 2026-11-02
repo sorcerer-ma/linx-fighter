@@ -229,3 +229,10 @@ idf.py build
   - 字体子集化：`xiaozhi-fonts` 里最大的三个字模约 90KB / 56KB / 25KB，按实际用字裁剪能省 100KB+，但 Wi-Fi 名等运行时文本可能缺字，风险高；
   - 裁剪未用组件（`esp_emote_gfx`、`image_player` 等）：需改 `main/idf_component.yml` 和源码条件编译，预估 30–60KB；
   - 关断言/降日志等级：能省几十 KB，但会丢掉崩溃现场，不建议在联调期做。
+
+### 6.5 重击锤子弧线（2.5.4）
+
+- 目标：重击时**脸保持不动**，只有锤子沿弧线挥下（用户明确「脸和锤子分开」）。
+- 做法：把「脸 + 挥击弧线 + 锤子」按同一坐标系预渲染成 7 张整图；`face_view.cc` 的 `kHeavyFrames[7]` 存指针，`kHeavySwingMs = 380`，切到 `kFaceHeavy` 时 `ShowImmediate` 后从第 0 帧开始，`TickCallback` 每帧按 `elapsed * 7 / 380` 换 `g_img[g_top]` 的 src，落定停第 6 帧。
+- 关键点：脸在 7 张图里像素位置完全一致，所以画面上只有锤子变化；整帧方案不新增任何 widget，避开了「新建锤子图层导致开机卡死」的坑。
+- 素材与生成：`design/svg/heavy-swing/`（7 个旋转角度 + 整帧 SVG）、`design/assets/2.5.2/heavy*.png`；`scripts/gen_face_assets_rle.py` 的 `ASSETS` 已含这 8 项。
