@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   deriveHud,
   hudFromFacts,
+  HUD_ACTION_HOLD_MS,
   HUD_ENDED_HOLD_MS,
   HUD_TRANSIENT_MS,
   hudPayload,
@@ -313,5 +314,47 @@ describe('结局定格', () => {
     const atSeven = hudFromFacts(facts, atFive, NOW + HUD_ENDED_HOLD_MS + 1000);
     assert.equal(atSeven.battle, false);
     assert.equal(atSeven.expression, 'neutral');
+  });
+});
+
+describe('同回合：先亮自己这一手，再交回对手还手', () => {
+  it('蓄力后被反击：前 1.2 秒是蓄力，之后变成受击', () => {
+    const snapshot = state({
+      history: [
+        history({ round: 1, actor: 'player', action: 'charge', actionLabel: '蓄力' }),
+        history({ round: 1, actor: 'enemy', action: 'light', actionLabel: '普攻', damage: 3 }),
+      ],
+      updatedAt: NOW,
+    });
+    const facts = factsOf(frameOfState(snapshot), { kind: 'status' });
+    const early = hudFromFacts(facts, null, NOW + 300);
+    assert.equal(early.expression, 'charge');
+    assert.equal(early.cue, null, '蓄力不发声');
+    const late = hudFromFacts(facts, early, NOW + HUD_ACTION_HOLD_MS + 200);
+    assert.equal(late.expression, 'hurt');
+    assert.equal(late.cue, 'hurt');
+    assert.ok(late.seq > early.seq, '表情变化要涨帧号，设备才会刷新');
+  });
+
+  it('重击后被反击同样先播重击', () => {
+    const snapshot = state({
+      history: [
+        history({ round: 1, actor: 'player', action: 'heavy', actionLabel: '重击', damage: 4 }),
+        history({ round: 1, actor: 'enemy', action: 'light', actionLabel: '普攻', damage: 2 }),
+      ],
+      updatedAt: NOW,
+    });
+    const facts = factsOf(frameOfState(snapshot), { kind: 'status' });
+    assert.equal(hudFromFacts(facts, null, NOW + 300).expression, 'heavy');
+    assert.equal(hudFromFacts(facts, null, NOW + HUD_ACTION_HOLD_MS + 200).expression, 'hurt');
+  });
+
+  it('只有对手还手时直接播受击', () => {
+    const snapshot = state({
+      history: [history({ round: 1, actor: 'enemy', action: 'light', actionLabel: '普攻', damage: 3 })],
+      updatedAt: NOW,
+    });
+    const facts = factsOf(frameOfState(snapshot), { kind: 'status' });
+    assert.equal(hudFromFacts(facts, null, NOW + 300).expression, 'hurt');
   });
 });

@@ -49,6 +49,8 @@ export interface Facts {
   opponentName?: string;
   /** 最近一条已结算战报：屏幕据此播瞬间表情，平台也据此对齐「这是哪一手」 */
   lastTurn?: FrameTurn;
+  /** 最近两手：同一回合里「我出手 → 对手还手」时，屏幕分先后播两个表情 */
+  recentTurns?: FrameTurn[];
   events: BattleEvent[];
   next: FactsNext;
   rejection?: string;
@@ -110,7 +112,9 @@ export function factsOf(
           ...(options.waiting
             ? {}
             : { opponent: opponent(frame.opponent), opponentName: frame.opponent.name }),
-          ...(lastTurn ? { lastTurn } : {}),
+          ...(lastTurn
+            ? { lastTurn, recentTurns: frame.history.slice(-2) }
+            : {}),
         }
       : {}),
     events: options.events ?? [],

@@ -105,6 +105,9 @@ export function idleHud(updatedAt: number): HudState {
   };
 }
 
+/** 同一回合里我方出手后对手又还手时：先亮自己这一手，再交回对手动作 */
+export const HUD_ACTION_HOLD_MS = 1200;
+
 /** 主动阶段的三种攻击都由「进攻」表情代表 */
 function isAttack(turn: FrameTurn): boolean {
   return turn.actor === 'player' && (turn.action === 'light' || turn.action === 'heavy' || turn.action === 'ult');
@@ -116,14 +119,30 @@ function isAttack(turn: FrameTurn): boolean {
  * 事实里没有逐条时间戳，用对局的 updatedAt 当「最后一次变化」的时间；
  * 超过展示窗口就不再播瞬间表情，避免开局回看旧战报时重放。
  */
+function ownActionExpression(turn: FrameTurn): HudExpression | null {
+  if (turn.actor !== 'player') return null;
+  if (turn.action === 'charge') return 'charge';
+  if (turn.action === 'heavy') return 'heavy';
+  return isAttack(turn) ? 'attack' : null;
+}
+
 function transientExpression(facts: Facts, now: number): HudExpression | null {
   if (!facts.lastTurn || !facts.updatedAt) return null;
-  if (now - facts.updatedAt > HUD_TRANSIENT_MS) return null;
+  const age = now - facts.updatedAt;
+  if (age > HUD_TRANSIENT_MS) return null;
+  // 同一回合里我先出手、对手随后还手（例如蓄力后被反击）：
+  // 前 1.2 秒仍播我自己的动作，之后再切到对手造成的受击/格挡/闪避
+  if (age <= HUD_ACTION_HOLD_MS) {
+    const mine = (facts.recentTurns ?? [facts.lastTurn]).filter(
+      (entry) => entry.actor === 'player' && entry.round === facts.lastTurn?.round,
+    ).at(-1);
+    const own = mine ? ownActionExpression(mine) : null;
+    if (own) return own;
+  }
   const turn = facts.lastTurn;
   // 我方出手：蓄力、重击、普攻各自一张表情（用户要求区分轻/重击）
-  if (turn.actor === 'player' && turn.action === 'charge') return 'charge';
-  if (turn.actor === 'player' && turn.action === 'heavy') return 'heavy';
-  if (isAttack(turn)) return 'attack';
+  const own = ownActionExpression(turn);
+  if (own) return own;
   // 对手的出手要按我方的应对来读：闪避成功、格挡、挨打
   if (turn.actor === 'enemy') {
     if (turn.dodged) return 'dodge';
