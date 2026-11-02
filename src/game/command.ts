@@ -74,16 +74,52 @@ const START_RULES = ['开始游戏', '开始对战'];
 const CHARGE_ENERGY = /(?:回|攒|补|蓄|聚|存|加)[^，。！？]{0,2}能量/;
 
 /**
- * 叙述对手的子句：「对手放大招，」不是本机的招。
+ * 招式名词：剥「他的攻击」这类名词短语时用，和执行词表同一份来源。
+ * 单字说法不参与：「他的打」拼不通，反而会把「打他」剥成空句子。
+ */
+const MOVE_NOUNS = [
+  ...new Set(
+    Object.values(ACTIONS).flatMap((meta) => [meta.label, ...meta.aliases, ...meta.mentions, ...meta.asrErrors]),
+  ),
+]
+  .filter((term) => term.length >= 2)
+  .sort((a, b) => b.length - a.length)
+  .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  .join('|');
+
+/** 叙述对手时的主语：对手的几种叫法，以及与它对位的第三人称代词 */
+const OPPONENT_SUBJECTS = '对手|对面|对方';
+/** 带上「他/她/它」：语音里很少一直说「对手」，说「格挡他的攻击」才是日常说法 */
+const OPPONENT_ANY_SUBJECTS = `${OPPONENT_SUBJECTS}|他|她|它`;
+/** 不带「的」也认的主动四招：词表收窄，免得把「对手回能量还是强攻」剥成一句 */
+const ACTIVE_MOVES = '普攻|强攻|大招|蓄力';
+/** 子句起点：句首或上一句的标点之后；ASR 插进来的空白要认 */
+const CLAUSE_START = '(?:^|[，,。！!？?；;、])\\s*';
+
+/**
+ * 叙述对手的子句：「对手放大招，」「他攻击，」不是本机的招。
  * 统计歧义与选招只看剥掉之后自己那半句，否则玩家自报应对会被对手的招式带成「两种招式」。
- * 只剥两种形态：以标点收尾的完整子句，以及「对手的大招」这类名词短语。
+ * 剥四种形态：
+ * - 以对手为主语、以标点收尾的完整子句；「他」开头也算，但必须真的在句首或逗号后面，
+ *   免得把「我要攻击他，然后格挡」里的打击对象当成主语，剥掉他点的第二招；
+ * - 「对手强攻」这类紧挨着的主动四招；
+ * - 「对手的攻击」「他的大招」这类带「的」的名词短语，招式名词取全词表；
+ * - 「这次攻击」这类指回对手这一手的指示说法。
  * 没有标点的「对手回能量还是强攻」不剥：谁出招本来就没说清，留着让歧义判定拦下。
  *
  * 目标介词后面的「对手」不算叙述：那里是我这一手打向谁，不是那句话的主语。
  * 「我要对对手强攻」剥掉就成了没人称的「我要对」，既读不出招式、也数不出两种招式。
  */
-const OPPONENT_CLAUSE =
-  /(?:(?:对手|对面|对方)[^，,。！!？?；;、]*[，,。！!？?；;、]|(?:对手|对面|对方)的?(?:普攻|强攻|大招|蓄力))/g;
+const OPPONENT_CLAUSE = new RegExp(
+  [
+    `${CLAUSE_START}(?:他|她|它)[^，,。！!？?；;、]*[，,。！!？?；;、]`,
+    `(?:${OPPONENT_SUBJECTS})[^，,。！!？?；;、]*[，,。！!？?；;、]`,
+    `(?:${OPPONENT_SUBJECTS})的?(?:${ACTIVE_MOVES})`,
+    `(?:${OPPONENT_ANY_SUBJECTS})的(?:${MOVE_NOUNS})`,
+    `(?:这|刚才那)(?:次|一下|一击|一波|一手)(?:的)?(?:${MOVE_NOUNS})`,
+  ].join('|'),
+  'g',
+);
 
 /**
  * 目标介词：多字介词（朝着、冲着、对着、向着）与 ASR 插进来的空白都要认，
@@ -132,6 +168,21 @@ const NEGATE_RULES = [
 const NEGATE_FALSE_POSITIVES = ['特别', '区别', '告别', '别的', '分别'];
 
 /**
+ * 退出对局的同义说法。
+ *
+ * 单人局在玩家嘴里常被叫「训练」「练习」，平台也可能把「结束这局」原样转下来；
+ * 只认「退出挑战/退出房间」会让退出指令落空，对局一直挂在战斗态。
+ */
+const LEAVE_INTENT = /(?:退出(?:挑战|房间|训练|练习|对战|对局|战斗)|(?:结束|关闭|取消)(?:掉)?(?:(?:这|本|当前)(?:一)?局|一?局)?(?:训练|练习|对战|对局|战斗))/;
+
+/** 房间类退出：只撤房间，单人局按平台提示词的承诺保持不动 */
+const ROOM_EXIT = /^(?:我要|我想|请|帮我|现在|先)?退出(?:挑战|房间)(?:吧|了|啊)?$/;
+
+/** 训练类退出：单人局没有房间记录，说完就要真正结束，不然屏幕一直停在战斗态 */
+const TRAINING_EXIT = /^(?:我要|我想|请|帮我|现在|先)?(?:退出(?:训练|练习|对战|对局|战斗)|(?:结束|关闭|取消)(?:掉)?(?:(?:这|本|当前)(?:一)?局|一?局)?(?:训练|练习|对战|对局|战斗))(?:吧|了|啊)?$/;
+
+
+/**
  * 挑战动词前面的否定：「不接受挑战」「别发起挑战」「不联机」……
  *
  * 挑战入口会撤掉玩家现有那一局（换房、重开双人房），所以这几句必须收住。
@@ -140,7 +191,7 @@ const NEGATE_FALSE_POSITIVES = ['特别', '区别', '告别', '别的', '分别'
  * 动词与 pvp.ts 里的开房口令保持一致，改口令时两边一起看。
  */
 const CHALLENGE_NEGATION =
-  /(?:不要|不用|不想|不打算|甭|算了|不|别)(?:再|去|要|想|用)?(?:退出挑战|退出房间|发起挑战|接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)|进房|挑战你|挑战|联机|开房|开个?房|建个?房|创建房|组队|一起打)/;
+  /(?:不要|不用|不想|不打算|甭|算了|不|别)(?:再|去|要|想|用)?(?:(?:退出|结束|关闭|取消)(?:挑战|房间|训练|练习|对战|对局|战斗)|发起挑战|接受挑战|加入(?:双人)?(?:挑战|房间|对局|对战)|进房|挑战你|挑战|联机|开房|开个?房|建个?房|创建房|组队|一起打)/;
 
 /** Courtesy clauses are not cancelled game commands; single 别 is never global. */
 function negatedOperation(raw: string): boolean {
@@ -150,8 +201,8 @@ function negatedOperation(raw: string): boolean {
   if (includesAny(text,NEGATE_RULES) || CHALLENGE_NEGATION.test(text)) return true;
   for(const prefix of text.matchAll(/(?:不|别)(?:(?:现在|马上|立刻|直接|帮我|替我|给我|让你|叫你|再|去|要|想|用|说|念)){0,3}/g)) {
     const rest=text.slice(prefix.index!+prefix[0].length);
-    const action=Object.values(ACTIONS).some(meta=>[meta.id,meta.label,...meta.aliases,...(meta.mentions??[]),...(meta.asrErrors??[]),...meta.chants].some(term=>term.length>1?rest.startsWith(compactText(term)):rest===term));
-    if (action || /^(?:退出挑战|退出房间|发起挑战|接受(?:双人)?挑战|加入(?:双人)?(?:挑战|房间?|对局|对战)|进房|联机|开个?房|建个?房|创建房|组队|一起打)/.test(rest) || [...START_EXACT,...START_RULES].some(term=>rest.startsWith(term))) return true;
+    const action=Object.values(ACTIONS).some(meta=>[meta.id,meta.label,...meta.aliases,...meta.mentions,...meta.asrErrors,...meta.chants].some(term=>term.length>1?rest.startsWith(compactText(term)):rest===term));
+    if (action || /^(?:(?:退出|结束|关闭|取消)(?:挑战|房间|训练|练习|对战|对局|战斗)|发起挑战|接受(?:双人)?挑战|加入(?:双人)?(?:挑战|房间?|对局|对战)|进房|联机|开个?房|建个?房|创建房|组队|一起打)/.test(rest) || [...START_EXACT,...START_RULES].some(term=>rest.startsWith(term))) return true;
   }
   return false;
 }
@@ -164,7 +215,7 @@ function mutatingKinds(raw: string,text: string,hasCode: boolean): Set<string> {
   if (wantsJoinRoom(text) || hasCode) kinds.add('join');
   const withoutJoin=text.replace(/(?:接受|加入)(?:双人)?(?:挑战|房间?|对局|对战)|进房(?:间)?/g,'');
   if (wantsOpenRoom(withoutJoin)) kinds.add('create');
-  if (/退出(?:挑战|房间)/.test(text)) kinds.add('leave');
+  if (LEAVE_INTENT.test(text)) kinds.add('leave');
   if (START_EXACT.includes(text) || includesAny(text,START_RULES) || raw.split(/[，,。;；\n]/).some(part=>START_EXACT.includes(compactText(part))) || /(?:先|再|然后|接着|并且|并|和)(?:重开|重新开始|开始游戏)/.test(text)) kinds.add('start');
   return kinds;
 }
@@ -238,7 +289,7 @@ export function readCommand(raw: string): Command {
   const block = blockReason(own, ownText);
 
   const identifier=parseRoomCodePhrase(raw);
-  const lifecycle=wantsJoinRoom(text) || wantsOpenRoom(text) || /退出(?:挑战|房间)/.test(text);
+  const lifecycle=wantsJoinRoom(text) || wantsOpenRoom(text) || LEAVE_INTENT.test(text);
 
   // Read-only intent precedes every mutation, including a supplied room code.
   if (text && includesAny(text,HELP_RULES)) return {kind:'help'};
@@ -252,8 +303,10 @@ export function readCommand(raw: string): Command {
 
   // A bare identifier is neither a fresh action nor cross-request join context.
   if (/^(?:(?:挑战)?编号|房间号?)?[0-9０-９零〇一幺二两三四五六七八九十百千万萬壹贰貳叁參肆伍陆陸柒捌玖拾佰仟兩]+$/.test(text)) return {kind:'route',question:true};
-  if (/退出(?:挑战|房间)/.test(text)) {
-    if (/^(?:我要|我想|请|帮我)?(?:退出挑战|退出房间)(?:吧|了)?$/.test(text)) return {kind:'leave-room'};
+  if (LEAVE_INTENT.test(text)) {
+    // 单说「退出训练」「结束这局」就是退出；带上房间号或其他动作才算歧义
+    // 房间、训练、整局都是同一个意思：投降并退出当前对局
+    if (ROOM_EXIT.test(text) || TRAINING_EXIT.test(text)) return {kind:'leave-room'};
     return {kind:'refused',why:'ambiguous'};
   }
   if (identifier.code) return {kind:'join-room',code:identifier.code};
