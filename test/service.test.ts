@@ -57,6 +57,15 @@ describe('游戏服务', () => {
     assert.match(result.text, /我先手/);
   });
 
+  it('单人局说「退出训练」会真正结束对局，设备回到待命', async () => {
+    const { service, store } = setup();
+    await service.start(KEY);
+    const exit = await service.say(KEY, '退出训练');
+    assert.match(exit.reply?.text ?? '', /训练|待命/);
+    assert.equal(store.get(KEY) ?? null, null);
+    assert.equal(service.snapshot(KEY), null);
+  });
+
   it('开局可以指定对手名字', async () => {
     const { service } = setup();
     const result = await service.start(KEY, { opponent: '阿青' });
@@ -87,6 +96,21 @@ describe('游戏服务', () => {
     assert.equal(second.battle?.player.ap, 3);
     assert.equal(second.battle?.history.length, 2);
     assert.match(second.text, /格挡/);
+  });
+
+  it('说「格挡他的攻击」只出格挡，不当成一句两招', async () => {
+    const { service } = setup();
+    await service.start(KEY);
+    const first = await service.say(KEY, '普攻');
+    assert.ok(first.battle?.pending, '对手这一手正等着应对');
+
+    // 「他的攻击」是冲我来的那一手：只出格挡，不该判成歧义让玩家重说
+    const response = await service.say(KEY, '格挡他的攻击');
+    assert.doesNotMatch(response.text, /不止一个操作或编号/);
+    assert.equal(response.battle?.pending, null);
+    assert.equal(response.battle?.round, 2);
+    assert.equal(response.battle?.history.at(-1)?.actor, 'enemy');
+    assert.equal(response.battle?.history.at(-1)?.response, 'guard');
   });
 
   it('招式认不出来时不改对局、只提示可选说法', async () => {
