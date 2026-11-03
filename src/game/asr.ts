@@ -245,7 +245,7 @@ const SHORTHAND_TERMS: readonly SpokenTerm[] = [
 
 const SPOKEN_TERMS: readonly SpokenTerm[] = [
   ...Object.values(ACTIONS).flatMap((meta) =>
-    [meta.id, meta.label, ...meta.aliases, ...(meta.asrErrors ?? [])]
+    [meta.id, meta.label, ...meta.aliases, ...meta.asrErrors]
       .map((term) => normalizeAsr(term))
       .filter((term) => term.length > 0)
       .map((term) => ({ id: meta.id, term })),
