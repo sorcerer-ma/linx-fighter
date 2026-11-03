@@ -134,7 +134,9 @@ pnpm dev          # 终端 1：游戏服务
 pnpm sandbox      # 终端 2：沙箱页面
 ```
 
-打开 <http://127.0.0.1:8100>，用页面上的「＋ 新窗口」开第二个窗口。A 说「共鸣对决，发起挑战」，B 说「接受挑战，编号 1234」，就可以开打。
+打开 <http://127.0.0.1:8100> 进入大厅：点「开一间房」拿到四位房号和邀请链接，把链接发给朋友；对方打开链接会自动加入，也可以在大厅输入房号。想先自己熟悉规则，点「单人练习（人机）」。
+
+对局中默认点按钮出招，也可以点麦克风说「强攻」「格挡」，或用键盘输入。按钮只是把同一句中文指令交给服务端，规则、裁决和语音入口完全共用。
 
 手机和电脑在同一 Wi-Fi 时，用 `http://<电脑 IP>:8100` 打开另一块屏。不想开两个窗口，也可以让两个假玩家自己打：
 
@@ -142,7 +144,7 @@ pnpm sandbox      # 终端 2：沙箱页面
 pnpm sandbox:selfplay --rounds 3
 ```
 
-不配置任何模型密钥也能完整对局——规则、对手和播报都有本地实现。完整操作、接口与排障见[沙箱说明](docs/testing/sandbox.md)。
+不配置任何模型密钥也能完整对局——规则、对手和播报都有本地实现。想让更多同事从公网手机加入，部署方式、HTTPS 与内存房间的限制见[手机对战平台](docs/engineering/mobile-platform.md)；本地操作、接口与排障见[沙箱说明](docs/testing/sandbox.md)。
 
 ## 文档
 
@@ -158,7 +160,9 @@ pnpm sandbox:selfplay --rounds 3
 | MCP 事实协议与事实格式 | [协议设计](docs/engineering/mcp-protocol.md) |
 | 本地开发、命令与调试入口 | [开发与运行](docs/engineering/development.md) |
 | 平台配置、部署与排障 | [接入灵矽平台](docs/engineering/linx-integration.md) |
+| 设备屏幕、表情与固件 | [设备 HUD](docs/engineering/device-hud.md) · [固件源码与归档](firmware/README.md) |
 | 本地沙箱、手机联调与用例 | [沙箱说明](docs/testing/sandbox.md) |
+| 多房间手机对战、公开大厅与部署 | [手机对战平台](docs/engineering/mobile-platform.md) |
 | 测试矩阵与质量门禁 | [测试与质量](docs/testing/testing.md) |
 | 真机验收与试玩记录 | [验收与试玩](docs/product/acceptance-and-playtest.md) |
 | 多设备、声纹与归属 | [多设备归属](docs/product/multi-device-attribution.md) |

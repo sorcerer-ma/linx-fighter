@@ -41,9 +41,10 @@ TypeScript 使用 ESM / NodeNext，相对导入带 `.js` 后缀。运行时与�
 | AI、命令路由与规则外问答 | `src/game/enemy.ts`、`enemy-jev.ts`、`router.ts`、`llm.ts`、`chat.ts` |
 | 把一句原话读成命令（招式 / 战况 / 玩法 / 开局 / 开房 / 加入房间 / 规则外问答） | `src/game/command.ts` 的 `readCommand`；查询、否定、歧义拦截也在里面 |
 | 开局、行动、房间切换与并发校验 | `src/game/service.ts`、`table.ts`、`serialize.ts` |
-| 双人视角与房间索引 | `src/game/pvp.ts`、`src/store/rooms.ts` |
+| 双人视角、房间索引与公开大厅 | `src/game/pvp.ts`、`src/game/lobby.ts`、`src/store/rooms.ts` |
 | 伙伴播报、补账与界面快照 | `src/game/narrator.ts`、`state.ts`、`src/store/echoes.ts` |
 | MCP 工具、身份与载体能力 | `src/mcp/server.ts`、`tools.ts`、`context.ts` |
+| 设备 HUD 画面派生与设备通道 | `src/game/frame.ts`、`src/game/presentation.ts`、`src/game/hud.ts`、`src/mcp/hud-tools.ts`、`src/http/device-hud-socket.ts`、`src/http/hud-key.ts`、[设备 HUD 通道](docs/engineering/device-hud.md) |
 | 路由、传输、状态流、调试接口 | `src/http/app.ts` |
 | 存储与过期 | `src/store/` |
 | 沙箱服务、客户端与页面 | `sandbox/server.ts`、`platform/`、`public/` |
@@ -78,6 +79,7 @@ CI 门禁以 `.github/workflows/ci.yml` 与 `package.json` 为准，包含类型
 | 接口、身份头与返回格式 | [MCP 接口](docs/engineering/mcp-api.md) |
 | 本地命令、配置与调试入口 | [开发与运行](docs/engineering/development.md) |
 | 沙箱操作、接口与回归 | [沙箱说明](docs/testing/sandbox.md) |
+| 多房间手机对战、公开大厅与部署 | [手机对战平台](docs/engineering/mobile-platform.md) |
 | 测试矩阵与质量门禁 | [测试与质量](docs/testing/testing.md) |
 | 技术亮点、评测结论与关键取舍 | [技术亮点](docs/engineering/technical-highlights.md) |
 | 商业化路径、增长机制与定价判断 | [商业模式](docs/business/business-model.md) |

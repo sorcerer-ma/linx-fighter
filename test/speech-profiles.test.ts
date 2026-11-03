@@ -14,7 +14,7 @@ test('exactly three temperament profiles bind voices without assigning every com
       assert.ok(prompt.includes(required), `${id} missing shared rule ${required}`);
     }
     assert.match(prompt, /得意/); assert.match(prompt, /鼓励/);
-    assert.match(prompt, /同一个体/);
+    assert.match(prompt, /预先配置/);
     assert.equal(prompt.includes('小喵'), false);
     assert.ok(profilePrompt(id, '小喵').includes('companionName="小喵"'));
     assert.ok(profilePrompt(id, '小岚').includes('companionName="小岚"'));

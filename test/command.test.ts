@@ -205,6 +205,58 @@ describe('不该出手的表达', () => {
     }
   });
 
+  it('说「他的攻击」是把对手那一手挡下来，不是自己又点了一招', () => {
+    // 「格挡他的攻击」原先被数成格挡 + 攻击两招，判成歧义；
+    // 带「的」的名词短语说的是冲我来的那一手，剥掉之后自己只出了格挡
+    for (const [text, action] of [
+      ['格挡他的攻击', 'guard'],
+      ['格挡他的强攻', 'guard'],
+      ['格挡对手的攻击', 'guard'],
+      ['闪避他的普攻', 'dodge'],
+      ['承受他的大招', 'take'],
+      // 指示说法指回的也是对手这一手
+      ['格挡这次攻击', 'guard'],
+    ] as const) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应读成一手`);
+      if (command.kind === 'turn') assert.equal(command.action, action, `「${text}」读成了 ${command.action}`);
+    }
+
+    // 以「他」为主语的子句同样是对手那一手，剥掉后只看自己那半句
+    for (const [text, action] of [
+      ['他攻击，我格挡', 'guard'],
+      ['他要放大招了，我闪避', 'dodge'],
+      ['嗯，他要攻击我，我格挡', 'guard'],
+    ] as const) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应读成一手`);
+      if (command.kind === 'turn') assert.equal(command.action, action, `「${text}」读成了 ${command.action}`);
+    }
+
+    // 只描述对手的那句话不出招：不能替玩家打一记普攻
+    for (const text of ['他的攻击', '他的大招', '对手的攻击']) {
+      assert.equal(readCommand(text).kind, 'route', `「${text}」只是描述对手，不能出招`);
+    }
+
+    // 「他」是打击对象时不能剥：剥掉只剩「我要」，这一手就丢了
+    for (const [text, action] of [
+      ['我要对他强攻', 'heavy'],
+      ['我要对他普攻', 'light'],
+    ] as const) {
+      const command = readCommand(text);
+      assert.equal(command.kind, 'turn', `「${text}」应照常出招`);
+      if (command.kind === 'turn') assert.equal(command.action, action, `「${text}」读成了 ${command.action}`);
+    }
+    assert.deepEqual(readCommand('我要对他普攻，还是强攻'), { kind: 'refused', why: 'ambiguous' });
+    // 「他」在动词后面是打的对象，不是句子的主语：剥掉会把他点的第二招藏起来
+    assert.deepEqual(readCommand('我要攻击他，然后格挡'), { kind: 'refused', why: 'ambiguous' });
+
+    // 两招都是自己点的，仍旧让玩家重说，不能替他挑一招
+    for (const text of ['格挡还是闪避', '攻击还是格挡']) {
+      assert.deepEqual(readCommand(text), { kind: 'refused', why: 'ambiguous' }, `「${text}」仍应让玩家重说`);
+    }
+  });
+
   it('对手在蓄力不等于本机蓄力', () => {
     // 「对手回能量」是在描述对手，剥掉对手子句后本机没有出招，也就不能白涨能量
     for (const text of ['对手回能量，我先等等', '对手攒点能量，我先看看', '对手补能量，我先不动']) {
@@ -343,9 +395,10 @@ it('加入意图缺少或错误编号不创建，否定和查询仍不执行',()
  assert.equal(readCommand('共鸣对决，发起挑战').kind,'open-room');
 });
 
-it('退出挑战与退出房间同义，否定和询问不执行退出',()=>{
+it('退出挑战、退出房间与退出训练同义，否定和询问不执行退出',()=>{
  for(const text of ['退出挑战','退出房间','我要退出房间','请退出挑战吧'])assert.equal(readCommand(text).kind,'leave-room',text);
- for(const text of ['不要退出挑战','不退出房间'])assert.equal(readCommand(text).kind,'refused',text);
+ for(const text of ['退出训练','结束训练','退出对局','结束这局对战'])assert.equal(readCommand(text).kind,'leave-room',text);
+ for(const text of ['不要退出挑战','不退出房间','别退出训练'])assert.equal(readCommand(text).kind,'refused',text);
  assert.notEqual(readCommand('如何退出房间？').kind,'leave-room');
  assert.deepEqual(readCommand('退出房间1234'),{kind:'refused',why:'ambiguous'});
  assert.deepEqual(readCommand('如何退出房间1234？'),{kind:'route',question:true});

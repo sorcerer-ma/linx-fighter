@@ -27,6 +27,7 @@ describe('配置解析', () => {
       enemyTimeoutMs: 2000,
       attribution: 'off',
       adminToken: undefined,
+      deviceToken: undefined,
       speakers: [],
       waitEventTimeoutMs: 290_000,
     });
@@ -42,6 +43,8 @@ describe('配置解析', () => {
   it('监控页口令去空白，空串等于公开', () => {
     assert.equal(loadConfig({ ADMIN_TOKEN: '  s3cret ' }).adminToken, 's3cret');
     assert.equal(loadConfig({ ADMIN_TOKEN: '   ' }).adminToken, undefined);
+    assert.equal(loadConfig({ DEVICE_WS_TOKEN: '  dev-secret ' }).deviceToken, 'dev-secret');
+    assert.equal(loadConfig({ DEVICE_WS_TOKEN: '  ' }).deviceToken, undefined);
   });
 
   it('端口钳制在合法范围，非法值回退默认端口', () => {

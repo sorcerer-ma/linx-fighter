@@ -29,6 +29,44 @@ export function newSettlement(previous, next) {
   return entry.action === 'charge' ? null : entry;
 }
 
+/** 两条资源行：第一行自己，第二行对手；等对手加入时只留自己。 */
+export function resourceRows(battle) {
+  if (!battle) return [];
+  const rows = [{ key: 'self', fighter: battle.you }];
+  if (!battle.waiting && battle.opponent) rows.push({ key: 'opponent', fighter: battle.opponent });
+  return rows;
+}
+
+/** 对手大招徽记：资源够且本局还有次数才亮，不等对手回合。 */
+export function opponentUltimate(battle) {
+  if (!battle || battle.waiting || !battle.opponent) return 'hidden';
+  if (battle.phase !== 'battle') return 'ended';
+  if (battle.opponent.ultLeft <= 0) return 'used';
+  return battle.opponent.ap >= 4 ? 'ready' : 'insufficient';
+}
+
+const ULT_LABEL = { ready: '大招可释放', used: '本局大招已用', ended: '对局已结束', unknown: '大招状态待核实', insufficient: '大招未就绪' };
+
+function paintRow(app, selectors, fighter, unknown) {
+  const fill = app.querySelector(selectors.fill);
+  const track = app.querySelector(selectors.track);
+  const number = app.querySelector(selectors.number);
+  const dots = app.querySelectorAll(selectors.dots + ' .energy-point');
+  if (!fighter || unknown) {
+    fill.style.width = '0%';
+    number.textContent = '--';
+    track.setAttribute('aria-label', selectors.name + '待核实');
+    dots.forEach(node => node.classList.remove('on'));
+    return;
+  }
+  const ratio = fighter.maxHp > 0 ? fighter.hp / fighter.maxHp : 0;
+  fill.style.width = Math.max(0, Math.min(1, ratio)) * 100 + '%';
+  number.textContent = String(fighter.hp);
+  track.setAttribute('aria-label', selectors.name + fighter.hp + '，上限' + fighter.maxHp);
+  dots.forEach((node, i) => node.classList.toggle('on', i < fighter.ap));
+}
+
+
 function refreshFace(app,key){
  const parts=['eyes-open','eyes-happy','eyes-impact','eyes-low','brow-ready','brow-listen','brow-question','mouth-neutral','mouth-listen','mouth-cheer','mouth-shock','mouth-low','mouth-question','question-mark','impact-lines','held-pose'];
  const shown=new Set(['eyes-open','mouth-neutral']);
@@ -57,32 +95,27 @@ export function renderCompanion(app, battle, view) {
   const colors = palettes[key] || ['#183f37','#427f55','#1d493c'];
   ['--screen-base','--screen-center','--screen-edge'].forEach((name,i) => app.style.setProperty(name,colors[i]));
   app.style.setProperty('--light', key === 'hurt' ? '#e7ad8e' : key === 'defeat' ? '#a3a8c8' : key === 'accepted' ? '#f1cf8c' : '#84d6af');
-  const track = app.querySelector('.track');
-  const fighter = battle?.you;
-  app.querySelector('#hp-fill').style.width = fighter ? (fighter.hp / fighter.maxHp * 100) + '%' : '0%';
-  track.setAttribute('aria-label', unknown ? '生命值待核实' : '生命值' + fighter.hp + '，上限' + fighter.maxHp);
-  app.querySelectorAll('.energy-point').forEach((node,i) => node.classList.toggle('on', !unknown && i < fighter.ap));
-  app.querySelector('#energy-dots').setAttribute('aria-label',unknown ? '能量待核实' : '能量' + fighter.ap + '点');
-  const ultimate = app.querySelector('#ultimate');
-  ultimate.dataset.availability = view.ultimate;
-  ultimate.setAttribute('aria-label', {ready:'当前可释放大招',used:'本局大招已用',ended:'对局已结束',unknown:'大招状态待核实',insufficient:'当前不可释放大招'}[view.ultimate]);
+
+  const resources = app.querySelector('.resources');
+  const selfBadge = app.querySelector('#ultimate');
+  const foeBadge = app.querySelector('#ultimate-enemy');
+  const foe = battle?.opponent || null;
+  const showFoe = Boolean(battle) && !battle.waiting && Boolean(foe);
+  resources.hidden = !battle;
+  app.querySelector('#self-row').hidden = !battle;
+  app.querySelector('#opponent-row').hidden = !showFoe;
+  selfBadge.hidden = !battle;
+  foeBadge.hidden = !showFoe;
+
+  paintRow(app, { fill: '#hp-fill', track: '.self .track', number: '#hp-number', dots: '#energy-dots', name: '自己生命值' }, battle?.you, unknown);
+  if (showFoe) {
+    paintRow(app, { fill: '#opponent-hp-fill', track: '.opponent .track', number: '#opponent-hp-number', dots: '#opponent-energy-dots', name: '对手生命值' }, foe, unknown);
+  }
+  selfBadge.dataset.availability = view.ultimate;
+  selfBadge.setAttribute('aria-label', ULT_LABEL[view.ultimate] || ULT_LABEL.unknown);
+  const foeUlt = opponentUltimate(battle);
+  foeBadge.dataset.availability = foeUlt;
+  foeBadge.setAttribute('aria-label', foeUlt === 'hidden' ? '对手大招' : '对手' + ULT_LABEL[foeUlt]);
   app.querySelector('.buddy').setAttribute('aria-label','伙伴表情：' + key);
   refreshFace(app,key);
-}
-
-/** Only public snapshot fields; never display invented defaults or pending damage. */
-export function opponentDetails(battle, connected) {
-  if (!connected) return '连接或行动结果待核实，暂不展示缓存的对手数值。';
-  if (!battle) return '尚无对局，没有对手状态。';
-  if (battle.waiting) return '对方还没有接受挑战。';
-  const foe = battle.opponent;
-  const phase = battle.phase === 'victory' ? '对手已被击倒'
-    : battle.phase === 'defeat' ? '对手获胜'
-    : battle.pending?.actor === 'player' ? '对手需要应对本方攻击'
-    : battle.pending?.actor === 'enemy' ? '对手已出招，等待本方应对'
-    : battle.active === 'enemy' ? '对手主动阶段' : '等待本方主动出招';
-  return '生命值：' + foe.hp + ' / ' + foe.maxHp
-    + '\n能量：' + foe.ap + ' / ' + foe.maxAp
-    + '\n大招：' + (foe.ultLeft > 0 ? '剩余' + foe.ultLeft + '次' : '本局已用')
-    + '\n状态：' + phase;
 }

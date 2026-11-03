@@ -751,8 +751,8 @@ describe('明确退出挑战的安全范围',()=>{
    const repeated=await service.say(HOST,phrase);assert.equal(repeated.reply?.silent,true);assert.equal(rooms.size,1);
   }
  });
- it('不在房间时保留单人局，未登记或错席位声音不能撤房',async()=>{
-  const {service}=setup();await service.say(HOST,'开始');const before=service.snapshot(HOST);await service.say(HOST,'退出房间');assert.deepEqual(service.snapshot(HOST),before);
+ it('单人局说退出也投降收局，未登记或错席位声音不能撤房',async()=>{
+  const {service}=setup();await service.say(HOST,'开始');assert.ok(service.snapshot(HOST));await service.say(HOST,'退出房间');assert.equal(service.snapshot(HOST),null);
   const protectedFixture=setup({speakers:['甲','乙']});await protectedFixture.service.say(HOST,'开房',{speaker:'甲'});const room=protectedFixture.service.snapshot(HOST);
   for(const speaker of ['陌生人','乙']){const r=await protectedFixture.service.say(HOST,'退出挑战',{speaker});assert.equal(r.reply?.silent,true);assert.deepEqual(protectedFixture.service.snapshot(HOST),room);}
  });

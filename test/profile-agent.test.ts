@@ -10,7 +10,7 @@ import type { GameReply } from '../src/game/protocol.js';
 
 const facts:GameReply={v:2,ok:true,phase:'idle',need:'none',events:[],say:'我准备好了。'};
 const output=JSON.stringify({segments:[{text:'我准备好了，好期待呀！',emotion:'expectant'}]});
-it('three profile IDs and speakers exactly match the approved voice pairs, with no forced name',()=>{
+it('three profile IDs and speakers exactly match the approved voice pairs, with default identities',()=>{
  assert.deepEqual(Object.keys(SPEECH_PROFILES),['cancan','qingcang','tiancai']);
  assert.equal(speechProfile('cancan')?.speaker,'zh_female_cancan_uranus_bigtts');
  assert.equal(speechProfile('qingcang')?.speaker,'zh_male_qingcang_uranus_bigtts');
@@ -18,7 +18,7 @@ it('three profile IDs and speakers exactly match the approved voice pairs, with 
  assert.equal(resolveProfileId(undefined),'cancan');assert.equal(speechProfile('__proto__'),undefined);
  assert.equal(speechProfile('other'),undefined);assert.throws(()=>resolveProfileId('other'),/未知伙伴气质/);
  const shared=readFileSync(new URL('../config/companion-profiles/shared.md',import.meta.url),'utf8');
- assert.ok(!shared.includes('小喵'));assert.match(shared,/名字/);assert.match(shared,/不因切换而改名|不指定或改变名字/);assert.match(shared,/不能由音色|音色名不是伙伴名字/);
+ assert.ok(!shared.includes('小喵'));assert.match(shared,/名字/);assert.match(shared,/切换 profile 会切换精灵角色/);assert.match(shared,/默认名字/);
  for(const id of Object.keys(SPEECH_PROFILES) as SpeechProfileId[]){assert.ok(!profilePrompt(id).includes('你的名字是'));assert.match(profilePrompt(id),/不能替换或覆盖/);}
 });
 it('actual expression adapter receives three different style supplements and keeps the full main safety prompt',async()=>{

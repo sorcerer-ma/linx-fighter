@@ -23,6 +23,8 @@
 | `POST /mcp` | Streamable HTTP，平台当前实际使用 |
 | `GET /mcp` 或 `GET /sse` | SSE 长连接，兼容平台早先文档 |
 | `POST /mcp/message` | 在 SSE 会话里投递 JSON-RPC |
+| `POST /device/mcp` | 设备 HUD 只读通道（Streamable HTTP 无状态，只注册 `game_hud`）；见[设备 HUD 通道](device-hud.md) |
+| `DELETE /device/mcp` | 结束设备 HUD 会话 |
 | `DELETE /mcp` | 结束 MCP 会话 |
 | `GET /health` | 存活探针 |
 | `GET /state` | 当前视角的局面快照，供沙箱 CLI、调试脚本与状态流代理使用，不推进对局 |

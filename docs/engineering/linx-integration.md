@@ -210,6 +210,7 @@ curl -X PUT "https://<平台域名>/v1/devices/<mac_address>/agent/<agent_id>" \
 | `ALLOWED_SPEAKERS` | — | 逗号分隔的声纹称呼白名单；配置后未登记的说话人不回应，留空不限制 |
 | `WAIT_EVENT_TIMEOUT_MS` | `290000` | 单次等待默认290秒，为已确认的300秒HTTP预算留10秒余量；能力范围1000～300000，其他长预算接入自行核实传输上限 |
 | `ADMIN_TOKEN` | — | 后台监控页口令；为空时 `/admin` 公开，只适合演示环境 |
+| `DEVICE_WS_TOKEN` | — | 设备推送通道口令；为空时 `/device/ws` 只凭设备号订阅，公网建议配置 |
 
 沙箱自己的变量（`SANDBOX_*`）见 [沙箱配置](../testing/sandbox.md#配置项)。
 

@@ -1,10 +1,12 @@
-import { wantsWait, runWaitLoop } from './wait-loop.js';
-import { BackendRecognition } from './backend-recognition.js';
-import { backendPlayback } from './playback.js';
-import { diagnosticText } from './speech-diagnostic.js';
-import { createConversation } from './conversation.js';
-import { createListeningSession } from './listening.js';
-import { companionView, newSettlement, renderCompanion, opponentDetails } from './companion.js';
+import { wantsWait, runWaitLoop } from './wait-loop.js?v=20261101c';
+import { BackendRecognition } from './backend-recognition.js?v=20261101c';
+import { backendPlayback } from './playback.js?v=20261101c';
+import { diagnosticText } from './speech-diagnostic.js?v=20261101c';
+import { createConversation } from './conversation.js?v=20261101c';
+import { createListeningSession } from './listening.js?v=20261101c';
+import { companionView, newSettlement, renderCompanion, resourceRows } from './companion.js?v=20261101c';
+import { parseRoomParam, joinCommand, inviteLink, stripRoomParam, lobbyRooms, pageMode } from './lobby.js?v=20261101c';
+import { actionBarView } from './actions.js?v=20261101c';
 
 /*
  * 共鸣 · 闻声对决 —— 沙箱页面脚本（极简游戏画面版）
@@ -58,8 +60,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var el = {
     round: $('round'),
     dot: $('dot'),
-    status: $('status'),
-    alert: $('alert'),
     replies: $('replies'),
     conversationScroll: $('conversation-scroll'),
     composer: $('composer'),
@@ -67,12 +67,29 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     send: $('send'),
     mic: $('mic'),
     keyboard: $('keyboard'),
-    transcript: $('transcript'),
-    micStatus: $('mic-status'),
     speechProfile: $('speech-profile'),
-    profileStatus: $('profile-status'),
-    speechDetail: $('speech-detail')
-
+    // 大厅
+    lobby: $('lobby'),
+    lobbySummary: $('lobby-summary'),
+    openRoom: $('open-room'),
+    soloPractice: $('solo-practice'),
+    joinForm: $('join-form'),
+    roomCode: $('room-code'),
+    joinRoom: $('join-room'),
+    roomList: $('room-list'),
+    roomListWrap: $('room-list-wrap'),
+    roomEmpty: $('room-empty'),
+    // 等待房
+    roomCard: $('room-card'),
+    roomCodeLabel: $('room-code-label'),
+    roomState: $('room-state'),
+    copyInvite: $('copy-invite'),
+    cancelRoom: $('cancel-room'),
+    copyStatus: $('copy-status'),
+    // 出招按钮
+    battleActions: $('battle-actions'),
+    actionButtons: $('action-buttons'),
+    actionUtility: $('action-utility')
   };
 
   /* ---------------- 状态 ---------------- */
@@ -109,6 +126,16 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   var playerSpeaking = false;
   var PUSH_KINDS = ['opponent-move', 'opponent-joined', 'ult-ready', 'idle-turn', 'idle-respond', 'wait-opponent', 'wait-guest'];
   var activeReplyBattleId = null;
+
+  // 大厅只看房、不参与裁决：没有对局且页面可见时才轮询，且同一时间最多一个请求。
+  var LOBBY_POLL_MS = 3000;
+  var lobby = { payload: null, loading: false, fetchedAt: 0, timer: null, request: null };
+  var lobbySignature = '';
+  var currentMode = 'lobby';
+  var actionSignature = '';
+  var actionButtons = [];
+  // 邀请链接只在首次「没有对局也没有房间」的快照后自动加入一次，避免换掉已有对局。
+  var invite = { code: parseRoomParam(window.location.search), running: false, done: false };
 
   /* ---------------- 身份 ---------------- */
 
@@ -199,8 +226,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       .then(function (data) {
         config = data;
         loadSpeechProfiles(data);
-        if (!listener.enabled) el.micStatus.textContent = micPrompt({ enabled: false, active: false, paused: false });
-        $('agent-mode').textContent = data.agentMode === 'relay' ? '原话透传Agent · 事实约束人设表达' : '事实兜底 · 人设表达未启用';
         connectStream(data);
       })
       .catch(function () {
@@ -217,7 +242,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
         expected.some(id => profiles.filter(profile => profile.id === id && typeof profile.name === 'string').length !== 1) ||
         !expected.includes(data.defaultSpeechProfile)) {
       el.speechProfile.disabled = true;
-      el.profileStatus.textContent = '音色与性格配置不完整，暂时无法发送指令。';
+      el.speechProfile.title = '精灵配置不完整';
       return;
     }
     speechProfiles = profiles;
@@ -231,20 +256,15 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     selectedSpeechProfile = data.defaultSpeechProfile;
     el.speechProfile.value = selectedSpeechProfile;
     el.speechProfile.disabled = false;
-    showProfileStatus();
-  }
-
-  function showProfileStatus() {
-    const profile = speechProfiles.find(item => item.id === selectedSpeechProfile);
-    el.profileStatus.textContent = profile ? '当前：' + profile.name +
-      (config.voice && config.voice.tts === 'backend' ? '' : '。浏览器朗读不保证对应音色。') : '请选择已配置的音色与性格。';
+    el.speechProfile.title = '';
+    // 首帧状态可能先于配置到达；配置就绪后再补一次邀请链接自动加入。
+    maybeJoinInvite();
   }
 
   function changeSpeechProfile() {
     const next = el.speechProfile.value;
     if (!speechProfiles.some(profile => profile.id === next)) {
       el.speechProfile.value = selectedSpeechProfile || '';
-      el.profileStatus.textContent = '未知的音色与性格，未切换。';
       return;
     }
     if (next === selectedSpeechProfile) return;
@@ -252,8 +272,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     listener.pause();
     cancelTurn();
     selectedSpeechProfile = next;
-    showProfileStatus();
-    el.speechDetail.textContent = '已停止上一条播报；下一句使用新的音色与性格。';
     if (!busy && el.composer.hidden) listener.resume();
   }
 
@@ -311,6 +329,8 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
         ((activeUtterance || cloudPlayback) && activeReplyBattleId && nextBattleId !== activeReplyBattleId)) cancelTurn();
     unconfirmed = false;
     applyBattle(payload.battle);
+    invite.synced = true;
+    maybeJoinInvite();
     resumeListeningIfIdle();
   }
 
@@ -396,7 +416,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       // 通知不是玩家输入，永不由它追加 wait_event 或重发 game_say。
     } catch (error) {
       if (!controller.signal.aborted && notificationIsCurrent(signal)) {
-        el.speechDetail.textContent = '通知未播报，可主动询问战况。';
       }
     } finally {
       clearTimeout(timer);
@@ -412,7 +431,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   function showOutcome(data, turn, revision, profileId) {
     if (turn !== turnSequence || document.hidden) return Promise.resolve('cancelled');
     if (data.profileId !== undefined && data.profileId !== profileId) {
-      pushReply('回复的音色与性格不匹配，已停止播报。', 'warn', 'system');
+      pushReply('回复的精灵不匹配，已停止播报。', 'warn', 'system');
       return Promise.resolve('cancelled');
     }
     const currentBattleId = state.battle && state.battle.battleId;
@@ -431,7 +450,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     activeReplyBattleId = data.sourceBattleId || null;
     speechSource = data.speech && data.speech.source || 'legacy';
     el.replies.dataset.speechSource = speechSource;
-    el.speechDetail.textContent = speechSourceText();
     return speak(data.speech, data.reply, turn, profileId);
   }
 
@@ -481,7 +499,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     var value = String(text == null ? '' : text);
     if (!value.trim() || busy) return;
     if (!selectedSpeechProfile) {
-      pushReply('音色与性格尚未就绪，请先确认配置。', 'warn', 'system');
+      pushReply('精灵尚未就绪，请先确认配置。', 'warn', 'system');
       return;
     }
     const profileId = selectedSpeechProfile;
@@ -489,8 +507,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     const revision = state.revision;
     busy = true;
     conversation.append('player', value);
-    el.transcript.textContent = '玩家 · 已发送：' + value;
-    el.micStatus.textContent = '等待伙伴回复';
     listener.pause();
     closeComposer();
     render();
@@ -525,6 +541,300 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     if (turn === turnSequence) drainNotification();
     // 旧请求可以清除 busy，但不能越过新请求或音频；切换 profile 后仍接续启用意图。
     resumeListeningIfIdle();
+    // 邀请链接自动加入需要据此判断加入是否成功；其他调用方忽略返回值即可。
+    return data;
+  }
+
+  /* ---------------- 大厅与出招按钮 ---------------- */
+
+  function lobbyVisible() {
+    return !state.battle && document.visibilityState === 'visible';
+  }
+
+  function stopLobbyPolling() {
+    if (lobby.timer) {
+      clearTimeout(lobby.timer);
+      lobby.timer = null;
+    }
+    if (lobby.request) {
+      lobby.request.abort();
+      lobby.request = null;
+    }
+  }
+
+  function scheduleLobby(delay) {
+    if (lobby.timer) clearTimeout(lobby.timer);
+    lobby.timer = setTimeout(pollLobby, delay);
+  }
+
+  // 单请求轮询：上一次没落地之前不再发，页面隐藏或已进对局时立刻停。
+  function pollLobby() {
+    lobby.timer = null;
+    if (lobby.loading || !lobbyVisible()) return;
+    lobby.loading = true;
+    const controller = new AbortController();
+    lobby.request = controller;
+    fetch('/api/lobby', { cache: 'no-store', signal: controller.signal, headers: { accept: 'application/json' } })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        if (controller.signal.aborted) return;
+        lobby.payload = data;
+      })
+      .catch(function () {
+        // 接口还没上线或上游不可达：保留手动开房/房号加入，不让大厅白屏。
+        if (controller.signal.aborted) return;
+        lobby.payload = { ok: false, rooms: [] };
+      })
+      .then(function () {
+        if (lobby.request === controller) lobby.request = null;
+        lobby.loading = false;
+        if (controller.signal.aborted || !lobbyVisible()) return;
+        lobby.fetchedAt = Date.now();
+        renderLobby();
+        syncLobbyPolling();
+      });
+  }
+
+  function syncLobbyPolling() {
+    if (!lobbyVisible()) {
+      stopLobbyPolling();
+      return;
+    }
+    if (lobby.timer || lobby.loading) return;
+    const elapsed = lobby.fetchedAt ? Date.now() - lobby.fetchedAt : LOBBY_POLL_MS;
+    if (elapsed >= LOBBY_POLL_MS) pollLobby();
+    else scheduleLobby(LOBBY_POLL_MS - elapsed);
+  }
+
+  function renderLobby() {
+    if (currentMode !== 'lobby') return;
+    const view = lobbyRooms(lobby.payload);
+    const failed = Boolean(lobby.payload) && lobby.payload.ok === false;
+    el.lobbySummary.textContent = failed ? '大厅暂时读不到，可以直接开一间房或用房号加入。' : '';
+    el.lobbySummary.dataset.tone = failed ? 'warn' : 'normal';
+    el.roomListWrap.hidden = !failed && view.rooms.length === 0;
+    el.roomEmpty.hidden = true;
+    el.roomEmpty.textContent = '';
+    renderRoomItems(view.rooms);
+    const locked = busy;
+    el.openRoom.disabled = locked;
+    el.soloPractice.disabled = locked;
+    el.joinRoom.disabled = locked;
+    el.roomCode.disabled = locked;
+  }
+
+  function renderRoomItems(rooms) {
+    const signature = rooms.map(function (room) {
+      return room.code + ':' + room.status + ':' + room.round;
+    }).join('|') + '|' + (busy ? 'busy' : 'idle');
+    if (signature === lobbySignature) return;
+    lobbySignature = signature;
+    el.roomList.textContent = '';
+    rooms.forEach(function (room) {
+      const item = document.createElement('li');
+      item.className = 'room-item';
+      item.dataset.status = room.status;
+      const code = document.createElement('span');
+      code.className = 'room-item-code';
+      code.textContent = room.code;
+      const meta = document.createElement('span');
+      meta.className = 'room-item-meta';
+      meta.textContent = room.status === 'playing' ? '第 ' + room.round + ' 轮' : '等待加入';
+      item.appendChild(code);
+      item.appendChild(meta);
+      if (room.joinable) {
+        const join = document.createElement('button');
+        join.type = 'button';
+        join.className = 'room-item-join';
+        join.dataset.code = room.code;
+        join.textContent = '加入';
+        join.disabled = busy;
+        item.appendChild(join);
+      } else {
+        const tag = document.createElement('span');
+        tag.className = 'room-item-tag';
+        tag.textContent = '对战中';
+        item.appendChild(tag);
+      }
+      el.roomList.appendChild(item);
+    });
+  }
+
+  function submitJoin(value) {
+    const command = joinCommand(value);
+    if (!command) {
+      el.lobbySummary.textContent = '请输入 4 位数字房号。';
+      el.lobbySummary.dataset.tone = 'warn';
+      el.roomCode.focus();
+      return;
+    }
+    el.roomCode.value = '';
+    say(command);
+  }
+
+  function renderRoomCard() {
+    const battle = state.battle;
+    const waiting = Boolean(battle && battle.waiting && battle.room);
+    el.roomCard.hidden = !waiting;
+    if (!waiting) return;
+    el.roomCodeLabel.textContent = String(battle.room);
+    el.roomState.textContent = battle.mode === 'pvp' ? '等待对手加入' : '等待开始';
+    el.copyInvite.disabled = busy;
+    el.cancelRoom.disabled = busy;
+  }
+
+  function currentInviteLink() {
+    const code = state.battle && state.battle.room;
+    return code ? inviteLink(window.location.href, code) : '';
+  }
+
+  // 浏览器剪贴板不可用时退回临时 textarea，至少让复制按钮真的能复制。
+  function fallbackCopy(text) {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.top = '-100px';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (err) {
+      ok = false;
+    }
+    document.body.removeChild(area);
+    return ok;
+  }
+
+  function copyInviteLink() {
+    const link = currentInviteLink();
+    if (!link) {
+      el.copyStatus.textContent = '房号还没准备好。';
+      return;
+    }
+    const done = function (ok) {
+      el.copyStatus.textContent = ok
+        ? '邀请链接已复制：' + link
+        : '复制失败，请长按链接手动复制：' + link;
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(function () { done(true); }, function () { done(fallbackCopy(link)); });
+      return;
+    }
+    done(fallbackCopy(link));
+  }
+
+  function clearRoomParam() {
+    try {
+      const next = stripRoomParam(window.location.href);
+      const current = window.location.pathname + window.location.search;
+      if (next && next !== current) history.replaceState(history.state, '', next);
+    } catch (err) {
+      // 地址栏不可写时忽略，不影响已成功的加入
+    }
+  }
+
+  // 邀请链接只在首次快照确认「没有对局也没有房间」后自动加入一次。
+  function maybeJoinInvite() {
+    if (!invite.code || invite.done || invite.running) return;
+    if (state.battle) {
+      invite.done = true;
+      invite.code = null;
+      return;
+    }
+    if (!invite.synced || !selectedSpeechProfile || busy || !connected || document.hidden) return;
+    invite.running = true;
+    const pending = say(joinCommand(invite.code));
+    if (!pending || !pending.then) {
+      invite.running = false;
+      return;
+    }
+    pending.then(function (data) {
+      invite.running = false;
+      if (!data) return; // 网络失败：保留房号，等下一次状态快照再试
+      const snapshot = data.state;
+      if (!snapshot) return; // 结果未知：不冒充成功，也不丢弃房号
+      invite.done = true;
+      invite.code = null;
+      // /api/say 返回的是 {room, battle} 快照；加入成功后 battle 才非空。
+      if (snapshot.battle && snapshot.battle.room) {
+        clearRoomParam();
+      } else {
+        pushReply('邀请的房间暂时加入不了，可以开一间房或用别的房号加入。', 'warn', 'system');
+      }
+    }, function () {
+      invite.running = false;
+    });
+  }
+
+  function setPageMode(mode) {
+    currentMode = mode;
+    if (document.body.dataset.mode !== mode) document.body.dataset.mode = mode;
+  }
+
+  function syncActionBarVisibility() {
+    const allowed = currentMode === 'battle' || currentMode === 'ended';
+    el.battleActions.hidden = !allowed || actionButtons.length === 0 || !el.composer.hidden;
+  }
+
+  function renderActions() {
+    const view = actionBarView(state.battle, { busy: busy, connected: connected && !unconfirmed });
+    const utility = view.utility || null;
+    const signature = view.mode + '|' + view.hint + '|' + (busy ? 'busy' : 'idle') + '|' +
+      (utility ? utility.label + ':' + (utility.disabled ? 1 : 0) : '') + '|' +
+      view.buttons.map(function (button) {
+        return button.id + ':' + button.label + ':' + button.command + ':' + (button.apCost || 0) + ':' +
+          (button.disabled ? 1 : 0) + ':' + (button.note || '');
+      }).join(',');
+    if (signature !== actionSignature) {
+      actionSignature = signature;
+      actionButtons = view.buttons;
+      el.actionButtons.textContent = '';
+      el.actionButtons.dataset.count = String(view.buttons.length);
+      view.buttons.forEach(function (button) {
+        const node = document.createElement('button');
+        node.type = 'button';
+        node.className = 'action-button';
+        node.dataset.command = button.command;
+        node.dataset.tone = button.tone || 'neutral';
+        node.disabled = button.disabled;
+        const label = document.createElement('span');
+        label.className = 'action-label';
+        label.textContent = button.label;
+        node.appendChild(label);
+        // 按钮后面直接标出这一手要扣的能量；0 费不标，避免底栏变吵。
+        if (button.apCost > 0) {
+          const cost = document.createElement('span');
+          cost.className = 'action-cost';
+          cost.textContent = '⚡' + button.apCost;
+          cost.setAttribute('aria-hidden', 'true');
+          node.appendChild(cost);
+        }
+        node.setAttribute('aria-label', button.label +
+          (button.apCost > 0 ? '，消耗' + button.apCost + '点能量' : '，不耗能量') +
+          (button.note ? '，' + button.note : ''));
+        el.actionButtons.appendChild(node);
+      });
+      // 退出入口单独一行，不混进招式网格，避免误触。
+      el.actionUtility.textContent = '';
+      el.actionUtility.hidden = !utility;
+      if (utility) {
+        const leave = document.createElement('button');
+        leave.type = 'button';
+        leave.className = 'action-utility-button';
+        leave.dataset.command = utility.command;
+        leave.dataset.confirm = utility.confirm || '';
+        leave.disabled = utility.disabled;
+        leave.textContent = utility.label;
+        el.actionUtility.appendChild(leave);
+      }
+    }
+    syncActionBarVisibility();
   }
 
   /* ---------------- 输入行 ---------------- */
@@ -539,12 +849,14 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       return;
     }
     el.composer.hidden = false;
+    syncActionBarVisibility();
     if (focus) el.text.focus();
   }
 
   function closeComposer() {
     if (el.composer.hidden) return;
     el.composer.hidden = true;
+    syncActionBarVisibility();
     el.keyboard.setAttribute('aria-expanded', 'false');
     el.text.value = '';
     if (listener && !busy && !activeUtterance) listener.resume();
@@ -573,37 +885,17 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     // Microphone state stays independent; settled victory/defeat has visual priority.
     if (busy) view.ultimate = 'unknown';
     renderCompanion($('app'), battle, view);
-    $('opponent-debug').textContent = opponentDetails(battle, connected && !unconfirmed);
-    el.round.hidden = !battle;
-    if (battle) el.round.textContent = '第 ' + battle.round + ' 轮';
-    const status = describeStatus(battle);
-    el.status.textContent = status.text;
-    el.status.dataset.tone = status.tone || 'normal';
-    const alert = describeAlert(battle);
-    el.alert.hidden = !alert;
-    el.alert.textContent = alert;
-  }
+    el.round.hidden = !battle || battle.waiting;
+    if (battle && !battle.waiting) el.round.textContent = '第 ' + battle.round + ' 轮';
 
-  function describeStatus(battle) {
-    if (!battle) return { text: '还没有对局，说「开始」或「共鸣对决，发起挑战」', tone: 'idle' };
-    if (battle.waiting) return { text: '等对方接受挑战', tone: 'wait' };
-    if (battle.phase === 'victory') return { text: '伙伴赢了', tone: 'win' };
-    if (battle.phase === 'defeat') return { text: '伙伴被击倒了', tone: 'lose' };
-    var pending = battle.pending;
-    if (pending && pending.actor === 'enemy') return { text: '等你应对', tone: 'alert' };
-    if (pending && pending.actor === 'player') return { text: '等对手应招', tone: 'wait' };
-    if (battle.active === 'enemy') return { text: '对手行动中', tone: 'wait' };
-    return { text: '你的回合', tone: 'you' };
-  }
-
-  // 对手已锁定的招式：这是页面唯一需要主动提醒的隐藏信息
-  function describeAlert(battle) {
-    var pending = battle && battle.pending;
-    if (!pending || pending.actor !== 'enemy') return '';
-    var move = pending.moveLabel || '招式';
-    var text = '对手的一记' + move + '已锁定';
-    if (typeof pending.damage === 'number') text += '（伤害 ' + pending.damage + '）';
-    return text;
+    // 页面模式完全跟随服务端快照：大厅 / 等待房 / 对战 / 结束。
+    const mode = pageMode(battle);
+    setPageMode(mode);
+    el.lobby.hidden = mode !== 'lobby';
+    if (mode === 'lobby') renderLobby();
+    renderRoomCard();
+    renderActions();
+    syncLobbyPolling();
   }
 
   /* ---------------- 播报（TTS） ---------------- */
@@ -612,19 +904,29 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     return typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance === 'function';
   }
 
-  // 单段适配边界为 {text, emotion}，对应未来语音队列 enqueue(text, emotion)。
-  // 浏览器只使用 text；emotion 是模型意图，不伪造音色情绪或映射音高/语速。
-  function speechSourceText() {
-    return ({model: '模型演绎', legacy: '旧格式回复', fallback: '安全兜底'})[speechSource] || '未知来源';
+  // iOS/Safari 只允许在用户手势里“解锁”语音合成；第一次触摸或按键时先播一个静音段，
+  // 之后服务端返回的回复才能真正出声。桌面浏览器没有副作用。
+  var speechPrimed = false;
+  function primeSpeech() {
+    if (speechPrimed || !canSpeak()) return;
+    speechPrimed = true;
+    try {
+      const warm = new window.SpeechSynthesisUtterance(' ');
+      warm.volume = 0;
+      warm.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
+      window.speechSynthesis.speak(warm);
+      window.speechSynthesis.resume();
+    } catch (error) { /* 浏览器不支持时保持静默，文字照常显示 */ }
   }
 
+  // 单段适配边界为 {text, emotion}，对应未来语音队列 enqueue(text, emotion)。
+  // 浏览器只使用 text；emotion 是模型意图，不伪造音色情绪或映射音高/语速。
   function browserSpeechSegment(item) {
     const utter = new window.SpeechSynthesisUtterance(item.text);
     utter.lang = (config && config.voice && config.voice.lang) || 'zh-CN';
     utter.rate = TTS_RATE;
     el.replies.dataset.emotionIntent = item.emotion;
     el.replies.dataset.emotionApplied = 'false';
-    el.speechDetail.textContent = speechSourceText() + ' · 情绪意图 ' + item.emotion + '；浏览器未应用情绪。';
     return utter;
   }
 
@@ -636,6 +938,7 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     if (!segments.length) return Promise.resolve('silent');
     if (config && config.voice && config.voice.tts === 'backend') return speakBackend(segments, turn, profileId);
     if (!canSpeak()) return Promise.resolve('displayed');
+    try { window.speechSynthesis.resume(); } catch (error) { /* 不支持时按无语音处理 */ }
     listener.pause();
     return new Promise(function (resolve) {
       let index = 0;
@@ -701,7 +1004,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
           el.replies.dataset.emotionControl = emotion.control;
           el.replies.dataset.speechProfile = emotion.profileId || profileId;
           el.replies.dataset.speechSpeaker = emotion.speaker || '';
-          el.speechDetail.textContent = speechSourceText() + ' · 音色 ' + (emotion.speaker || '未确认') + ' · 情绪意图 ' + emotion.requested + ' / 应用 ' + emotion.applied + ' / ' + emotion.control;
           el.replies.setAttribute('aria-label', '伙伴正在朗读，情绪请求 ' + emotion.requested + '，应用 ' + emotion.applied + '，控制 ' + emotion.control);
         });
       }
@@ -745,15 +1047,6 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     return true;
   }
 
-  function micPrompt(session) {
-    if (session.active) return '正在聆听，点击停止';
-    if (session.enabled) return session.paused ? '聆听已开启，等待伙伴回复' : '聆听已开启，正在接续收音';
-    if (speechReady()) return '点击开启持续聆听';
-    if (!config) return '正在加载语音配置';
-    if (window.isSecureContext === false) return '页面不是 HTTPS，点键盘输入';
-    return config.voice.asr === 'doubao' ? '此浏览器不支持后台收音，点键盘输入' : '此浏览器不支持语音，点键盘输入';
-  }
-
   var listener = createListeningSession({
     Recognition: ConfiguredRecognition,
     onState: function (session) {
@@ -762,13 +1055,11 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
       el.mic.dataset.listening = session.active ? 'true' : 'false';
       el.mic.setAttribute('aria-pressed', String(session.enabled));
       el.mic.setAttribute('aria-label', session.enabled ? '停止持续聆听' : '开启持续聆听');
-      el.micStatus.textContent = micPrompt(session);
       render();
     },
     onText: function (text, final) {
       playerSpeaking = !final && Boolean(text.trim());
       if (playerSpeaking) cancelNotifications();
-      el.transcript.textContent = (final ? '玩家 · 已识别：' : '玩家 · 识别中：') + text;
     },
     onFinal: function (text) { say(text); },
     onError: function (code) {
@@ -805,6 +1096,41 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
   el.mic.addEventListener('pointercancel', stopListening);
   el.keyboard.addEventListener('click', toggleComposer);
 
+  // 大厅/等待房/出招按钮：全部先变成中文原话，再交给同一条 say 入口。
+  el.openRoom.addEventListener('click', function () { say('发起挑战'); });
+  el.soloPractice.addEventListener('click', function () { say('开始'); });
+  el.joinForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    submitJoin(el.roomCode.value);
+  });
+  el.roomCode.addEventListener('input', function () {
+    el.roomCode.value = el.roomCode.value.replace(/\D/g, '').slice(0, 4);
+  });
+  el.roomList.addEventListener('click', function (event) {
+    const target = event.target;
+    const button = target && target.closest ? target.closest('button[data-code]') : null;
+    if (!button || button.disabled) return;
+    el.roomCode.value = button.dataset.code;
+    say(joinCommand(button.dataset.code));
+  });
+  el.copyInvite.addEventListener('click', copyInviteLink);
+  el.cancelRoom.addEventListener('click', function () { say('退出房间'); });
+  el.actionButtons.addEventListener('click', function (event) {
+    const target = event.target;
+    const button = target && target.closest ? target.closest('button[data-command]') : null;
+    if (!button || button.disabled) return;
+    say(button.dataset.command);
+  });
+  el.actionUtility.addEventListener('click', function (event) {
+    const target = event.target;
+    const button = target && target.closest ? target.closest('button[data-command]') : null;
+    if (!button || button.disabled) return;
+    // 进行中退出会判负，必须先确认；结束态的「回到大厅」不带确认文案。
+    const confirmText = button.dataset.confirm;
+    if (confirmText && !window.confirm(confirmText)) return;
+    say(button.dataset.command);
+  });
+
   el.composer.addEventListener('submit', function (event) {
     event.preventDefault();
     var value = el.text.value;
@@ -823,17 +1149,21 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
     el.composer.requestSubmit ? el.composer.requestSubmit() : el.send.click();
   });
 
-  // 页面切走/隐藏时，先把播报和识别停掉，别在后台继续说
+  // 页面切走/隐藏时，先把播报和识别停掉，别在后台继续说；回到前台再刷新大厅。
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) {
       stopSpeaking();
       stopListening();
+      stopLobbyPolling();
       settlement = null;
       clearTimeout(settlementTimer);
       render();
+    } else {
+      render();
+      maybeJoinInvite();
     }
   });
-  window.addEventListener('pagehide', function () { stopListening(); stopSpeaking(); });
+  window.addEventListener('pagehide', function () { stopLobbyPolling(); stopListening(); stopSpeaking(); });
 
   // iOS 键盘弹出不会缩小布局视口：用 visualViewport 的差值把底部输入区顶到键盘上方
   function watchKeyboard() {
@@ -850,7 +1180,11 @@ import { companionView, newSettlement, renderCompanion, opponentDetails } from '
 
   /* ---------------- 启动 ---------------- */
 
-  el.micStatus.textContent = micPrompt({ enabled: false, active: false, paused: false });
+  // 第一次真实点击时解锁浏览器语音；只做一次，不拦截按钮本身。
+  document.addEventListener('pointerdown', primeSpeech, { once: true, passive: true });
+  document.addEventListener('keydown', primeSpeech, { once: true });
+  // 自动化或读屏可能只派发 click；primeSpeech 自带幂等判断。
+  document.addEventListener('click', primeSpeech, { once: true, passive: true });
   watchKeyboard();
   render();
   setConn('connecting');

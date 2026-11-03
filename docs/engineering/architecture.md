@@ -69,7 +69,8 @@ src/
   http/app.ts         两种 MCP 传输、/state 与 /events、调试端点
   mcp/                server.ts 注册传输，tools.ts 只注册 game_say 与 wait_event，context.ts 身份与载体头
   game/               engine.ts 与 rules.ts 结算、enemy*.ts 对手、command.ts/asr.ts 读原话、
-                      service.ts/table.ts/serialize.ts 编排与事务、pvp.ts、protocol.ts 生成 v2 事实、narrator.ts、push.ts、state.ts、presentation.ts 等
+                      service.ts/table.ts/serialize.ts 编排与事务、pvp.ts、lobby.ts 公开大厅读模型、
+                      protocol.ts 生成 v2 事实、narrator.ts、push.ts、state.ts、presentation.ts 等
   store/              battles.ts、rooms.ts、echoes.ts 的内存存储与过期
   admin/              只读监控页与总览
 sandbox/
@@ -230,6 +231,10 @@ v2 用两条路补：`wait_event` 让平台把一次请求挂在服务端，对�
 `speaker` 只用于归属与日志，不参与招式裁决；`silent` 不生成话术、不触发 TTS。平台侧仍是一设备一智能体，服务端只在这一台声明的说话人范围内判断，跨设备抢话不能靠工具参数解决。
 
 为什么不让确认流程也要求口令：语音反复确认两轮，玩家根本不会照做，体验比偶尔算错更差；口令只做「替谁说」的可选标签。取舍与平台配合见[多设备归属](../product/multi-device-attribution.md)与[平台语音能力](platform-voice-capabilities.md)。
+
+### 23. 公开大厅只做读模型，不复制对局状态
+
+手机试玩需要「有哪些房在等人」，但大厅不该成为第二套状态机。做法：`GET /rooms` 直接合并 `RoomStore.list()` 与 `BattleStore.list()`，交给纯函数 `buildLobby` 过滤出 `pvp:<房号>` 且仍在 `battle` 阶段的对局，排序、截断后只输出房号、等待/对战中、轮次与时间；不调 `GameService`、不写存储、不暴露设备身份。沙箱的 `GET /api/lobby` 只代理这一份快照，页面按钮仍把中文原话送进 `/api/say`。这样开房、加入、换房与裁决继续走原有的房间索引和串行事务，大厅过期数据最多晚一个轮询周期。部署与限制见[手机对战平台](mobile-platform.md)。
 
 ## 说话人与页面提醒边界
 

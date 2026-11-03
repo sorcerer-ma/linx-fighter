@@ -1,0 +1,27 @@
+# 共鸣：闻声对决 —— 试玩平台专用游戏服务（与生产 MCP 服务隔离）
+# 安装：cp deploy/linx-fighter-demo.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now linx-fighter-demo
+# 说明：复用 /etc/linx-fighter.env 的模型与超时配置，只把 PORT 改成 8020；
+#       沙箱的 SANDBOX_UPSTREAM 指向 127.0.0.1:8020，公网不直接暴露 8020。
+[Unit]
+Description=Linx Fighter demo game service (in-memory rooms for mobile sandbox)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=linx
+Group=linx
+WorkingDirectory=/opt/linx-fighter-demo
+EnvironmentFile=-/etc/linx-fighter.env
+# 后读的覆盖前一个：把试玩实例固定在 8020，避免和正式服务抢 8000
+EnvironmentFile=-/etc/linx-fighter-demo.env
+ExecStart=/usr/local/bin/node --dns-result-order=ipv4first --no-network-family-autoselection /opt/linx-fighter-demo/dist/index.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

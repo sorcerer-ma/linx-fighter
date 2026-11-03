@@ -7,6 +7,7 @@ import { extractAdminToken, isAdminAllowed } from '../admin/access.js';
 import { buildAdminOverview } from '../admin/overview.js';
 import { ADMIN_PAGE_HTML, adminDeniedPage } from '../admin/page.js';
 import { createRateLimiter } from '../admin/ratelimit.js';
+import { buildLobby } from '../game/lobby.js';
 import { createPushEngine, type PushKind } from '../game/push.js';
 import type { GameService } from '../game/service.js';
 import type { BattleState } from '../game/state.js';
@@ -18,8 +19,10 @@ import {
   identityHeaders,
   type DeviceContext,
 } from '../mcp/context.js';
-import { createMcpServer } from '../mcp/server.js';
+import { createHudKeyResolver } from './hud-key.js';
+import { createMcpServer, createHudServer } from '../mcp/server.js';
 import { registerGameTools } from '../mcp/tools.js';
+import { HudTracker, registerHudTools } from '../mcp/hud-tools.js';
 import type { BattleStore } from '../store/battles.js';
 import type { RoomStore } from '../store/rooms.js';
 
@@ -107,11 +110,12 @@ export function createApp(deps: AppDependencies): express.Express {
   // 否则恒为 127.0.0.1，按来源限速会退化成全局限速。
   app.set('trust proxy', 'loopback');
 
-  // 记下每一个入站请求：接入阶段用来看"平台到底有没有打过来、打的是哪个路径"
+  // 记下每一个入站请求：接入阶段用来看"平台到底有没有打过来、打的是哪个路径"。
+  // 健康检查与大厅轮询是页面按秒打的高频只读请求，不记，免得把日志刷满。
   app.use((req, res, next) => {
     const startedAt = Date.now();
     res.on('finish', () => {
-      if (req.path === '/health') return;
+      if (req.path === '/health' || req.path === '/rooms') return;
       logger.info(res.statusCode === 404 ? '收到未知路径请求' : '收到 HTTP 请求', {
         method: req.method,
         path: req.path,
@@ -127,6 +131,10 @@ export function createApp(deps: AppDependencies): express.Express {
   app.use(express.json({ limit: '256kb' }));
 
   const sessions = new Map<string, McpSession>();
+  const hudTracker = new HudTracker();
+
+  // 设备对局键解析：/device/mcp 与 /device/ws 共用同一套规则
+  const resolveHudKey = createHudKeyResolver({ service, store });
 
   // 监控接口按来源限速：3 秒轮询只占 20 次/分钟，留足余量；进程内 Map，重启即清空
   const adminLimiter = createRateLimiter();
@@ -145,6 +153,8 @@ export function createApp(deps: AppDependencies): express.Express {
         health: '/health',
         events: '/events',
         state: '/state',
+        rooms: '/rooms',
+        device: '/device/mcp',
         admin: '/admin',
       },
     });
@@ -276,6 +286,17 @@ export function createApp(deps: AppDependencies): express.Express {
     res.on('error', close);
   });
 
+  /**
+   * 公开大厅：手机页面按房间号找对手。
+   *
+   * 只读快照，不调 service、不推进任何对局；对外只有房间号、状态、轮次与时间，
+   * 设备身份不出这一层。允许任意来源跨域，页面部署在别的域也能轮询。
+   */
+  app.get('/rooms', (_req, res) => {
+    res.set({ 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+    res.json({ ok: true, ...buildLobby({ rooms: rooms.list(), battles: store.list() }) });
+  });
+
   // 后台监控页：只读围观双人房与单人局，不提供开局、出招、改数值任何写操作
   app.get('/admin', (req, res) => {
     if (!adminLimiter.allow(req.ip ?? 'unknown')) {
@@ -396,6 +417,57 @@ export function createApp(deps: AppDependencies): express.Express {
 
   // 部分客户端结束会话时会 DELETE /mcp；无状态模式没有可销毁的会话，直接 200 让它安静收尾
   app.delete('/mcp', (_req, res) => {
+    res.status(200).end();
+  });
+
+  /**
+   * 硬件专用只读通道：设备只拉屏幕状态，不碰对局。
+   *
+   * 单独挂一条路径，平台智能体在 /mcp 看到的工具仍然只有 game_say 与 wait_event；
+   * 固件只知道自己的 MAC，身份从 X-Linx-Device-Id 头或 ?device= 查询参数取。
+   */
+  app.post('/device/mcp', async (req, res) => {
+    const ctx = createDeviceContext(randomUUID());
+    applyRequestContext(ctx, req.headers, req.query as Record<string, unknown>);
+
+    const body = req.body as RpcMessage | RpcMessage[] | undefined;
+    const message = Array.isArray(body) ? body[0] : body;
+    logger.info('设备 HUD 请求', {
+      method: message?.method ?? '',
+      tool: message?.params?.name,
+      deviceId: ctx.deviceId,
+    });
+
+    const server = createHudServer();
+    registerHudTools(server, {
+      service, logger, ctx, tracker: hudTracker, resolveKey: resolveHudKey,
+    });
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+
+    res.on('close', () => {
+      void transport.close();
+      void server.close();
+    });
+
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      logger.error('设备 HUD 请求处理失败', {
+        deviceId: ctx.deviceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (!res.headersSent) {
+        res.status(500).json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: '内部错误' } });
+      }
+    }
+  });
+
+  app.delete('/device/mcp', (_req, res) => {
     res.status(200).end();
   });
 

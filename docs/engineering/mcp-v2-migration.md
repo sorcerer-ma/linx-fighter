@@ -49,3 +49,7 @@
 平台是调用LLM的音箱：按权威need持续串行wait，不要求玩家再次追问。游戏服务强制身份校验后的单在途等待与旧代次取消；提示词不能硬保证平台工具循环、播放完成或取消能力，须真机核实。主模板config/linx-agent-prompt.md按执行契约、固定世界观、可变人格排序；三音色仅替换第三层，固定两层来自同一模板。平台需手工复制并保存完整组合稿，仓库更新不等于音箱生效。
 
 部署后核对WAIT_EVENT_TIMEOUT_MS=290000与平台工具HTTP300秒；另核实反代／SDK及整轮Agent任务总时限。不要读取或回传密钥。先用隔离双人局验证连续空超时不播、对手两次动作和终局无需追问，再切换已有环境；本次代码验证不代表已部署或真机通过。无ACK交付窗口见[MCP协议](mcp-protocol.md#52-wait_event)。
+
+## 设备 HUD 与事实的关系
+
+设备屏幕不是第二套协议，而是 `Facts` 的只读投影：`src/game/frame.ts` 统一基准对局与镜像快照，`factsOf()` 装配事实，`hudFromFacts()` 投影成设备帧。事实新增 `room`、`updatedAt`、`lastTurn` 与资源上限（`maxHp`/`maxEnergy`）等加法字段，`/mcp` 的 `v:2` 工具面与调用方式不变；设备帧经独立的 `/device/mcp` 拉取，细节见[设备 HUD 通道](device-hud.md)。

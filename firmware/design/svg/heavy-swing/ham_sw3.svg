@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 320 240" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;">
+    <g id="战锤" transform="matrix(4.137931,0,0,4.137931,0.689655,0)">
+        <g transform="rotate(-18 18.8 55.9)">
+            <path id="锤柄" d="M18.8,55.9L44.6,29.6" style="fill:none;stroke:rgb(74,52,39);stroke-width:3.6px;"/>
+            <path d="M20.8,54.2L43.4,31.2" style="fill:none;stroke:rgb(122,90,66);stroke-width:1.1px;"/>
+            <g transform="matrix(0.707107,0.707107,-0.707107,0.707107,33.030758,-23.996248)">
+                <path d="M58,19.435L58,30.565C58,30.805 57.805,31 57.565,31L34.435,31C34.195,31 34,30.805 34,30.565L34,19.435C34,19.195 34.195,19 34.435,19L57.565,19C57.805,19 58,19.195 58,19.435Z" style="fill:rgb(183,212,219);stroke:rgb(25,65,55);stroke-width:1.08px;"/>
+                <rect x="34.2" y="19.2" width="3.4" height="11.6" style="fill:rgb(143,179,191);"/>
+                <rect x="54.4" y="19.2" width="3.4" height="11.6" style="fill:rgb(143,179,191);"/>
+                <rect x="37.8" y="20.4" width="16.4" height="2.2" style="fill:white;"/>
+                <rect x="37.8" y="27.6" width="16.4" height="2" style="fill:rgb(116,157,168);"/>
+            </g>
+        </g>
+    </g>
+</svg>

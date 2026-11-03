@@ -34,6 +34,62 @@ export interface BattleSnapshot {
   battle: BattleState | null;
 }
 
+/**
+ * 大厅房间条目：沙箱只经 HTTP 读上游 `GET /rooms`，
+ * 这里按页面需要复述最小字段，不引用游戏服务内部类型。
+ */
+export interface LobbyRoom {
+  /** 四位房间号 */
+  code: string;
+  status: 'waiting' | 'playing';
+  round: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 大厅快照：与上游 /rooms 的公开契约同形，页面只认这几个字段 */
+export interface LobbySnapshot {
+  generatedAt: number;
+  rooms: LobbyRoom[];
+  waiting: number;
+  playing: number;
+}
+
+/** 数字字段归一：非有限数或负数一律换成兜底值，坏数据不传进页面 */
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : fallback;
+}
+
+/** 房间条目归一：没有房间号的条目没法展示也没法加入，直接丢掉 */
+function normalizeLobbyRoom(value: unknown): LobbyRoom | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const room = value as Record<string, unknown>;
+  const code = typeof room.code === 'string' ? room.code.trim() : '';
+  if (!code) return null;
+  return {
+    code,
+    // 只有明确 playing 才算进行中，其余按可加入的等待房展示；真进不去由服务端按规则拒绝
+    status: room.status === 'playing' ? 'playing' : 'waiting',
+    round: finiteNumber(room.round, 0),
+    createdAt: finiteNumber(room.createdAt, 0),
+    updatedAt: finiteNumber(room.updatedAt, 0),
+  };
+}
+
+/** 大厅载荷归一：上游字段类型不可信，缺的计数按归一后的房间列表自己数 */
+function normalizeLobby(body: unknown): LobbySnapshot {
+  const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const rooms = Array.isArray(record.rooms)
+    ? record.rooms.map(normalizeLobbyRoom).filter((room): room is LobbyRoom => room !== null)
+    : [];
+  return {
+    generatedAt: finiteNumber(record.generatedAt, Date.now()),
+    rooms,
+    waiting: finiteNumber(record.waiting, rooms.filter((room) => room.status === 'waiting').length),
+    playing: finiteNumber(record.playing, rooms.filter((room) => room.status === 'playing').length),
+  };
+}
+
 export interface SayResult {
   profileId: SpeechProfileId;
   ok: boolean;
@@ -147,6 +203,30 @@ export class SandboxClient {
       room: body.room ?? null,
       battle: body.battle ?? null,
     };
+  }
+
+  /**
+   * 只读大厅：上游不可用、超时、非 2xx 或响应不是 JSON 都归到 UpstreamError，
+   * 由调用方（/api/lobby）决定降级，不把异常抛给页面。
+   */
+  async lobby(): Promise<LobbySnapshot> {
+    let response: Response;
+    try {
+      response = await fetch(new URL('/rooms', this.options.upstream), {
+        signal: AbortSignal.timeout(Math.min(this.options.timeoutMs, 3000)),
+      });
+    } catch (error) {
+      throw new UpstreamError(`大厅查询失败：${error instanceof Error ? error.message : String(error)}`, 'unreachable');
+    }
+    if (!response.ok) throw new UpstreamError(`大厅查询失败：HTTP ${response.status}`, 'protocol_error');
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new UpstreamError('大厅响应不是合法 JSON', 'protocol_error');
+    }
+    return normalizeLobby(body);
   }
 
   async tools(): Promise<ToolInfo[]> {

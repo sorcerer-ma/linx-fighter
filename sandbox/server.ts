@@ -164,6 +164,17 @@ export function createSandboxServer(deps: SandboxDependencies): express.Express 
     }
   });
 
+  // 只读大厅：页面靠它展示可加入的房间。上游不可用时按 ok:false 降级，
+  // 页面自己决定怎么提示，不把读失败变成 500。
+  app.get('/api/lobby', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      res.json({ ok: true, ...(await client.lobby()) });
+    } catch {
+      res.json({ ok: false, rooms: [], waiting: 0, playing: 0, generatedAt: null, error: 'upstream_unreachable' });
+    }
+  });
+
   app.get('/api/tools', async (_req, res) => {
     try {
       res.json({ ok: true, tools: await client.tools() });

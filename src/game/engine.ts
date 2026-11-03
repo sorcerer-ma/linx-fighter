@@ -47,6 +47,8 @@ interface Draft {
   draws: { count: number };
   ai: BattleAI;
   now: number;
+  /** 应对阶段顺带问出来的下一手；只在本回合消费一次 */
+  plannedAction: ActiveActionId | null;
 }
 
 function createFighter(id: Side, name: string, hp: number): Fighter {
@@ -161,6 +163,7 @@ function createDraft(battle: Battle, now: number, deps: TurnDeps): Draft {
     draws,
     ai: deps.ai ?? ENEMY_AI,
     now,
+    plannedAction: null,
   };
   return draft;
 }
@@ -182,7 +185,11 @@ async function advance(draft: Draft): Promise<void> {
     if (battle.active !== 'enemy') return;
 
     const enemy = battle.enemy;
-    let rejection = await performActive(draft, 'enemy', await draft.ai.chooseAction(actionView(draft)));
+    // 应对阶段已经顺带问过下一手，命中就用它，少一次模型往返；非法时下面仍有兜底
+    const planned = draft.plannedAction;
+    draft.plannedAction = null;
+    const action = planned ?? (await draft.ai.chooseAction(actionView(draft)));
+    let rejection = await performActive(draft, 'enemy', action);
     if (rejection) {
       // 对手 AI 给出当前能量做不了的选择时，退到一定合法的操作，避免卡死
       rejection = await performActive(draft, 'enemy', enemy.ap < enemy.maxAp ? 'charge' : 'light');
@@ -259,8 +266,16 @@ async function performActive(draft: Draft, side: Side, action: ActionId): Promis
     // 没有能量就只能硬扛，不占用玩家的输入
     resolvePending(draft, 'take', true);
   } else if (side === 'player' && battle.mode === 'solo') {
-    const response = normalizeResponse(await draft.ai.chooseResponse(responseView(draft, defenderSide)), defender);
-    resolvePending(draft, response, false);
+    const view = responseView(draft, defenderSide);
+    if (draft.ai.chooseTurn) {
+      // 一次模型往返同时拿「怎么接」和「下一手怎么打」，省掉对手出手前的第二次调用
+      const plan = await draft.ai.chooseTurn(view, actionView(draft));
+      draft.plannedAction = plan.action;
+      resolvePending(draft, normalizeResponse(plan.response, defender), false);
+    } else {
+      const response = normalizeResponse(await draft.ai.chooseResponse(view), defender);
+      resolvePending(draft, response, false);
+    }
   } else {
     // 对手已经出手，等另一方说格挡、闪避或承受
     draft.events.push({ type: 'pending', round: battle.round, side, move: action });

@@ -694,6 +694,15 @@ export class GameService {
       const id = battle?.id ?? null;
       if (this.exitAcknowledged.has(sessionKey) && this.exitAcknowledged.get(sessionKey) === id) return this.silentResult(sessionKey);
       if (!room) {
+        // 单人局（口语里也叫「训练」）没有房间记录：退出就是投降、结束这局，
+        // 否则屏幕会一直停在战斗态，等不到下一次开局
+        if (battle && battle.mode === 'solo') {
+          this.store.delete(queued.key);
+          this.factQueue.delete(queued.key);
+          this.exitAcknowledged.set(sessionKey, null);
+          this.wake(sessionKey);
+          return { text: '我认输了，这局就到这里，回到待命。', battle: null, protocol: { text: true, consume: false } };
+        }
         this.exitAcknowledged.set(sessionKey,id);
         return {text:'我现在不在挑战房间里，当前对局没有改变。',battle,protocol:{text:true,consume:false}};
       }
