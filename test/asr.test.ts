@@ -9,6 +9,7 @@ import {
 } from '../src/game/asr.js';
 import { ACTIONS, parseAction } from '../src/game/actions.js';
 import { readCommand } from '../src/game/command.js';
+import { syllableOf } from '../src/game/pinyin.js';
 
 /** 断言识别到指定招式，并把命中路径一起钉住，避免以后放宽到错配 */
 function expectAction(text: string, id: string, via: 'exact' | 'prefix' | 'syllable') {
@@ -52,9 +53,10 @@ describe('音节与音节距离', () => {
   it('逐字转音节，表外字给 undefined', () => {
     assert.deepEqual(toSyllables('公鸡'), ['gong', 'ji']);
     assert.deepEqual(toSyllables('硬扛'), ['ying', 'kang']);
-    // 「杭」不在同音表里（表只覆盖招式用到的音节），表外字一律 undefined
-    assert.deepEqual(toSyllables('映杭'), ['ying', undefined]);
-    assert.deepEqual(toSyllables('你猜7点'), [undefined, undefined, undefined, undefined]);
+    // 表只覆盖招式音节和它们的近音邻域：「训」在邻域外，整句近音比较随即放弃
+    assert.deepEqual(toSyllables('映训'), ['ying', undefined]);
+    // 数字、字母、生僻字一律没有音节
+    assert.deepEqual(toSyllables('猜7点'), [undefined, undefined, 'dian']);
     assert.deepEqual(toSyllables(''), []);
   });
 
@@ -112,7 +114,7 @@ describe('招式词表自洽', () => {
     const responseIds = new Set(['guard', 'dodge', 'take']);
     for (const meta of Object.values(ACTIONS)) {
       const stage = (responseIds.has(meta.id) ? 'response' : 'active') as 'response' | 'active';
-      for (const word of [meta.label, ...(meta.asrErrors ?? [])]) {
+      for (const word of [meta.label, ...meta.asrErrors]) {
         const matched = matchSpokenAction(word, stage);
         assert.equal(matched?.id, meta.id, `${meta.id} 的「${word}」应命中自身，实际 ${matched?.id ?? '未命中'}`);
       }
@@ -138,6 +140,65 @@ describe('词表里没有的写法靠音节比较兜住', () => {
     assert.equal(match.id, 'dodge');
     assert.equal(match.via, 'syllable');
     assert.equal(match.score, 0.75);
+  });
+});
+
+describe('常见口音：平翘舌与前后鼻音', () => {
+  it('平翘舌：zh/z、ch/c、sh/s', () => {
+    expectAction('大早', 'ult', 'syllable'); // 大招 zhao → zao
+    expectAction('大造', 'ult', 'syllable');
+    expectAction('曾受', 'take', 'syllable'); // 承受 cheng → ceng
+    expectAction('层受', 'take', 'syllable');
+    expectAction('三避', 'dodge', 'syllable'); // 闪避 shan → san
+    expectAction('散币', 'dodge', 'syllable');
+  });
+
+  it('前后鼻音与韵尾脱落：an/ang、en/eng、in/ing', () => {
+    expectAction('格旦', 'guard', 'syllable'); // 格挡 dang → dan
+    expectAction('格单', 'guard', 'syllable');
+    expectAction('上避', 'dodge', 'syllable'); // 闪避 shan → shang
+    expectAction('商避', 'dodge', 'syllable');
+    expectAction('因抗', 'take', 'syllable'); // 硬抗 ying → yin
+    expectAction('银抗', 'take', 'syllable');
+    expectAction('反御', 'guard', 'syllable'); // 防御 fang → fan
+    expectAction('饭御', 'guard', 'syllable');
+    expectAction('千攻', 'heavy', 'syllable'); // 强攻 qiang → qian
+    expectAction('前攻', 'heavy', 'syllable');
+    // 一处口音，置信度仍是 0.75，没被表字层面的误扩大成整句同音
+    assert.equal(matchSpokenAction('格旦')?.score, 0.75);
+  });
+
+  it('n/l、g/k 这类声母混淆', () => {
+    expectAction('克挡', 'guard', 'syllable'); // 格挡 ge → ke
+    expectAction('蓄泥', 'charge', 'syllable'); // 蓄力 li → ni
+    expectAction('续尼', 'charge', 'syllable');
+  });
+
+  it('口音重到两处以上就不猜，交给命令路由', () => {
+    // 「千孔」两处都偏（qiang→qian、gong→kong）：整句只容一处，多一处就不猜
+    assert.equal(matchSpokenAction('千孔'), null);
+  });
+
+  it('阶段筛选优先于口音容错', () => {
+    assert.equal(matchSpokenAction('格旦', 'active'), null);
+    assert.equal(matchSpokenAction('大早', 'response'), null);
+  });
+});
+
+describe('同音表覆盖词表', () => {
+  it('每个说法的每个字都查得到音节', () => {
+    // 表按「招式音节 + 近音邻域」离线生成；新增说法后忘了重跑生成脚本，
+    // 表外字会让整句近音比较静默失效，口音重一点就被拒
+    for (const meta of Object.values(ACTIONS)) {
+      const words = [meta.label, ...meta.aliases, ...meta.mentions, ...meta.asrErrors, ...meta.chants];
+      for (const word of words) {
+        for (const char of word) {
+          // 英文说法（attack、recover）没有音节，只查汉字
+          if (!/[\u4e00-\u9fff]/.test(char)) continue;
+          assert.ok(syllableOf(char), `「${word}」里的「${char}」没有音节，请重跑 pinyin 生成脚本`);
+        }
+      }
+    }
   });
 });
 
